@@ -5,7 +5,7 @@
 | Field | Value |
 |---|---|
 | Status | Planned/blocked |
-| Master-plan version | [0.1.0](../MASTER_PLAN.md) |
+| Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M? |
 | Dependencies | Linked SP files or None |
 | Affected ADRs | [ADR index](../adr/README.md) |

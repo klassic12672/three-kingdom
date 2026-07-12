@@ -1,6 +1,6 @@
 # Historical and Content Research Rules
 
-This directory governs historical claims, terminology, localization, and asset provenance under [master-plan version 0.1.0](../MASTER_PLAN.md).
+This directory governs historical claims, terminology, localization, and asset provenance under [master-plan version 0.2.0](../MASTER_PLAN.md).
 
 The executable authoring contracts and commands are documented in the [content pipeline guide](../CONTENT_PIPELINE.md).
 

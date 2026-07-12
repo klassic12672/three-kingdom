@@ -4,6 +4,12 @@ Release packages are created only by the scripts in this repository. The scripts
 
 Every export embeds and writes build-manifest schema 2 with the project version, Git commit, Godot version, .NET SDK version, platform, architecture, configuration, the canonical top-level pack checksum in `contentManifestChecksum`, and the aggregate validated registry checksum in `contentRegistryChecksum`.
 
+## Verification timing
+
+[ADR-0001](adr/0001-mac-first-development-deferred-physical-windows-verification.md) defers credentialed signing/notarization, physical Windows, Steam, clean-install/update, and release-candidate verification from M0 to M4/SP-15. M0 verifies that the workflows exist, protect secrets, and fail closed; it does not claim that production credentials or physical Windows hardware were exercised.
+
+This deferral does not relax public-release requirements. A public demo or later candidate must satisfy the physical Windows and signed release gates below before promotion.
+
 ## macOS arm64
 
 Required secrets and local environment values:

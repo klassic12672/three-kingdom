@@ -5,7 +5,7 @@
 | Field | Value |
 |---|---|
 | Status | Planned/blocked |
-| Master-plan version | [0.1.0](../MASTER_PLAN.md) |
+| Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | Relevant active subsystem plans; initially [SP-03](SP-03-campaign-map-regions-routes-supply.md), [SP-04](SP-04-characters-family-marriage-succession.md), [SP-05](SP-05-factions-court-emperor-diplomacy-espionage.md), [SP-07](SP-07-armies-recruitment-equipment-logistics.md), and [SP-08](SP-08-tactical-runtime-command-morale-formations.md) |
 | Affected ADRs | [ADR index](../adr/README.md) |

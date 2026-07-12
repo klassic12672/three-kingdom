@@ -5,7 +5,7 @@
 | Field | Value |
 |---|---|
 | Status | Planned/blocked |
-| Master-plan version | [0.1.0](../MASTER_PLAN.md) |
+| Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-02](SP-02-content-localization-modding-research.md), [SP-03](SP-03-campaign-map-regions-routes-supply.md), [SP-04](SP-04-characters-family-marriage-succession.md), [SP-05](SP-05-factions-court-emperor-diplomacy-espionage.md), [SP-06](SP-06-population-economy-administration-technology.md), [SP-07](SP-07-armies-recruitment-equipment-logistics.md), [SP-08](SP-08-tactical-runtime-command-morale-formations.md), [SP-09](SP-09-siege-naval-shoreline-combined-battles.md), [SP-10](SP-10-strategic-tactical-ai-simulation-tiers.md), [SP-11](SP-11-ui-ux-accessibility-tutorial.md), [SP-12](SP-12-custom-generated-characters-faction-founding.md) |
 | Affected ADRs | [ADR index](../adr/README.md) |

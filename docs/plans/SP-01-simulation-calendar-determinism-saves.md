@@ -4,8 +4,8 @@
 
 | Field | Value |
 |---|---|
-| Status | **Implemented locally — same-revision hosted cross-platform checksum verification pending** |
-| Master-plan version | [0.1.0](../MASTER_PLAN.md) |
+| Status | **Complete** |
+| Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M1 |
 | Dependencies | [SP-00](SP-00-repository-toolchain-ci-packaging.md) |
 | Affected ADRs | [ADR index](../adr/README.md) |
@@ -97,14 +97,14 @@ Commands from player/AI
 ## Acceptance criteria
 
 - [x] A headless synthetic world runs ten years without invariant failure.
-- [ ] Windows and macOS produce identical checksums for the same replay.
+- [x] Windows and macOS produce identical checksums for the same replay.
 - [x] All persistent mutation occurs through registered commands/events.
 - [x] Full, Reduced, and Aggregate tier transitions preserve declared totals and pending work.
 - [x] Save/load round-trips state and checksum exactly.
 - [x] Interrupted writes and failed migrations preserve the last valid save.
 - [x] Public contracts have versioning and compatibility tests.
 
-The cross-platform gate is implemented as a fixed ten-year/1,000-entity golden checksum test in both macOS and Windows CI jobs. It remains unchecked until both hosted jobs complete against the same revision and report the matching checksum. Implementation and operator commands are documented in the [simulation guide](../SIMULATION.md).
+The golden test passed for historical SHA `1ab375a5e812c14eba4eca4cc121e604ade73f47`, but that Windows job later failed in SP-00 cleanup; see the [historical report](../evidence/M0-EXACT-SHA-1ab375a.md). Cleanup-fix SHA `7f62a97cf880ae6ded8e47af8737a11e53479977` passed all 52 simulation tests on both hosted platforms, including the exact-source assertion for `105da5fd449cc2d00ba1bf979642b22107db5b236eab30baac437f1b9b8bf088`. With SP-00 complete, SP-01 is complete. See the [passing report](../evidence/M0-EXACT-SHA-7f62a97.md) and [simulation guide](../SIMULATION.md).
 
 ## Risks
 

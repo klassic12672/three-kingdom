@@ -4,8 +4,8 @@
 
 | Field | Value |
 |---|---|
-| Status | **Implemented locally ahead of gate — plan and presentation acceptance dependency-blocked** |
-| Master-plan version | [0.1.0](../MASTER_PLAN.md) |
+| Status | **Active — engine/content implementation present; presentation acceptance in progress** |
+| Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
 | Affected ADRs | [ADR index](../adr/README.md) |
@@ -102,7 +102,7 @@ Validated map content + scenario ownership/claims
 
 The bounded 191 fixture, authoring contract, runtime behavior, presentation modes, and verification commands are documented in the [campaign geography guide](../CAMPAIGN_GEOGRAPHY.md).
 
-The Godot project and C# presentation assembly compile successfully and the scene imports the `CampaignMapView` type. On the current development Mac, direct editor/game launch stalled inside Godot's `.NET: Initializing module` step before project code executed, including from a clean copied project cache. Rendering, map-mode presentation, interactive picking, and label-overlap acceptance therefore remain unchecked until runtime visual evidence exists; this does not invalidate the separately automated engine/content results. SP-01 and SP-02 must also be verified before this M2 plan can become active.
+The Godot project and C# presentation assembly compile successfully and the scene imports the `CampaignMapView` type. On the current development Mac, direct editor/game launch stalled inside Godot's `.NET: Initializing module` step before project code executed, including from a clean copied project cache. Rendering, map-mode presentation, interactive picking, and label-overlap acceptance therefore remain unchecked until runtime visual evidence exists; this does not invalidate the separately automated engine/content results. SP-01 and SP-02 are complete, so M2 and this plan are active. The next package must recheck or resolve the stall, render the route map, verify modes, test picking/highlighting, review localized labels/overlap, and capture interactive visual evidence.
 
 ## Risks
 

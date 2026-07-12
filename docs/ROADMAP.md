@@ -2,9 +2,9 @@
 
 | Field | Value |
 |---|---|
-| Master-plan version | 0.1.0 |
+| Master-plan version | 0.2.0 |
 | Updated | 2026-07-12 |
-| Active milestone | **M0 — Source of truth and toolchain** |
+| Active milestone | **M2 — 191 campaign slice** |
 | Scheduling policy | Milestone gates; no public dates before M4 |
 
 ## Status legend
@@ -17,11 +17,11 @@
 
 | ID | Milestone | Status | Exit gate summary |
 |---|---|---|---|
-| M0 | Source of truth and toolchain | **Active** | Documentation hierarchy, pinned tools, CI, LFS, signing prerequisites, and empty Windows/macOS smoke builds |
-| M1 | Headless simulation foundation | Planned | Deterministic commands/events, calendar, stable IDs, validated content, saves/migrations, and ten-year synthetic soak |
-| M2 | 191 campaign slice | Planned | Bounded Central Plains campaign with character play, routes, politics, economy, diplomacy, supply, and faction founding |
+| M0 | Source of truth and toolchain | **Complete** | Documentation hierarchy, pinned tools, LFS, native macOS local smoke, and exact-SHA hosted macOS/Windows CI/export/automated smoke |
+| M1 | Headless simulation foundation | **Complete** | Deterministic commands/events, calendar, stable IDs, validated content, saves/migrations, and ten-year synthetic soak |
+| M2 | 191 campaign slice | **Active** | Bounded Central Plains campaign with character play, routes, politics, economy, diplomacy, supply, and faction founding |
 | M3 | Tactical battle slice | Planned | RTWP battle from 18 through 54 units with morale, formations, ranged combat, rout, pursuit, and campaign result round-trip |
-| M4 | Integrated vertical slice and public demo | Planned | One uninterrupted 191 loop, cross-platform demo, onboarding, and performance budgets met |
+| M4 | Integrated vertical slice and public demo | Planned | One uninterrupted 191 loop, physical Windows validation, cross-platform demo, onboarding, and performance budgets met |
 | M5 | Initial paid Early Access | Planned | Full 191 campaign, world topology, 300–400 historical characters, generated fill, Korean/English, and core combined systems |
 | M6 | Early Access expansion | Planned | Regional depth, roster growth, 관도대전, 적벽대전, expanded systems, mod documentation, AI and polish |
 | M7 | Version 1.0 | Planned | Three bookmarks, full map, 800–1,000 historical characters, complete localization, regression, migration, and release QA |
@@ -31,10 +31,32 @@
 - [x] Master plan and subplan structure defined.
 - [x] Godot 4.6.1 .NET and .NET 10 LTS pinned and installed.
 - [x] Git LFS patterns and repository conventions configured.
-- [ ] macOS and Windows CI runners execute documentation and empty-project checks.
+- [x] Exact-SHA macOS and Windows CI runners pass validation, build, tests, import, export, automated smoke, manifest checks, and artifact upload.
 - [x] Godot export presets created for Windows x64 and macOS arm64.
-- [ ] Empty Windows and signed/notarized macOS smoke builds produced.
+- [x] Apple Silicon macOS development export launches locally and records its manifest.
+- [x] Signing/notarization and Authenticode workflows are configured, secret-gated, and fail closed; production credential verification is deferred to SP-15.
 - [x] Historical-source and AI-asset provenance registers established.
+
+Physical Windows testing and production signing are not M0 exit criteria under [ADR-0001](adr/0001-mac-first-development-deferred-physical-windows-verification.md).
+
+Exact SHA `7f62a97cf880ae6ded8e47af8737a11e53479977` passed both hosted jobs and artifact/manifest inspection. See the [passing report](evidence/M0-EXACT-SHA-7f62a97.md). The earlier [`1ab375a` report](evidence/M0-EXACT-SHA-1ab375a.md) remains the historical failed attempt.
+
+## M1 exit criteria
+
+- [x] Deterministic commands/events, calendar, stable IDs, ordered resolution, isolated random streams, and simulation tiers have automated coverage.
+- [x] A ten-year/1,000-entity soak completes with checksum `105da5fd449cc2d00ba1bf979642b22107db5b236eab30baac437f1b9b8bf088` on both hosted platforms.
+- [x] Save/load, recovery, migrations, failed-migration preservation, and contract compatibility pass.
+- [x] Content schemas, validation, stable IDs, sources/provenance, and Korean/English localization coverage pass.
+- [x] Built-in/mod order, overrides, conflicts, save compatibility, and registry checksum pass on both hosted platforms with zero applicable diagnostics.
+
+The simulation checksum is established by the exact-source assertion plus complete hosted suite passes; the registry checksum is directly logged. See the [passing report](evidence/M0-EXACT-SHA-7f62a97.md).
+
+## Platform verification gates
+
+- Through M3, Apple Silicon macOS is the primary interactive and visual development platform.
+- Every accepted development revision must keep hosted Windows build/test/export/automated-smoke coverage healthy.
+- Before M4 closes or a public demo ships, a physical Windows x64 machine must pass native smoke, input/display, packaged save, and representative playtesting checks.
+- Before any public promotion, SP-15 must verify macOS signing/notarization, Windows Authenticode, Steam behavior, clean installs/updates, and release-candidate artifacts.
 
 ## Scheduling rule
 
@@ -42,13 +64,13 @@ Before M4, estimates are internal ranges only. After M4, record measured velocit
 
 ## Current work order
 
-1. After explicit user authorization, review and stage the M0-A candidate set, create the first baseline commit, and push that exact SHA to the confirmed remote.
-2. Run SP-00 unsigned hosted macOS and Windows CI for that exact SHA and record native smoke evidence.
-3. Collect release-signing/notarization evidence only when separately authorized credentials are available.
-4. Run the implemented SP-01 golden checksum on both hosted platforms and record the matching result.
-5. Run the implemented SP-02 registry checksum/load-order suite on both hosted platforms.
-6. Close the M0 gate before promoting M1 or beginning dependency-gated SP-03 work.
+1. Resolve or recheck the Godot `.NET: Initializing module` launch stall on the development Mac.
+2. Render the illustrated 2.5D route map for the bounded 191 slice.
+3. Verify all required map modes against authoritative known-information queries.
+4. Test interactive picking and route highlighting.
+5. Review Korean/English labels and label overlap on the development Mac.
+6. Capture interactive visual evidence without checking unsupported presentation criteria early.
 
-SP-01 and SP-02 are implemented and locally verified, but this does not bypass the active M0 gate. SP-03 implementation also exists locally ahead of its milestone; its dependency and presentation acceptance gates remain blocked.
+M0 and M1 are complete. SP-03 is active with its engine/content criteria preserved and its presentation criteria still unchecked.
 
 See the [subsystem plan index](plans/README.md) for dependency status.

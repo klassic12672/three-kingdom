@@ -4,8 +4,8 @@
 
 | Field | Value |
 |---|---|
-| Status | **Implemented locally — same-revision hosted cross-platform checksum/order verification pending** |
-| Master-plan version | [0.1.0](../MASTER_PLAN.md) |
+| Status | **Complete** |
+| Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M1 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md) |
 | Affected ADRs | [ADR index](../adr/README.md) |
@@ -95,14 +95,14 @@ Research/source records + authored JSON + localization CSV + assets
 ## Acceptance criteria
 
 - [x] JSON schemas and semantic validators cover the initial synthetic content types.
-- [ ] Pack load order and overrides are deterministic on Windows and macOS.
+- [x] Pack load order and overrides are deterministic on Windows and macOS.
 - [x] Every record has a stable ID, content tag, and required source/provenance fields.
 - [x] Korean and English coverage reports identify every missing release string.
 - [x] Invalid packs fail independently without corrupting built-in content or saves.
 - [x] Content manifests and checksums are stored and verified through saves/builds.
 - [x] No runtime-code mod path exists.
 
-The fixed core registry checksum, explicit LF canonical-pack checksum, reversed-discovery-order, built-in-first, and dependency-ordered override tests execute in both macOS and Windows CI jobs. Build-manifest schema 2 records the canonical top-level pack checksum separately from the aggregate validated registry checksum. Portable manifest paths are enforced before filesystem resolution. The cross-platform criterion remains unchecked until both hosted jobs report the same revision. Contracts, authoring rules, and commands are documented in the [content pipeline guide](../CONTENT_PIPELINE.md).
+The same tests passed for historical SHA `1ab375a5e812c14eba4eca4cc121e604ade73f47`, although that Windows job later failed in SP-00 cleanup; see the [historical report](../evidence/M0-EXACT-SHA-1ab375a.md). Cleanup-fix SHA `7f62a97cf880ae6ded8e47af8737a11e53479977` passed all 31 content tests and validation on both hosted platforms. Both reported registry checksum `e937297a171e33d102e18e02ba774b44d61e1b6b5d1b4e485fcb8b2878de672d`, pack checksum `6c527133073ffece29d4d75f7372cc783f2855f6354ed5be9eb1a6c971936449`, and zero applicable diagnostics. With SP-01 complete, SP-02 is complete. See the [passing report](../evidence/M0-EXACT-SHA-7f62a97.md) and [content guide](../CONTENT_PIPELINE.md).
 
 ## Risks
 

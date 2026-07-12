@@ -2,11 +2,11 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.1.0 |
-| Date | 2026-07-11 |
+| Version | 0.2.0 |
+| Date | 2026-07-12 |
 | Status | Approved source of truth |
-| Active milestone | M0 — Source of truth and toolchain |
-| Development model | Solo-first, milestone-gated |
+| Active milestone | M2 — 191 campaign slice |
+| Development model | Solo-first, milestone-gated, Mac-first with continuous hosted Windows validation |
 
 ## 1. Product definition
 
@@ -81,7 +81,18 @@ Frontal combat fixes, fatigues, and disrupts units. Position, morale, cohesion, 
 - Development host: M2 Pro MacBook Pro with 16 GB memory.
 - Release targets: Windows x64 and Apple Silicon macOS through Steam.
 - Source control: Git with Git LFS for binary assets.
-- Automation: macOS and Windows CI runners plus a physical Windows test machine before the public demo.
+- Automation: macOS and Windows CI runners, with a physical Windows test machine required before the public demo.
+
+### Platform development and verification policy
+
+- Apple Silicon macOS is the primary local development, interactive testing, visual-review, and performance-profiling platform through M3.
+- Windows x64 remains a continuous release target: exact-SHA hosted Windows build, tests, import, export, automated smoke, manifests, and artifacts are required from M0 onward.
+- Hosted Windows automation is portability evidence, not physical Windows evidence.
+- Physical Windows x64 smoke, input/display checks, packaged save compatibility, and representative playtesting are required before M4 can close or a public demo can ship.
+- Developer ID signing/notarization, Authenticode, Steam overlay/depot checks, clean installs/updates, and release-candidate certification remain mandatory SP-15 public-promotion gates.
+- Platform-specific behavior stays isolated behind presentation or platform boundaries; authoritative simulation, application, content, and save contracts remain platform-independent.
+
+This policy is governed by [ADR-0001](adr/0001-mac-first-development-deferred-physical-windows-verification.md).
 
 ### Assembly boundaries
 
@@ -216,6 +227,8 @@ Generals have unit permissions, restricted unit types, unlockable aptitudes, for
 
 The authoritative milestone gates are maintained in [ROADMAP.md](ROADMAP.md). No public calendar date is promised until the M4 integrated vertical slice establishes measurable solo-development velocity.
 
+M0 proves reproducible local macOS and hosted macOS/Windows development paths. M4 adds physical Windows validation before the public demo. Production signing, notarization, Steam, and release-candidate certification remain SP-15 gates before public promotion.
+
 ## 10. Subplans and governance
 
 The authoritative subsystem index is [plans/README.md](plans/README.md). Every subplan must state its dependencies, first required milestone, public contracts, tests, acceptance criteria, risks, and deferred work.
@@ -237,7 +250,7 @@ The authoritative subsystem index is [plans/README.md](plans/README.md). Every s
 | SP-12 | Custom/generated characters and faction founding | M2 | SP-02, SP-04–SP-07 |
 | SP-13 | Scenarios and historical content pipeline | M2 | SP-02–SP-12 |
 | SP-14 | Art, animation, VFX, audio, and provenance | M3 | SP-08, SP-11, SP-13 |
-| SP-15 | Steam, release QA, and crash reporting | M0 | SP-00, SP-11, SP-14 |
+| SP-15 | Steam, release QA, and crash reporting | M0 groundwork; M4 public validation | SP-00, SP-11, SP-14 |
 
 Changes to platforms, engine, product pillars, version 1.0 scope, content boundary, stable contracts, or milestone exit criteria require an [ADR](adr/README.md), a master-plan version increment, and updates to affected subplans.
 

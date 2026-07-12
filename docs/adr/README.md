@@ -29,4 +29,6 @@ Numbers are never reused, including after rejection or supersession.
 5. Update every affected subplan and schema.
 6. Mark replaced ADRs as superseded; never delete them.
 
-No ADRs are accepted at version 0.1.0 beyond the decisions already incorporated directly into the initial master plan.
+## Accepted decisions
+
+- [ADR-0001 — Mac-first development with deferred physical Windows verification](0001-mac-first-development-deferred-physical-windows-verification.md), incorporated in master-plan version 0.2.0.

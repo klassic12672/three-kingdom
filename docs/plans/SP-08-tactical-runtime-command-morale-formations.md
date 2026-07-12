@@ -5,7 +5,7 @@
 | Field | Value |
 |---|---|
 | Status | Planned/blocked |
-| Master-plan version | [0.1.0](../MASTER_PLAN.md) |
+| Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M3 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-07](SP-07-armies-recruitment-equipment-logistics.md) |
 | Affected ADRs | [ADR index](../adr/README.md) |

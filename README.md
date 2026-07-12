@@ -4,15 +4,15 @@ A character-driven historical grand-strategy RPG spanning late Han China, Manchu
 
 ## Project status
 
-- Master-plan version: `0.1.0`
-- Current milestone: **M0 — Source of truth and toolchain**
-- Development model: solo-first, milestone-gated
+- Master-plan version: `0.2.0`
+- Current milestone: **M2 — 191 campaign slice**
+- Development model: solo-first, milestone-gated, Mac-first with continuous hosted Windows validation
 - Engine: Godot 4.6.1 .NET with C# and .NET 10 LTS
 - Release targets: Steam for Windows x64 and Apple Silicon macOS
 - Launch languages: Korean and English
 - Networking: single-player only
 
-The SP-00 Godot/.NET baseline, SP-01 deterministic simulation/save foundation, and SP-02 validated bilingual data-content pipeline are implemented locally. Physical Windows, hosted cross-platform CI, and release-signing gates still require external verification.
+SP-00/M0 and the SP-01/SP-02 headless simulation foundation are complete with exact-SHA hosted macOS/Windows evidence. M2 and SP-03 are active; immediate work is the interactive 2.5D campaign-map presentation and visual evidence. Physical Windows and production signing remain M4/SP-15 gates under ADR-0001.
 
 ## Quick start
 

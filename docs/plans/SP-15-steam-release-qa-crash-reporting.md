@@ -5,10 +5,10 @@
 | Field | Value |
 |---|---|
 | Status | Planned/blocked |
-| Master-plan version | [0.1.0](../MASTER_PLAN.md) |
-| First required milestone | M0 for packaging groundwork; M4 for public distribution |
+| Master-plan version | [0.2.0](../MASTER_PLAN.md) |
+| First required milestone | M0 for packaging groundwork; M4 for physical Windows and public-distribution validation |
 | Dependencies | [SP-00](SP-00-repository-toolchain-ci-packaging.md), [SP-11](SP-11-ui-ux-accessibility-tutorial.md), [SP-14](SP-14-art-animation-vfx-audio-provenance.md) |
-| Affected ADRs | [ADR index](../adr/README.md) |
+| Affected ADRs | [ADR-0001](../adr/0001-mac-first-development-deferred-physical-windows-verification.md), [ADR index](../adr/README.md) |
 
 ## Goal
 
@@ -26,6 +26,8 @@ Ship reliable Steam demo, Early Access, and version 1.0 builds for Windows x64 a
 - Maintain distinct Steam applications/packages as required for base game and demo, with OS-specific depots and private test branches.
 - Separate development, QA candidate, demo, Early Access, and release branch promotion; never build unique binaries manually after candidate approval.
 - Windows builds target x64; macOS builds target arm64 and are signed/notarized before public promotion.
+- Before M4 closes or a public demo ships, a physical Windows x64 machine must pass native smoke, input/display, packaged-save, and representative-playtesting checks.
+- Hosted Windows CI is required continuously but does not substitute for the physical Windows M4 gate.
 - Integrate Steam through `Game.Platform.Steam` with a no-Steam fallback for local development and offline play.
 - Stage achievements after stable event IDs and cloud saves after stable save/migration behavior; platform failure must not block local saves or core play.
 - Generate build manifests, content checksums, changelogs, symbols, provenance reports, localization coverage, and test evidence per candidate.
@@ -86,6 +88,7 @@ Tagged source + validated content/assets + platform secrets
 
 - Steam online/offline/unavailable initialization and overlay tests.
 - Windows x64 and macOS arm64 clean-install, update, uninstall/reinstall, and offline tests.
+- Physical Windows x64 smoke, input/display, packaged-save, representative-playtesting, and Steam-overlay tests before M4 public-demo promotion.
 - Signing, notarization, depot routing, branch promotion, and rollback tests.
 - Local save, future cloud conflict, migration, corrupt-save, autosave recovery, and legacy-branch tests.
 - Crash generation, symbolication, consent, sanitization, and bug-bundle tests.
@@ -96,6 +99,7 @@ Tagged source + validated content/assets + platform secrets
 
 - [ ] The same tagged source creates reproducible Windows and macOS artifacts with manifests/checksums.
 - [ ] Private Steam branches install and run correct OS/architecture depots.
+- [ ] A physical Windows x64 machine passes the M4 native smoke, input/display, packaged-save, and representative-playtesting gate before the public demo.
 - [ ] macOS public candidates pass signing, notarization, Gatekeeper, and Steam overlay checks.
 - [ ] The game works offline and without Steam platform services except for optional platform features.
 - [ ] Crash/bug bundles are useful, symbolicated where possible, consented, and sanitized.
@@ -107,8 +111,8 @@ Tagged source + validated content/assets + platform secrets
 
 | Risk | Mitigation |
 |---|---|
-| Mac support regresses while developing primarily in editor | Run packaged macOS smoke tests continuously and full notarized tests at each candidate. |
-| Windows issues appear late | Maintain Windows CI immediately and obtain physical test hardware before M4. |
+| macOS packaged behavior diverges from editor behavior | Run native packaged macOS smoke tests continuously and full notarized tests at each public candidate. |
+| Windows issues appear after Mac-first interactive development | Keep exact-SHA Windows CI mandatory and obtain physical test hardware before M4. |
 | Early Access updates break saves | Version schemas/content, test migrations, retain rollback/legacy branches, and publish compatibility notes. |
 | Steam/AI/mature-content disclosures are inaccurate | Generate disclosure inputs from content/provenance reports and manually review every candidate/store update. |
 

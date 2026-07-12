@@ -1,6 +1,6 @@
 # Prompt Package: SP-03 Presentation Correction
 
-Use after M0-A establishes an auditable revision. This package corrects the known gap between SP-03 domain coverage and presentation acceptance.
+Use after M0 and M1 are complete and M2/SP-03 are active. This package corrects the known gap between SP-03 domain coverage and presentation acceptance.
 
 ## Prompt
 

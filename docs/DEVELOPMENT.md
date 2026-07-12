@@ -85,3 +85,11 @@ Before the first commit exists, validation audits cached and nonignored untracke
 [`ci.yml`](../.github/workflows/ci.yml) runs on a macOS 15 arm64 runner and Windows Server 2025 x64 runner. Each job checks out LFS objects, installs the exact .NET SDK and official Godot artifacts, validates documentation, restores locked dependencies, builds/tests, performs a headless import, exports the native development preset, and launches the result as a smoke test. Artifacts are explicitly named unsigned and are not release-ready.
 
 Build-manifest schema 2 records the canonical top-level pack checksum as `contentManifestChecksum` and the aggregate validated registry checksum as `contentRegistryChecksum`. Both must match the same source revision before an artifact can support acceptance evidence.
+
+## Platform development policy
+
+Under [ADR-0001](adr/0001-mac-first-development-deferred-physical-windows-verification.md), Apple Silicon macOS is the primary local development, interactive testing, visual-review, and profiling platform through M3. This does not make the project Mac-only: hosted Windows x64 validation, build, tests, import, export, automated smoke, manifests, and artifacts remain required for accepted revisions.
+
+Hosted Windows smoke proves the automated build path, not physical hardware behavior. Before M4 closes or a public demo ships, record physical Windows x64 smoke, input/display, packaged-save, and representative-playtesting evidence. Keep OS-specific APIs isolated behind presentation or platform assemblies so simulation, application, content, and save behavior remains portable.
+
+Production Developer ID signing/notarization, Authenticode, Steam, clean-install/update, and release-candidate validation are deferred from M0 to SP-15. They remain mandatory before public promotion.

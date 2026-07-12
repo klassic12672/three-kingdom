@@ -4,11 +4,11 @@ This is a routing aid, not a status authority. Always read [the roadmap](../ROAD
 
 | Plan | Dependency gate | Primary agents | First useful package when unblocked |
 |---|---|---|---|
-| SP-00 | None; active M0 | build-release-engineer, verification-reviewer | auditable baseline, then same-SHA CI and platform evidence |
-| SP-01 | SP-00 | simulation-engineer, verification-reviewer | same-revision cross-platform golden checksum and save compatibility |
-| SP-02 | SP-01 | content-engineer, verification-reviewer | same-revision registry/load-order checksum and content diagnostics |
-| SP-03 | SP-01, SP-02 | simulation-engineer, godot-presentation-engineer | correct map labels/mode semantics, then interactive visual evidence |
-| SP-04 | SP-01, SP-02 | project-architect, simulation-engineer, content-engineer | character/family contracts plus a deterministic synthetic household slice |
+| SP-00 | Complete (M0) | build-release-engineer, verification-reviewer | maintain same-SHA hosted CI/export/automated-smoke health |
+| SP-01 | Complete (M1) | simulation-engineer, verification-reviewer | maintain golden checksum and save compatibility |
+| SP-02 | Complete (M1) | content-engineer, verification-reviewer | maintain registry/load-order checksum and zero diagnostics |
+| SP-03 | SP-01 and SP-02 complete; active M2 | simulation-engineer, godot-presentation-engineer | resolve launch stall, then complete interactive presentation evidence |
+| SP-04 | SP-01 and SP-02 complete; ready/not selected | project-architect, simulation-engineer, content-engineer | character/family contracts plus a deterministic synthetic household slice |
 | SP-05 | SP-03, SP-04 | project-architect, simulation-engineer | faction/subfaction membership and authority slice before court/diplomacy breadth |
 | SP-06 | SP-03, SP-04, SP-05 | simulation-engineer, content-engineer | one locality population/store/production loop with conservation tests |
 | SP-07 | SP-03 through SP-06 | simulation-engineer, content-engineer | one persistent army recruitment/supply/battle-round-trip slice |
@@ -19,7 +19,7 @@ This is a routing aid, not a status authority. Always read [the roadmap](../ROAD
 | SP-12 | SP-02, SP-04 through SP-07 | content-engineer, simulation-engineer, godot-presentation-engineer | deterministic custom character plus one viable landless start |
 | SP-13 | SP-02 through SP-12 as applicable | content-engineer, simulation-engineer | validated synthetic scenario before historical roster scaling |
 | SP-14 | SP-08, SP-11, SP-13 | content-engineer, godot-presentation-engineer | approved art/audio budgets and one provenance-complete prototype kit |
-| SP-15 | SP-00 groundwork; SP-11 and SP-14 for public release | build-release-engineer, verification-reviewer | local/no-Steam boundary and reproducible private build manifest |
+| SP-15 | SP-00 groundwork; SP-11 and SP-14 for public release | build-release-engineer, verification-reviewer | M4 physical Windows validation, local/no-Steam boundary, signing, and reproducible private build manifest |
 
 ## Package sizing
 

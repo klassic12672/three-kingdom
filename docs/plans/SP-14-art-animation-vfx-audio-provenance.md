@@ -5,7 +5,7 @@
 | Field | Value |
 |---|---|
 | Status | Planned/blocked |
-| Master-plan version | [0.1.0](../MASTER_PLAN.md) |
+| Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M3 |
 | Dependencies | [SP-08](SP-08-tactical-runtime-command-morale-formations.md), [SP-11](SP-11-ui-ux-accessibility-tutorial.md), [SP-13](SP-13-scenarios-historical-content-pipeline.md) |
 | Affected ADRs | [ADR index](../adr/README.md) |

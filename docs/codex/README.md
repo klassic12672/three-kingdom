@@ -8,7 +8,7 @@ This directory contains reusable prompts and agent routing for executing the app
 - [Subplan catalog](SUBPLAN_CATALOG.md): dependency-aware routing from SP-00 through SP-15.
 - [Package planner](prompts/00-package-planner.md): turn a plan or audit finding into one bounded work package.
 - [M0 auditable baseline](prompts/01-m0-auditable-baseline.md): establish repository provenance and reconcile the current audit.
-- [M0 external evidence](prompts/02-m0-external-evidence.md): collect same-SHA CI, native smoke, and signing evidence.
+- [M0 external evidence](prompts/02-m0-external-evidence.md): collect same-SHA hosted macOS/Windows CI, automated-smoke, manifest, and artifact evidence.
 - [SP-03 presentation correction](prompts/03-sp03-presentation-correction.md): implement and verify the geography presentation gaps.
 - [Generic subplan implementation](prompts/04-subplan-implementation.md): execute the next package from any unblocked SP plan.
 - [Verification and closeout](prompts/05-verification-closeout.md): independently review a package before status changes.
@@ -26,13 +26,13 @@ This directory contains reusable prompts and agent routing for executing the app
 
 ## Current order
 
-The audit makes this the safe order:
+M0 and M1 are complete. The current safe order is:
 
-1. M0 auditable baseline.
-2. M0 unsigned same-SHA hosted evidence.
-3. Remaining M0 native smoke and signing evidence.
-4. SP-01 and SP-02 same-SHA cross-platform evidence.
-5. SP-03 presentation correction and interactive evidence.
-6. Only then select later work according to the active roadmap and dependency gates.
+1. Recheck or resolve the SP-03 Godot `.NET: Initializing module` launch stall.
+2. Complete route-map, map-mode, picking, highlight, localized-label, and overlap review.
+3. Capture interactive macOS visual evidence before checking the remaining presentation criteria.
+4. Otherwise select later M2 work according to the active roadmap and dependency gates.
+5. Before M4/public demo, collect physical Windows evidence.
+6. Before public promotion, complete SP-15 signing/notarization and Steam evidence.
 
 Do not launch the full roadmap as one goal. Each task should produce one reviewable outcome with one clear completion test.
