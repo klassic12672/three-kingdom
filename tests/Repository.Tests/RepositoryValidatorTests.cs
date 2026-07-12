@@ -214,6 +214,20 @@ public sealed class RepositoryValidatorTests
                 && error.Contains(fileName, StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void TemporaryRepository_DisposeClearsReadOnlyGitFiles()
+    {
+        TemporaryRepository repository = TemporaryRepository.Create();
+        string root = repository.Root;
+        string readOnlyPath = Path.Combine(root, ".git", "read-only-test-file");
+        File.WriteAllText(readOnlyPath, "test");
+        File.SetAttributes(readOnlyPath, File.GetAttributes(readOnlyPath) | FileAttributes.ReadOnly);
+
+        repository.Dispose();
+
+        Assert.False(Directory.Exists(root));
+    }
+
     private static void WriteLfsPointer(string root, string fileName, string objectId, long size)
     {
         string pointerPath = Path.Combine(root, "game", "assets", fileName);
@@ -316,6 +330,23 @@ public sealed class RepositoryValidatorTests
                 $"git {string.Join(' ', arguments)} failed ({process.ExitCode}).\nstdout: {output}\nstderr: {error}");
         }
 
-        public void Dispose() => Directory.Delete(Root, recursive: true);
+        public void Dispose()
+        {
+            if (!Directory.Exists(Root))
+            {
+                return;
+            }
+
+            File.SetAttributes(Root, FileAttributes.Normal);
+            foreach (string path in Directory.EnumerateFileSystemEntries(
+                Root,
+                "*",
+                SearchOption.AllDirectories))
+            {
+                File.SetAttributes(path, FileAttributes.Normal);
+            }
+
+            Directory.Delete(Root, recursive: true);
+        }
     }
 }
