@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Game.Application</RootNamespace>
+    <AssemblyName>Game.Application</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Simulation.Core/Simulation.Core.csproj" />
+  </ItemGroup>
+</Project>

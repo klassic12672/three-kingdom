@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "packId": "core:base",
+  "version": "0.1.0",
+  "minimumGameVersion": "0.1.0",
+  "contentSchemaVersion": 1,
+  "isBuiltIn": true,
+  "releaseEligible": true,
+  "dependencies": [],
+  "loadPriority": 0,
+  "files": [
+    {
+      "path": "authored/synthetic-records.json",
+      "kind": "records",
+      "sha256": "a413aeae6fcb9d7193011a7f1ab22a6f3410bca190391695c8d5486a3bc42fe1"
+    },
+    {
+      "path": "authored/geography-191.json",
+      "kind": "records",
+      "sha256": "accf29183abe232fe430ab01dcc2567eb9a45739b61f57ea471fffa51cd0f7db"
+    },
+    {
+      "path": "localization/en-US.csv",
+      "kind": "localization",
+      "sha256": "26a26fcc26ac7e89b7660aeb4b5c3b6c776019c22cb60901af14751b8b544bad"
+    },
+    {
+      "path": "localization/ko-KR.csv",
+      "kind": "localization",
+      "sha256": "569b4e48e2e20f8ef89e52827ca0e1a98e75f067fbaf1c29c5e2259c4cc00d73"
+    },
+    {
+      "path": "localization/glossary.csv",
+      "kind": "glossary",
+      "sha256": "93094251e523fc548f5bcad2ab365e49c1de9a3104fcf73277da831644521970"
+    },
+    {
+      "path": "research/source-references.json",
+      "kind": "sources",
+      "sha256": "4aee0074d1eaa2e3d2d4fd14db0cd5566ef9cbbd58ebc6491974da48252292a5"
+    },
+    {
+      "path": "provenance/asset-provenance.json",
+      "kind": "provenance",
+      "sha256": "1a368c3bbd9bed7650413cbc3cd81f8004d5de2309d0826cb8aeb2c24ce95d94"
+    }
+  ],
+  "authors": [
+    "Three Kingdoms project"
+  ],
+  "provenance": {
+    "license": "Project-owned development fixture",
+    "rightsHolder": "Three Kingdoms project",
+    "sourceRegister": "research/source-references.json",
+    "assetRegister": "provenance/asset-provenance.json"
+  },
+  "checksum": "6c527133073ffece29d4d75f7372cc783f2855f6354ed5be9eb1a6c971936449"
+}

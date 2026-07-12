@@ -1,0 +1,15 @@
+{
+  "dotnet.defaultSolution": "ThreeKingdom.slnx",
+  "files.exclude": {
+    "**/.godot": true,
+    "**/bin": true,
+    "**/obj": true,
+    "artifacts": true
+  },
+  "files.watcherExclude": {
+    "**/.godot/**": true,
+    "**/bin/**": true,
+    "**/obj/**": true,
+    "artifacts/**": true
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "assets": [
+    {
+      "schemaVersion": 1,
+      "assetId": "provenance:synthetic/banner",
+      "contentIds": [
+        "asset:synthetic/banner"
+      ],
+      "origin": "human",
+      "rightsStatus": "Project-owned synthetic fixture",
+      "modelServiceVersion": null,
+      "generationDate": null,
+      "inputSources": null,
+      "promptBrief": null,
+      "humanEdits": "Created as a metadata-only development fixture.",
+      "reviewer": "Project owner",
+      "commercialRightsEvidence": "Project-owned fixture declaration",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "humanApproved": true,
+      "releaseEligible": true,
+      "classification": "general"
+    }
+  ]
+}

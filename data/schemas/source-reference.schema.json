@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://three-kingdom.local/schemas/source-reference.schema.json",
+  "title": "SourceReferenceDocument",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sources"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["schemaVersion", "sourceId", "claim", "location", "confidence", "notes", "citation", "sourceTier"],
+        "properties": {
+          "schemaVersion": { "const": 1 },
+          "sourceId": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]*:[a-z][a-z0-9_./-]*$" },
+          "claim": { "type": "string", "minLength": 1 },
+          "location": { "type": "string", "minLength": 1 },
+          "confidence": { "enum": ["high", "medium", "low"] },
+          "notes": { "type": "string" },
+          "citation": { "type": "string", "minLength": 1 },
+          "sourceTier": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://three-kingdom.local/schemas/localization-entry.schema.json",
+  "title": "Normalized LocalizationEntry",
+  "description": "Authoring uses the equivalent CSV columns documented in data/README.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "key", "locale", "text", "context", "variables", "reviewState", "sourceContentIds", "releaseMarked"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "key": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]*:[a-z][a-z0-9_./-]*$" },
+    "locale": { "enum": ["ko-KR", "en-US"] },
+    "text": { "type": "string", "minLength": 1 },
+    "context": { "type": "string", "minLength": 1 },
+    "variables": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" } },
+    "reviewState": { "enum": ["draft", "reviewed", "approved"] },
+    "sourceContentIds": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
+    "releaseMarked": { "type": "boolean" }
+  }
+}

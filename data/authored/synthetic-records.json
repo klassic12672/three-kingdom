@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "records": [
+    {
+      "schemaVersion": 1,
+      "id": "region:synthetic/luoyang",
+      "recordType": "region",
+      "contentTag": "historical",
+      "classification": "general",
+      "sourceIds": [
+        "source:master_plan"
+      ],
+      "localizationKeys": [
+        "loc:region/luoyang/name"
+      ],
+      "releaseMarked": true,
+      "data": {
+        "population": 100000,
+        "references": []
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "character:synthetic/test_officer",
+      "recordType": "character",
+      "contentTag": "fictional",
+      "classification": "general",
+      "sourceIds": [],
+      "localizationKeys": [
+        "loc:character/test_officer/name"
+      ],
+      "releaseMarked": true,
+      "data": {
+        "birthYear": 170,
+        "references": [
+          "region:synthetic/luoyang"
+        ]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "claim:synthetic/luoyang_population",
+      "recordType": "research_claim",
+      "contentTag": "disputed",
+      "classification": "general",
+      "sourceIds": [
+        "source:master_plan",
+        "source:synthetic_counterclaim"
+      ],
+      "localizationKeys": [
+        "loc:claim/luoyang_population/summary"
+      ],
+      "releaseMarked": false,
+      "data": {
+        "references": [
+          "region:synthetic/luoyang"
+        ]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "asset:synthetic/banner",
+      "recordType": "asset",
+      "contentTag": "fictional",
+      "classification": "general",
+      "sourceIds": [],
+      "localizationKeys": [
+        "loc:asset/banner/description"
+      ],
+      "releaseMarked": true,
+      "data": {
+        "provenanceId": "provenance:synthetic/banner",
+        "references": []
+      }
+    }
+  ]
+}

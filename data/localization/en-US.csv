@@ -1,0 +1,36 @@
+key,locale,text,context,variables,review_state,source_content_ids,release_marked
+loc:asset/banner/description,en-US,Synthetic project banner,Asset accessibility description,,approved,asset:synthetic/banner,true
+loc:character/test_officer/name,en-US,Test Officer,Synthetic character display name,,approved,character:synthetic/test_officer,true
+loc:claim/luoyang_population/summary,en-US,Disputed Luoyang population,Development research claim,,reviewed,claim:synthetic/luoyang_population,false
+loc:region/luoyang/name,en-US,Luoyang,Region display name,,approved,region:synthetic/luoyang,true
+loc:admin/jun,en-US,Commandery,Historical administrative label,,approved,district:year191/henan|district:year191/yingchuan,true
+loc:admin/xian,en-US,County,Historical administrative label,,approved,locality:year191/luoyang|locality:year191/mengjin|locality:year191/hulao|locality:year191/yingyin|locality:year191/chenliu|locality:year191/songshan,true
+loc:admin/zhou,en-US,Province,Historical administrative label,,approved,region:year191/central_plains,true
+loc:district/henan/name,en-US,Henan,District display name,,approved,district:year191/henan,true
+loc:district/yingchuan/name,en-US,Yingchuan,District display name,,approved,district:year191/yingchuan,true
+loc:locality/chenliu/name,en-US,Chenliu,Locality display name,,approved,locality:year191/chenliu,true
+loc:locality/hulao/name,en-US,Hulao,Locality display name,,approved,locality:year191/hulao,true
+loc:locality/luoyang/name,en-US,Luoyang,Locality display name,,approved,locality:year191/luoyang,true
+loc:locality/mengjin/name,en-US,Mengjin,Locality display name,,approved,locality:year191/mengjin,true
+loc:locality/songshan/name,en-US,Songshan,Locality display name,,approved,locality:year191/songshan,true
+loc:locality/yingyin/name,en-US,Yingyin,Locality display name,,approved,locality:year191/yingyin,true
+loc:region/central_plains/name,en-US,Central Plains,Region display name,,approved,region:year191/central_plains,true
+loc:route/ferry_hulao/name,en-US,Ferry–Hulao Frontier Trail,Route display name,,approved,route:year191/ferry_hulao,true
+loc:route/hulao_xingyang/name,en-US,Hulao Mountain Path,Route display name,,approved,route:year191/hulao_xingyang,true
+loc:route/hulao_yingyin/name,en-US,Hulao–Yingyin Frontier Trail,Route display name,,approved,route:year191/hulao_yingyin,true
+loc:route/luoyang_hulao/name,en-US,Luoyang–Hulao Road,Route display name,,approved,route:year191/luoyang_hulao,true
+loc:route/luoyang_mengjin/name,en-US,Luoyang–Mengjin Road,Route display name,,approved,route:year191/luoyang_mengjin,true
+loc:route/mengjin_ferry/name,en-US,Mengjin River Crossing,Route display name,,approved,route:year191/mengjin_ferry,true
+loc:route/songshan_luoyang/name,en-US,Songshan Seasonal Passage,Route display name,,approved,route:year191/songshan_luoyang,true
+loc:route/xingyang_yingyin/name,en-US,Xingyang–Yingyin Road,Route display name,,approved,route:year191/xingyang_yingyin,true
+loc:route/yingyin_chenliu/name,en-US,Yingyin–Chenliu Road,Route display name,,approved,route:year191/yingyin_chenliu,true
+loc:route/yingyin_songshan/name,en-US,Yingyin Mountain Path,Route display name,,approved,route:year191/yingyin_songshan,true
+loc:scenario/central_plains/name,en-US,191 Central Plains,Scenario display name,,approved,scenario:year191/central_plains,true
+loc:stop/chenliu_depot/name,en-US,Chenliu Depot,Route-stop display name,,approved,stop:year191/chenliu_depot,true
+loc:stop/hulao_gate/name,en-US,Hulao Gate,Route-stop display name,,approved,stop:year191/hulao_gate,true
+loc:stop/luoyang_city/name,en-US,Luoyang City,Route-stop display name,,approved,stop:year191/luoyang_city,true
+loc:stop/mengjin_port/name,en-US,Mengjin Port,Route-stop display name,,approved,stop:year191/mengjin_port,true
+loc:stop/songshan_pass/name,en-US,Songshan Pass,Route-stop display name,,approved,stop:year191/songshan_pass,true
+loc:stop/xingyang_fort/name,en-US,Xingyang Fort,Route-stop display name,,approved,stop:year191/xingyang_fort,true
+loc:stop/yellow_river_ferry/name,en-US,Yellow River Ferry,Route-stop display name,,approved,stop:year191/yellow_river_ferry,true
+loc:stop/yingyin_city/name,en-US,Yingyin City,Route-stop display name,,approved,stop:year191/yingyin_city,true

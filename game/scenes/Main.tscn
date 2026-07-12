@@ -1,0 +1,55 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://Main.cs" id="1_main"]
+[ext_resource type="Script" path="res://CampaignMapView.cs" id="2_map"]
+
+[node name="Main" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_main")
+
+[node name="CampaignMap" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = 52.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 1
+script = ExtResource("2_map")
+
+[node name="TopBar" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 20.0
+offset_top = 10.0
+offset_right = -20.0
+offset_bottom = 44.0
+grow_horizontal = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="TopBar"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.88, 0.79, 0.56, 1)
+theme_override_font_sizes/font_size = 20
+text = "THREE KINGDOMS · CAMPAIGN MAP"
+
+[node name="Modes" type="OptionButton" parent="TopBar"]
+layout_mode = 2
+custom_minimum_size = Vector2(190, 0)
+
+[node name="Locales" type="OptionButton" parent="TopBar"]
+layout_mode = 2
+custom_minimum_size = Vector2(110, 0)
+
+[node name="Status" type="Label" parent="TopBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Loading validated geography…"
+horizontal_alignment = 2

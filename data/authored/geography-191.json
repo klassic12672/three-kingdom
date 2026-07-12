@@ -1,0 +1,604 @@
+{
+  "schemaVersion": 1,
+  "records": [
+    {
+      "schemaVersion": 1,
+      "id": "region:year191/central_plains",
+      "recordType": "region",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:region/central_plains/name", "loc:admin/zhou"],
+      "releaseMarked": true,
+      "data": {
+        "nameKey": "loc:region/central_plains/name",
+        "labelKey": "loc:admin/zhou",
+        "population": 3000000,
+        "cultureId": "culture:han",
+        "anchor": { "x": 520, "y": 300, "elevation": 20 },
+        "references": []
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "district:year191/henan",
+      "recordType": "district",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:district/henan/name", "loc:admin/jun"],
+      "releaseMarked": true,
+      "data": {
+        "regionId": "region:year191/central_plains",
+        "nameKey": "loc:district/henan/name",
+        "labelKey": "loc:admin/jun",
+        "population": 1500000,
+        "cultureId": "culture:han",
+        "anchor": { "x": 390, "y": 260, "elevation": 25 },
+        "references": ["region:year191/central_plains"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "district:year191/yingchuan",
+      "recordType": "district",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:district/yingchuan/name", "loc:admin/jun"],
+      "releaseMarked": true,
+      "data": {
+        "regionId": "region:year191/central_plains",
+        "nameKey": "loc:district/yingchuan/name",
+        "labelKey": "loc:admin/jun",
+        "population": 1200000,
+        "cultureId": "culture:han",
+        "anchor": { "x": 760, "y": 420, "elevation": 18 },
+        "references": ["region:year191/central_plains"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "locality:year191/luoyang",
+      "recordType": "locality",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:locality/luoyang/name", "loc:admin/xian"],
+      "releaseMarked": true,
+      "data": {
+        "districtId": "district:year191/henan",
+        "nameKey": "loc:locality/luoyang/name",
+        "labelKey": "loc:admin/xian",
+        "population": 420000,
+        "cultureId": "culture:han",
+        "terrain": "urban",
+        "anchor": { "x": 300, "y": 300, "elevation": 30 },
+        "references": ["district:year191/henan"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "locality:year191/mengjin",
+      "recordType": "locality",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:locality/mengjin/name", "loc:admin/xian"],
+      "releaseMarked": true,
+      "data": {
+        "districtId": "district:year191/henan",
+        "nameKey": "loc:locality/mengjin/name",
+        "labelKey": "loc:admin/xian",
+        "population": 140000,
+        "cultureId": "culture:han",
+        "terrain": "river",
+        "anchor": { "x": 355, "y": 145, "elevation": 8 },
+        "references": ["district:year191/henan"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "locality:year191/hulao",
+      "recordType": "locality",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:locality/hulao/name", "loc:admin/xian"],
+      "releaseMarked": true,
+      "data": {
+        "districtId": "district:year191/henan",
+        "nameKey": "loc:locality/hulao/name",
+        "labelKey": "loc:admin/xian",
+        "population": 90000,
+        "cultureId": "culture:han",
+        "terrain": "hills",
+        "anchor": { "x": 535, "y": 285, "elevation": 85 },
+        "references": ["district:year191/henan"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "locality:year191/yingyin",
+      "recordType": "locality",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:locality/yingyin/name", "loc:admin/xian"],
+      "releaseMarked": true,
+      "data": {
+        "districtId": "district:year191/yingchuan",
+        "nameKey": "loc:locality/yingyin/name",
+        "labelKey": "loc:admin/xian",
+        "population": 260000,
+        "cultureId": "culture:han",
+        "terrain": "plains",
+        "anchor": { "x": 760, "y": 430, "elevation": 18 },
+        "references": ["district:year191/yingchuan"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "locality:year191/chenliu",
+      "recordType": "locality",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:locality/chenliu/name", "loc:admin/xian"],
+      "releaseMarked": true,
+      "data": {
+        "districtId": "district:year191/yingchuan",
+        "nameKey": "loc:locality/chenliu/name",
+        "labelKey": "loc:admin/xian",
+        "population": 310000,
+        "cultureId": "culture:han",
+        "terrain": "plains",
+        "anchor": { "x": 970, "y": 320, "elevation": 12 },
+        "references": ["district:year191/yingchuan"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "locality:year191/songshan",
+      "recordType": "locality",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:locality/songshan/name", "loc:admin/xian"],
+      "releaseMarked": true,
+      "data": {
+        "districtId": "district:year191/yingchuan",
+        "nameKey": "loc:locality/songshan/name",
+        "labelKey": "loc:admin/xian",
+        "population": 60000,
+        "cultureId": "culture:han",
+        "terrain": "mountains",
+        "anchor": { "x": 640, "y": 570, "elevation": 240 },
+        "references": ["district:year191/yingchuan"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "stop:year191/luoyang_city",
+      "recordType": "route_stop",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:stop/luoyang_city/name"],
+      "releaseMarked": true,
+      "data": {
+        "localityId": "locality:year191/luoyang",
+        "nameKey": "loc:stop/luoyang_city/name",
+        "stopType": "settlement",
+        "terrain": "urban",
+        "position": { "x": 300, "y": 300, "elevation": 30 },
+        "battleFronts": ["settlement", "gate", "field"],
+        "references": ["locality:year191/luoyang"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "stop:year191/mengjin_port",
+      "recordType": "route_stop",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:stop/mengjin_port/name"],
+      "releaseMarked": true,
+      "data": {
+        "localityId": "locality:year191/mengjin",
+        "nameKey": "loc:stop/mengjin_port/name",
+        "stopType": "port",
+        "terrain": "river",
+        "position": { "x": 350, "y": 140, "elevation": 8 },
+        "battleFronts": ["port", "riverCrossing", "shoreline"],
+        "references": ["locality:year191/mengjin"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "stop:year191/yellow_river_ferry",
+      "recordType": "route_stop",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:stop/yellow_river_ferry/name"],
+      "releaseMarked": true,
+      "data": {
+        "localityId": "locality:year191/mengjin",
+        "nameKey": "loc:stop/yellow_river_ferry/name",
+        "stopType": "ferry",
+        "terrain": "river",
+        "position": { "x": 490, "y": 115, "elevation": 5 },
+        "battleFronts": ["riverCrossing", "field"],
+        "references": ["locality:year191/mengjin"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "stop:year191/hulao_gate",
+      "recordType": "route_stop",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:stop/hulao_gate/name"],
+      "releaseMarked": true,
+      "data": {
+        "localityId": "locality:year191/hulao",
+        "nameKey": "loc:stop/hulao_gate/name",
+        "stopType": "gate",
+        "terrain": "hills",
+        "position": { "x": 540, "y": 290, "elevation": 90 },
+        "battleFronts": ["gate", "mountainPass", "fortification"],
+        "references": ["locality:year191/hulao"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "stop:year191/xingyang_fort",
+      "recordType": "route_stop",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:stop/xingyang_fort/name"],
+      "releaseMarked": true,
+      "data": {
+        "localityId": "locality:year191/hulao",
+        "nameKey": "loc:stop/xingyang_fort/name",
+        "stopType": "fort",
+        "terrain": "hills",
+        "position": { "x": 650, "y": 335, "elevation": 55 },
+        "battleFronts": ["fortification", "field"],
+        "references": ["locality:year191/hulao"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "stop:year191/yingyin_city",
+      "recordType": "route_stop",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:stop/yingyin_city/name"],
+      "releaseMarked": true,
+      "data": {
+        "localityId": "locality:year191/yingyin",
+        "nameKey": "loc:stop/yingyin_city/name",
+        "stopType": "settlement",
+        "terrain": "plains",
+        "position": { "x": 760, "y": 430, "elevation": 18 },
+        "battleFronts": ["settlement", "field"],
+        "references": ["locality:year191/yingyin"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "stop:year191/chenliu_depot",
+      "recordType": "route_stop",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:stop/chenliu_depot/name"],
+      "releaseMarked": true,
+      "data": {
+        "localityId": "locality:year191/chenliu",
+        "nameKey": "loc:stop/chenliu_depot/name",
+        "stopType": "depot",
+        "terrain": "plains",
+        "position": { "x": 970, "y": 320, "elevation": 12 },
+        "battleFronts": ["field", "fortification"],
+        "references": ["locality:year191/chenliu"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "stop:year191/songshan_pass",
+      "recordType": "route_stop",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:stop/songshan_pass/name"],
+      "releaseMarked": true,
+      "data": {
+        "localityId": "locality:year191/songshan",
+        "nameKey": "loc:stop/songshan_pass/name",
+        "stopType": "pass",
+        "terrain": "mountains",
+        "position": { "x": 640, "y": 570, "elevation": 240 },
+        "battleFronts": ["mountainPass", "field"],
+        "references": ["locality:year191/songshan"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "route:year191/luoyang_mengjin",
+      "recordType": "route",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:route/luoyang_mengjin/name"],
+      "releaseMarked": true,
+      "data": {
+        "nameKey": "loc:route/luoyang_mengjin/name",
+        "fromStopId": "stop:year191/luoyang_city",
+        "toStopId": "stop:year191/mengjin_port",
+        "routeType": "road",
+        "capacity": 9000,
+        "traversalCost": 1800,
+        "permittedModes": ["foot", "horse", "wagon"],
+        "supplyThroughput": 6500,
+        "modifiers": [{ "season": null, "weather": "rain", "traversalPermille": 1200, "capacityPermille": 800, "closed": false }],
+        "references": ["stop:year191/luoyang_city", "stop:year191/mengjin_port"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "route:year191/mengjin_ferry",
+      "recordType": "route",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:route/mengjin_ferry/name"],
+      "releaseMarked": true,
+      "data": {
+        "nameKey": "loc:route/mengjin_ferry/name",
+        "fromStopId": "stop:year191/mengjin_port",
+        "toStopId": "stop:year191/yellow_river_ferry",
+        "routeType": "river",
+        "capacity": 5000,
+        "traversalCost": 1300,
+        "permittedModes": ["riverBoat"],
+        "supplyThroughput": 4800,
+        "modifiers": [{ "season": "winter", "weather": "snow", "traversalPermille": 1500, "capacityPermille": 500, "closed": false }],
+        "references": ["stop:year191/mengjin_port", "stop:year191/yellow_river_ferry"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "route:year191/ferry_hulao",
+      "recordType": "route",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:route/ferry_hulao/name"],
+      "releaseMarked": true,
+      "data": {
+        "nameKey": "loc:route/ferry_hulao/name",
+        "fromStopId": "stop:year191/yellow_river_ferry",
+        "toStopId": "stop:year191/hulao_gate",
+        "routeType": "frontierTrail",
+        "capacity": 4200,
+        "traversalCost": 2300,
+        "permittedModes": ["foot", "horse"],
+        "supplyThroughput": 2600,
+        "modifiers": [{ "season": null, "weather": "storm", "traversalPermille": 1600, "capacityPermille": 500, "closed": false }],
+        "references": ["stop:year191/yellow_river_ferry", "stop:year191/hulao_gate"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "route:year191/luoyang_hulao",
+      "recordType": "route",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:route/luoyang_hulao/name"],
+      "releaseMarked": true,
+      "data": {
+        "nameKey": "loc:route/luoyang_hulao/name",
+        "fromStopId": "stop:year191/luoyang_city",
+        "toStopId": "stop:year191/hulao_gate",
+        "routeType": "road",
+        "capacity": 12000,
+        "traversalCost": 2600,
+        "permittedModes": ["foot", "horse", "wagon"],
+        "supplyThroughput": 8000,
+        "modifiers": [{ "season": null, "weather": "rain", "traversalPermille": 1250, "capacityPermille": 750, "closed": false }],
+        "references": ["stop:year191/luoyang_city", "stop:year191/hulao_gate"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "route:year191/hulao_xingyang",
+      "recordType": "route",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:route/hulao_xingyang/name"],
+      "releaseMarked": true,
+      "data": {
+        "nameKey": "loc:route/hulao_xingyang/name",
+        "fromStopId": "stop:year191/hulao_gate",
+        "toStopId": "stop:year191/xingyang_fort",
+        "routeType": "mountainPath",
+        "capacity": 6500,
+        "traversalCost": 1700,
+        "permittedModes": ["foot", "horse"],
+        "supplyThroughput": 3900,
+        "modifiers": [{ "season": "winter", "weather": "snow", "traversalPermille": 1700, "capacityPermille": 400, "closed": false }],
+        "references": ["stop:year191/hulao_gate", "stop:year191/xingyang_fort"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "route:year191/xingyang_yingyin",
+      "recordType": "route",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:route/xingyang_yingyin/name"],
+      "releaseMarked": true,
+      "data": {
+        "nameKey": "loc:route/xingyang_yingyin/name",
+        "fromStopId": "stop:year191/xingyang_fort",
+        "toStopId": "stop:year191/yingyin_city",
+        "routeType": "road",
+        "capacity": 10000,
+        "traversalCost": 2200,
+        "permittedModes": ["foot", "horse", "wagon"],
+        "supplyThroughput": 7200,
+        "modifiers": [],
+        "references": ["stop:year191/xingyang_fort", "stop:year191/yingyin_city"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "route:year191/yingyin_chenliu",
+      "recordType": "route",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:route/yingyin_chenliu/name"],
+      "releaseMarked": true,
+      "data": {
+        "nameKey": "loc:route/yingyin_chenliu/name",
+        "fromStopId": "stop:year191/yingyin_city",
+        "toStopId": "stop:year191/chenliu_depot",
+        "routeType": "road",
+        "capacity": 11000,
+        "traversalCost": 2100,
+        "permittedModes": ["foot", "horse", "wagon"],
+        "supplyThroughput": 9000,
+        "modifiers": [],
+        "references": ["stop:year191/yingyin_city", "stop:year191/chenliu_depot"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "route:year191/yingyin_songshan",
+      "recordType": "route",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:route/yingyin_songshan/name"],
+      "releaseMarked": true,
+      "data": {
+        "nameKey": "loc:route/yingyin_songshan/name",
+        "fromStopId": "stop:year191/yingyin_city",
+        "toStopId": "stop:year191/songshan_pass",
+        "routeType": "mountainPath",
+        "capacity": 3600,
+        "traversalCost": 2800,
+        "permittedModes": ["foot", "horse"],
+        "supplyThroughput": 1900,
+        "modifiers": [{ "season": "winter", "weather": "snow", "traversalPermille": 1800, "capacityPermille": 350, "closed": false }],
+        "references": ["stop:year191/yingyin_city", "stop:year191/songshan_pass"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "route:year191/songshan_luoyang",
+      "recordType": "route",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:route/songshan_luoyang/name"],
+      "releaseMarked": true,
+      "data": {
+        "nameKey": "loc:route/songshan_luoyang/name",
+        "fromStopId": "stop:year191/songshan_pass",
+        "toStopId": "stop:year191/luoyang_city",
+        "routeType": "seasonalPassage",
+        "capacity": 2400,
+        "traversalCost": 3300,
+        "permittedModes": ["foot", "horse"],
+        "supplyThroughput": 1200,
+        "modifiers": [{ "season": "winter", "weather": null, "traversalPermille": 2000, "capacityPermille": 0, "closed": true }],
+        "references": ["stop:year191/songshan_pass", "stop:year191/luoyang_city"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "route:year191/hulao_yingyin",
+      "recordType": "route",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:route/hulao_yingyin/name"],
+      "releaseMarked": true,
+      "data": {
+        "nameKey": "loc:route/hulao_yingyin/name",
+        "fromStopId": "stop:year191/hulao_gate",
+        "toStopId": "stop:year191/yingyin_city",
+        "routeType": "frontierTrail",
+        "capacity": 3000,
+        "traversalCost": 3100,
+        "permittedModes": ["foot", "horse"],
+        "supplyThroughput": 1500,
+        "modifiers": [{ "season": null, "weather": "rain", "traversalPermille": 1500, "capacityPermille": 550, "closed": false }],
+        "references": ["stop:year191/hulao_gate", "stop:year191/yingyin_city"]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "id": "scenario:year191/central_plains",
+      "recordType": "geography_scenario",
+      "contentTag": "inferred",
+      "classification": "general",
+      "sourceIds": ["source:master_plan"],
+      "localizationKeys": ["loc:scenario/central_plains/name"],
+      "releaseMarked": true,
+      "data": {
+        "regionIds": ["region:year191/central_plains"],
+        "districtIds": ["district:year191/henan", "district:year191/yingchuan"],
+        "localityIds": ["locality:year191/luoyang", "locality:year191/mengjin", "locality:year191/hulao", "locality:year191/yingyin", "locality:year191/chenliu", "locality:year191/songshan"],
+        "stopIds": ["stop:year191/luoyang_city", "stop:year191/mengjin_port", "stop:year191/yellow_river_ferry", "stop:year191/hulao_gate", "stop:year191/xingyang_fort", "stop:year191/yingyin_city", "stop:year191/chenliu_depot", "stop:year191/songshan_pass"],
+        "routeIds": ["route:year191/luoyang_mengjin", "route:year191/mengjin_ferry", "route:year191/ferry_hulao", "route:year191/luoyang_hulao", "route:year191/hulao_xingyang", "route:year191/xingyang_yingyin", "route:year191/yingyin_chenliu", "route:year191/yingyin_songshan", "route:year191/songshan_luoyang", "route:year191/hulao_yingyin"],
+        "season": "autumn",
+        "weather": "clear",
+        "locations": [
+          { "stopId": "stop:year191/luoyang_city", "controllerId": "faction:han_court", "legalAppointeeId": "actor:wang_yun", "localAcceptance": 620, "claims": [{ "claimantId": "faction:han_court", "strength": "strong", "basis": "imperial capital" }], "occupied": true, "intelligence": [{ "observerId": "faction:coalition", "level": "observed", "lastObservedTurn": 0 }], "stores": 18000, "dailyProduction": 900 },
+          { "stopId": "stop:year191/mengjin_port", "controllerId": "faction:han_court", "legalAppointeeId": "actor:wang_yun", "localAcceptance": 540, "claims": [], "occupied": false, "intelligence": [{ "observerId": "faction:coalition", "level": "current", "lastObservedTurn": 0 }], "stores": 9000, "dailyProduction": 500 },
+          { "stopId": "stop:year191/yellow_river_ferry", "controllerId": null, "legalAppointeeId": "actor:wang_yun", "localAcceptance": 480, "claims": [{ "claimantId": "faction:coalition", "strength": "pressed", "basis": "military passage" }], "occupied": false, "intelligence": [{ "observerId": "faction:coalition", "level": "current", "lastObservedTurn": 0 }], "stores": 3500, "dailyProduction": 100 },
+          { "stopId": "stop:year191/hulao_gate", "controllerId": "faction:han_court", "legalAppointeeId": "actor:hu_zhen", "localAcceptance": 390, "claims": [{ "claimantId": "faction:coalition", "strength": "pressed", "basis": "campaign objective" }], "occupied": true, "intelligence": [{ "observerId": "faction:coalition", "level": "observed", "lastObservedTurn": 0 }], "stores": 12000, "dailyProduction": 300 },
+          { "stopId": "stop:year191/xingyang_fort", "controllerId": "faction:coalition", "legalAppointeeId": "actor:zhang_miao", "localAcceptance": 570, "claims": [{ "claimantId": "faction:han_court", "strength": "weak", "basis": "court appointment" }], "occupied": true, "intelligence": [{ "observerId": "faction:coalition", "level": "current", "lastObservedTurn": 0 }], "stores": 7000, "dailyProduction": 250 },
+          { "stopId": "stop:year191/yingyin_city", "controllerId": "faction:coalition", "legalAppointeeId": "actor:kong_zhou", "localAcceptance": 680, "claims": [], "occupied": false, "intelligence": [{ "observerId": "faction:coalition", "level": "current", "lastObservedTurn": 0 }], "stores": 15000, "dailyProduction": 850 },
+          { "stopId": "stop:year191/chenliu_depot", "controllerId": "faction:coalition", "legalAppointeeId": "actor:zhang_miao", "localAcceptance": 720, "claims": [], "occupied": false, "intelligence": [{ "observerId": "faction:coalition", "level": "current", "lastObservedTurn": 0 }], "stores": 28000, "dailyProduction": 1400 },
+          { "stopId": "stop:year191/songshan_pass", "controllerId": null, "legalAppointeeId": null, "localAcceptance": 450, "claims": [], "occupied": false, "intelligence": [{ "observerId": "faction:coalition", "level": "rumored", "lastObservedTurn": 0 }], "stores": 1200, "dailyProduction": 80 }
+        ],
+        "routeStates": [
+          { "routeId": "route:year191/luoyang_mengjin", "controllerId": "faction:han_court", "controlState": "controlled", "permittedFactionIds": [], "disruptionPermille": 50 },
+          { "routeId": "route:year191/mengjin_ferry", "controllerId": "faction:han_court", "controlState": "controlled", "permittedFactionIds": ["faction:coalition"], "disruptionPermille": 100 },
+          { "routeId": "route:year191/ferry_hulao", "controllerId": null, "controlState": "contested", "permittedFactionIds": [], "disruptionPermille": 300 },
+          { "routeId": "route:year191/luoyang_hulao", "controllerId": "faction:han_court", "controlState": "controlled", "permittedFactionIds": [], "disruptionPermille": 120 },
+          { "routeId": "route:year191/hulao_xingyang", "controllerId": null, "controlState": "contested", "permittedFactionIds": [], "disruptionPermille": 220 },
+          { "routeId": "route:year191/xingyang_yingyin", "controllerId": "faction:coalition", "controlState": "controlled", "permittedFactionIds": [], "disruptionPermille": 40 },
+          { "routeId": "route:year191/yingyin_chenliu", "controllerId": "faction:coalition", "controlState": "controlled", "permittedFactionIds": [], "disruptionPermille": 0 },
+          { "routeId": "route:year191/yingyin_songshan", "controllerId": null, "controlState": "open", "permittedFactionIds": [], "disruptionPermille": 180 },
+          { "routeId": "route:year191/songshan_luoyang", "controllerId": null, "controlState": "open", "permittedFactionIds": [], "disruptionPermille": 250 },
+          { "routeId": "route:year191/hulao_yingyin", "controllerId": null, "controlState": "contested", "permittedFactionIds": [], "disruptionPermille": 350 }
+        ],
+        "armies": [
+          { "armyId": "army:luoyang_guard", "factionId": "faction:han_court", "currentStopId": "stop:year191/luoyang_city", "activeRouteId": null, "routeFromStopId": null, "routeToStopId": null, "routeProgress": 0, "plannedRouteIds": [], "destinationStopId": null, "transportMode": "foot", "stance": "normal", "fallback": "wait", "scouting": 45, "strength": 4800, "supply": 9000, "dailySupplyDemand": 600 },
+          { "armyId": "army:coalition_vanguard", "factionId": "faction:coalition", "currentStopId": "stop:year191/xingyang_fort", "activeRouteId": null, "routeFromStopId": null, "routeToStopId": null, "routeProgress": 0, "plannedRouteIds": [], "destinationStopId": null, "transportMode": "foot", "stance": "cautious", "fallback": "reroute", "scouting": 65, "strength": 4200, "supply": 7800, "dailySupplyDemand": 520 }
+        ],
+        "references": [
+          "region:year191/central_plains", "district:year191/henan", "district:year191/yingchuan",
+          "locality:year191/luoyang", "locality:year191/mengjin", "locality:year191/hulao", "locality:year191/yingyin", "locality:year191/chenliu", "locality:year191/songshan",
+          "stop:year191/luoyang_city", "stop:year191/mengjin_port", "stop:year191/yellow_river_ferry", "stop:year191/hulao_gate", "stop:year191/xingyang_fort", "stop:year191/yingyin_city", "stop:year191/chenliu_depot", "stop:year191/songshan_pass",
+          "route:year191/luoyang_mengjin", "route:year191/mengjin_ferry", "route:year191/ferry_hulao", "route:year191/luoyang_hulao", "route:year191/hulao_xingyang", "route:year191/xingyang_yingyin", "route:year191/yingyin_chenliu", "route:year191/yingyin_songshan", "route:year191/songshan_luoyang", "route:year191/hulao_yingyin"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "SP-00: validate",
+      "type": "shell",
+      "command": "./scripts/validate.sh",
+      "group": "test",
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "SP-00: build",
+      "type": "shell",
+      "command": "./scripts/build.sh",
+      "group": "build",
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "SP-00: test",
+      "type": "shell",
+      "command": "./scripts/test.sh",
+      "group": "test",
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "SP-00: Godot import",
+      "type": "shell",
+      "command": "./scripts/import.sh",
+      "problemMatcher": "$msCompile"
+    }
+  ]
+}

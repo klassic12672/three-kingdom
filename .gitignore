@@ -1,0 +1,55 @@
+# Godot imports and machine-local editor state
+.godot/
+game/.godot/
+*.import
+export_credentials.cfg
+
+# .NET build output and tooling state
+**/bin/
+**/obj/
+.vs/
+.idea/
+TestResults/
+*.user
+*.suo
+*.DotSettings.user
+
+# VS Code: keep shared configuration only
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+*.code-workspace
+
+# Build and package output
+artifacts/*
+!artifacts/.gitkeep
+game/generated/*.json
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+
+# Local secrets and signing material
+.env
+.env.*
+!.env.example
+secrets/
+*.p12
+*.pfx
+*.cer
+*.crt
+*.key
+*.mobileprovision
+*.provisionprofile
+*.keystore
+*.jks
+steam_appid.txt

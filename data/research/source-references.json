@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "schemaVersion": 1,
+      "sourceId": "source:master_plan",
+      "claim": "Luoyang is represented as a synthetic region fixture for pipeline validation.",
+      "location": "docs/MASTER_PLAN.md section 5",
+      "confidence": "high",
+      "notes": "This supports fixture structure, not a shipped population estimate.",
+      "citation": "Three Kingdoms Master Development Plan 0.1.0",
+      "sourceTier": "project_governance"
+    },
+    {
+      "schemaVersion": 1,
+      "sourceId": "source:synthetic_counterclaim",
+      "claim": "The fixture population is deliberately non-authoritative and disputed.",
+      "location": "Synthetic validation fixture",
+      "confidence": "low",
+      "notes": "Retained separately to exercise disputed-source handling.",
+      "citation": "SP-02 synthetic fixture note",
+      "sourceTier": "development_fixture"
+    }
+  ]
+}

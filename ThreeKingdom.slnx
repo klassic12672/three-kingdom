@@ -1,0 +1,20 @@
+<Solution>
+  <Folder Name="/game/">
+    <Project Path="game/Game.Presentation.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Game.Application/Game.Application.csproj" />
+    <Project Path="src/Game.Content/Game.Content.csproj" />
+    <Project Path="src/Game.Platform.Steam/Game.Platform.Steam.csproj" />
+    <Project Path="src/Simulation.Core/Simulation.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Game.Content.Tests/Game.Content.Tests.csproj" />
+    <Project Path="tests/Repository.Tests/Repository.Tests.csproj" />
+    <Project Path="tests/Simulation.Core.Tests/Simulation.Core.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Tools.ContentPipeline/Tools.ContentPipeline.csproj" />
+    <Project Path="tools/Tools.Simulation/Tools.Simulation.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,36 @@
+key,locale,text,context,variables,review_state,source_content_ids,release_marked
+loc:asset/banner/description,ko-KR,합성 프로젝트 깃발,Asset accessibility description,,approved,asset:synthetic/banner,true
+loc:character/test_officer/name,ko-KR,시험 무장,Synthetic character display name,,approved,character:synthetic/test_officer,true
+loc:claim/luoyang_population/summary,ko-KR,논쟁 중인 낙양 인구,Development research claim,,reviewed,claim:synthetic/luoyang_population,false
+loc:region/luoyang/name,ko-KR,낙양,Region display name,,approved,region:synthetic/luoyang,true
+loc:admin/jun,ko-KR,군,Historical administrative label,,approved,district:year191/henan|district:year191/yingchuan,true
+loc:admin/xian,ko-KR,현,Historical administrative label,,approved,locality:year191/luoyang|locality:year191/mengjin|locality:year191/hulao|locality:year191/yingyin|locality:year191/chenliu|locality:year191/songshan,true
+loc:admin/zhou,ko-KR,주,Historical administrative label,,approved,region:year191/central_plains,true
+loc:district/henan/name,ko-KR,하남,District display name,,approved,district:year191/henan,true
+loc:district/yingchuan/name,ko-KR,영천,District display name,,approved,district:year191/yingchuan,true
+loc:locality/chenliu/name,ko-KR,진류,Locality display name,,approved,locality:year191/chenliu,true
+loc:locality/hulao/name,ko-KR,호뢰,Locality display name,,approved,locality:year191/hulao,true
+loc:locality/luoyang/name,ko-KR,낙양,Locality display name,,approved,locality:year191/luoyang,true
+loc:locality/mengjin/name,ko-KR,맹진,Locality display name,,approved,locality:year191/mengjin,true
+loc:locality/songshan/name,ko-KR,숭산,Locality display name,,approved,locality:year191/songshan,true
+loc:locality/yingyin/name,ko-KR,영음,Locality display name,,approved,locality:year191/yingyin,true
+loc:region/central_plains/name,ko-KR,중원,Region display name,,approved,region:year191/central_plains,true
+loc:route/ferry_hulao/name,ko-KR,도하장–호뢰 변경로,Route display name,,approved,route:year191/ferry_hulao,true
+loc:route/hulao_xingyang/name,ko-KR,호뢰 산길,Route display name,,approved,route:year191/hulao_xingyang,true
+loc:route/hulao_yingyin/name,ko-KR,호뢰–영음 변경로,Route display name,,approved,route:year191/hulao_yingyin,true
+loc:route/luoyang_hulao/name,ko-KR,낙양–호뢰 가도,Route display name,,approved,route:year191/luoyang_hulao,true
+loc:route/luoyang_mengjin/name,ko-KR,낙양–맹진 가도,Route display name,,approved,route:year191/luoyang_mengjin,true
+loc:route/mengjin_ferry/name,ko-KR,맹진 수로,Route display name,,approved,route:year191/mengjin_ferry,true
+loc:route/songshan_luoyang/name,ko-KR,숭산 계절 통로,Route display name,,approved,route:year191/songshan_luoyang,true
+loc:route/xingyang_yingyin/name,ko-KR,형양–영음 가도,Route display name,,approved,route:year191/xingyang_yingyin,true
+loc:route/yingyin_chenliu/name,ko-KR,영음–진류 가도,Route display name,,approved,route:year191/yingyin_chenliu,true
+loc:route/yingyin_songshan/name,ko-KR,영음 산길,Route display name,,approved,route:year191/yingyin_songshan,true
+loc:scenario/central_plains/name,ko-KR,191년 중원,Scenario display name,,approved,scenario:year191/central_plains,true
+loc:stop/chenliu_depot/name,ko-KR,진류 보급고,Route-stop display name,,approved,stop:year191/chenliu_depot,true
+loc:stop/hulao_gate/name,ko-KR,호뢰관,Route-stop display name,,approved,stop:year191/hulao_gate,true
+loc:stop/luoyang_city/name,ko-KR,낙양성,Route-stop display name,,approved,stop:year191/luoyang_city,true
+loc:stop/mengjin_port/name,ko-KR,맹진항,Route-stop display name,,approved,stop:year191/mengjin_port,true
+loc:stop/songshan_pass/name,ko-KR,숭산 고개,Route-stop display name,,approved,stop:year191/songshan_pass,true
+loc:stop/xingyang_fort/name,ko-KR,형양 요새,Route-stop display name,,approved,stop:year191/xingyang_fort,true
+loc:stop/yellow_river_ferry/name,ko-KR,황하 도하장,Route-stop display name,,approved,stop:year191/yellow_river_ferry,true
+loc:stop/yingyin_city/name,ko-KR,영음성,Route-stop display name,,approved,stop:year191/yingyin_city,true

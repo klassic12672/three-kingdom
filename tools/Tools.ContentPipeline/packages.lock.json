@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net10.0": {
+      "game.content": {
+        "type": "Project",
+        "dependencies": {
+          "Simulation.Core": "[0.1.0, )"
+        }
+      },
+      "simulation.core": {
+        "type": "Project"
+      }
+    }
+  }
+}

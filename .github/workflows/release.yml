@@ -1,0 +1,79 @@
+name: Signed release packages
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos-arm64:
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      REQUIRE_SIGNING: '1'
+      MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+      MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+      MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+      MACOS_NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
+      MACOS_TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          lfs: true
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+      - run: ./scripts/ci/install-godot.sh
+      - name: Configure ephemeral signing credentials
+        run: ./scripts/ci/prepare-macos-signing.sh
+      - name: Build signed and notarized tagged package
+        run: ./scripts/package.sh macos
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64-signed-notarized
+          path: |
+            artifacts/*macos-arm64-signed-notarized.zip
+            artifacts/*macos-arm64-signed-notarized-build-manifest.json
+          if-no-files-found: error
+
+  windows-x64:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    env:
+      REQUIRE_SIGNING: '1'
+      WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+      WINDOWS_TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          lfs: true
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+      - shell: pwsh
+        run: ./scripts/ci/install-godot.ps1
+      - name: Configure ephemeral signing credentials
+        shell: pwsh
+        run: ./scripts/ci/prepare-windows-signing.ps1
+      - name: Build signed tagged package
+        shell: pwsh
+        run: ./scripts/package.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-signed
+          path: |
+            artifacts/*windows-x64-signed.zip
+            artifacts/*windows-x64-signed-build-manifest.json
+          if-no-files-found: error

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://three-kingdom.local/schemas/content-record.schema.json",
+  "title": "ContentRecordDocument",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "records"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["schemaVersion", "id", "recordType", "contentTag", "classification", "sourceIds", "localizationKeys", "releaseMarked", "data"],
+        "properties": {
+          "schemaVersion": { "const": 1 },
+          "id": { "$ref": "#/$defs/entityId" },
+          "recordType": { "type": "string", "minLength": 1 },
+          "contentTag": { "enum": ["historical", "disputed", "inferred", "romance", "fictional"] },
+          "classification": { "enum": ["general", "nonExplicitRelationship", "sexuallyExplicit"] },
+          "sourceIds": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/entityId" } },
+          "localizationKeys": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/entityId" } },
+          "releaseMarked": { "type": "boolean" },
+          "data": { "type": "object" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "entityId": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]*:[a-z][a-z0-9_./-]*$", "maxLength": 160 }
+  }
+}

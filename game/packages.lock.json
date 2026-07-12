@@ -1,0 +1,43 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net10.0": {
+      "Godot.SourceGenerators": {
+        "type": "Direct",
+        "requested": "[4.6.1, )",
+        "resolved": "4.6.1",
+        "contentHash": "cWkxb0mUptImMFeJEq5iM7fsJr1bo+ZPDjGk1ppy9U+ErWZRcrYq7G8IP4jN8BPzsUf6eno86R03AuawUjyItw=="
+      },
+      "GodotSharp": {
+        "type": "Direct",
+        "requested": "[4.6.1, )",
+        "resolved": "4.6.1",
+        "contentHash": "FQc5iM5ftSAIegboeP7CsOeNtG0GLgjkqNshUHISZhnc8secWLwZqmCPFHGYshVPIqqJFCfQQ5ttjdmNKLKKEw=="
+      },
+      "GodotSharpEditor": {
+        "type": "Direct",
+        "requested": "[4.6.1, )",
+        "resolved": "4.6.1",
+        "contentHash": "WtUHTHUegXO3OwHXa2pW2a6UIBV3TcVui2lbQ6eQt4RuKSZwuzNGdBy3GYIDJ3pkqJZEjqvM9zA32ARxhUygTQ==",
+        "dependencies": {
+          "GodotSharp": "4.6.1"
+        }
+      },
+      "game.application": {
+        "type": "Project",
+        "dependencies": {
+          "Simulation.Core": "[0.1.0, )"
+        }
+      },
+      "game.content": {
+        "type": "Project",
+        "dependencies": {
+          "Simulation.Core": "[0.1.0, )"
+        }
+      },
+      "simulation.core": {
+        "type": "Project"
+      }
+    }
+  }
+}

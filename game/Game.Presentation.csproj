@@ -1,0 +1,13 @@
+<Project Sdk="Godot.NET.Sdk/4.6.1">
+  <PropertyGroup>
+    <RootNamespace>Game.Presentation</RootNamespace>
+    <AssemblyName>Game.Presentation</AssemblyName>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <!-- Explicit because Godot's editor does not inspect Directory.Build.props before project migration. -->
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../src/Game.Application/Game.Application.csproj" />
+    <ProjectReference Include="../src/Game.Content/Game.Content.csproj" />
+  </ItemGroup>
+</Project>

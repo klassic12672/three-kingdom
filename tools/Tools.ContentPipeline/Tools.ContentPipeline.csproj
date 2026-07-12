@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Tools.ContentPipeline</RootNamespace>
+    <AssemblyName>Tools.ContentPipeline</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Game.Content/Game.Content.csproj" />
+  </ItemGroup>
+</Project>
