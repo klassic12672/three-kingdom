@@ -3,18 +3,9 @@ loc:asset/banner/description,en-US,Synthetic project banner,Asset accessibility 
 loc:character/test_officer/name,en-US,Test Officer,Synthetic character display name,,approved,character:synthetic/test_officer,true
 loc:claim/luoyang_population/summary,en-US,Disputed Luoyang population,Development research claim,,reviewed,claim:synthetic/luoyang_population,false
 loc:region/luoyang/name,en-US,Luoyang,Region display name,,approved,region:synthetic/luoyang,true
-loc:admin/jun,en-US,Commandery,Historical administrative label,,approved,district:year191/henan|district:year191/yingchuan,true
-loc:admin/xian,en-US,County,Historical administrative label,,approved,locality:year191/luoyang|locality:year191/mengjin|locality:year191/hulao|locality:year191/yingyin|locality:year191/chenliu|locality:year191/songshan,true
-loc:admin/zhou,en-US,Province,Historical administrative label,,approved,region:year191/central_plains,true
-loc:district/henan/name,en-US,Henan,District display name,,approved,district:year191/henan,true
-loc:district/yingchuan/name,en-US,Yingchuan,District display name,,approved,district:year191/yingchuan,true
-loc:locality/chenliu/name,en-US,Chenliu,Locality display name,,approved,locality:year191/chenliu,true
-loc:locality/hulao/name,en-US,Hulao,Locality display name,,approved,locality:year191/hulao,true
-loc:locality/luoyang/name,en-US,Luoyang,Locality display name,,approved,locality:year191/luoyang,true
-loc:locality/mengjin/name,en-US,Mengjin,Locality display name,,approved,locality:year191/mengjin,true
-loc:locality/songshan/name,en-US,Songshan,Locality display name,,approved,locality:year191/songshan,true
-loc:locality/yingyin/name,en-US,Yingyin,Locality display name,,approved,locality:year191/yingyin,true
-loc:region/central_plains/name,en-US,Central Plains,Region display name,,approved,region:year191/central_plains,true
+loc:admin/jun,en-US,Commandery,Historical administrative label,,approved,,true
+loc:admin/xian,en-US,County,Historical administrative label,,approved,,true
+loc:admin/zhou,en-US,Province,Historical administrative label,,approved,,true
 loc:route/ferry_hulao/name,en-US,Ferry–Hulao Frontier Trail,Route display name,,approved,route:year191/ferry_hulao,true
 loc:route/hulao_xingyang/name,en-US,Hulao Mountain Path,Route display name,,approved,route:year191/hulao_xingyang,true
 loc:route/hulao_yingyin/name,en-US,Hulao–Yingyin Frontier Trail,Route display name,,approved,route:year191/hulao_yingyin,true
@@ -25,7 +16,7 @@ loc:route/songshan_luoyang/name,en-US,Songshan Seasonal Passage,Route display na
 loc:route/xingyang_yingyin/name,en-US,Xingyang–Yingyin Road,Route display name,,approved,route:year191/xingyang_yingyin,true
 loc:route/yingyin_chenliu/name,en-US,Yingyin–Chenliu Road,Route display name,,approved,route:year191/yingyin_chenliu,true
 loc:route/yingyin_songshan/name,en-US,Yingyin Mountain Path,Route display name,,approved,route:year191/yingyin_songshan,true
-loc:scenario/central_plains/name,en-US,191 Central Plains,Scenario display name,,approved,scenario:year191/central_plains,true
+loc:scenario/central_plains/name,en-US,191 Later Han World,Scenario display name,,approved,scenario:year191/central_plains,true
 loc:stop/chenliu_depot/name,en-US,Chenliu Depot,Route-stop display name,,approved,stop:year191/chenliu_depot,true
 loc:stop/hulao_gate/name,en-US,Hulao Gate,Route-stop display name,,approved,stop:year191/hulao_gate,true
 loc:stop/luoyang_city/name,en-US,Luoyang City,Route-stop display name,,approved,stop:year191/luoyang_city,true
@@ -34,3 +25,108 @@ loc:stop/songshan_pass/name,en-US,Songshan Pass,Route-stop display name,,approve
 loc:stop/xingyang_fort/name,en-US,Xingyang Fort,Route-stop display name,,approved,stop:year191/xingyang_fort,true
 loc:stop/yellow_river_ferry/name,en-US,Yellow River Ferry,Route-stop display name,,approved,stop:year191/yellow_river_ferry,true
 loc:stop/yingyin_city/name,en-US,Yingyin City,Route-stop display name,,approved,stop:year191/yingyin_city,true
+actor:hu_zhen,en-US,Hu Zhen,Campaign-map actor display name,,approved,,true
+actor:kong_zhou,en-US,Kong Zhou,Campaign-map actor display name,,approved,,true
+actor:wang_yun,en-US,Wang Yun,Campaign-map actor display name,,approved,,true
+actor:zhang_miao,en-US,Zhang Miao,Campaign-map actor display name,,approved,,true
+culture:han,en-US,Han,Campaign-map culture display name,,approved,,true
+faction:coalition,en-US,Coalition,Campaign-map faction display name,,approved,,true
+faction:han_court,en-US,Han Court,Campaign-map faction display name,,approved,,true
+loc:ui/campaign_map/title,en-US,THREE KINGDOMS · 191 CAMPAIGN MAP,Campaign-map title,,approved,,true
+loc:ui/campaign_map/status,en-US,{regions} regions · {districts} districts · {localities} localities · {stops} stops · {routes} routes,Campaign-map hierarchy and route status,districts|localities|regions|routes|stops,approved,,true
+loc:ui/campaign_map/navigation_hint,en-US,Wheel zoom · Middle-drag pan,Campaign-map navigation hint,,approved,,true
+loc:ui/campaign_map/locale/en,en-US,English,Campaign-map locale option,,approved,,true
+loc:ui/campaign_map/locale/ko,en-US,Korean,Campaign-map locale option,,approved,,true
+loc:ui/campaign_map/mode/political_control,en-US,Political control,Campaign-map mode,,approved,,true
+loc:ui/campaign_map/mode/claims,en-US,Claims,Campaign-map mode,,approved,,true
+loc:ui/campaign_map/mode/administration,en-US,Administration,Campaign-map mode,,approved,,true
+loc:ui/campaign_map/mode/diplomacy,en-US,Diplomacy,Campaign-map mode,,approved,,true
+loc:ui/campaign_map/mode/supply,en-US,Supply,Campaign-map mode,,approved,,true
+loc:ui/campaign_map/mode/population,en-US,Population,Campaign-map mode,,approved,,true
+loc:ui/campaign_map/mode/culture,en-US,Culture,Campaign-map mode,,approved,,true
+loc:ui/campaign_map/mode/intelligence,en-US,Intelligence,Campaign-map mode,,approved,,true
+loc:ui/campaign_map/mode/routes,en-US,Routes,Campaign-map mode,,approved,,true
+loc:ui/campaign_map/hint/political_control,en-US,Fill: controller · warm gray: uncontrolled · slate: unknown · red ×: occupation,Campaign-map legend hint,,approved,,true
+loc:ui/campaign_map/hint/claims,en-US,Fill: observed claim · warm gray: known no claim · slate: unknown,Campaign-map legend hint,,approved,,true
+loc:ui/campaign_map/hint/administration,en-US,Fill: appointee · warm gray: known none · slate: unknown · arc: acceptance,Campaign-map legend hint,,approved,,true
+loc:ui/campaign_map/hint/diplomacy,en-US,Green: self · blue: friendly · amber: neutral · red: hostile · gray: uncontrolled · slate: unknown,Campaign-map legend hint,,approved,,true
+loc:ui/campaign_map/hint/supply,en-US,Stops: known stores · width: throughput · red dash: known disruption,Campaign-map legend hint,,approved,,true
+loc:ui/campaign_map/hint/population,en-US,Fill: known locality population,Campaign-map legend hint,,approved,,true
+loc:ui/campaign_map/hint/culture,en-US,Fill: known locality culture,Campaign-map legend hint,,approved,,true
+loc:ui/campaign_map/hint/intelligence,en-US,"Dark→bright: unknown, rumored, observed, current",Campaign-map legend hint,,approved,,true
+loc:ui/campaign_map/hint/routes,en-US,Color/pattern: route type · symbol: stop type,Campaign-map legend hint,,approved,,true
+loc:ui/campaign_map/field/stop,en-US,Stop,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/route,en-US,Route,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/terrain,en-US,Terrain,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/controller,en-US,Controller,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/legal_appointee,en-US,Legal appointee,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/local_acceptance,en-US,Local acceptance,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/occupation,en-US,Occupation,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/claims,en-US,Claims,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/stores,en-US,Stores,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/intelligence,en-US,Intelligence,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/traversal_cost,en-US,Traversal cost,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/capacity,en-US,Capacity,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/supply_throughput,en-US,Supply throughput,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/effective_throughput,en-US,Effective throughput,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/available,en-US,Available,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/daily_production,en-US,Daily production,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/stationed_demand,en-US,Stationed demand,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/shortage,en-US,Shortage,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/tier,en-US,Tier,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/region,en-US,Region,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/district,en-US,District,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/locality,en-US,Locality,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/contains,en-US,Contains,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/districts,en-US,districts,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/localities,en-US,localities,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/stops,en-US,stops,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/transport,en-US,Transport,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/control,en-US,Control,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/disruption,en-US,Disruption,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/value/unknown,en-US,Unknown,Campaign-map inspector value,,approved,,true
+loc:ui/campaign_map/value/yes,en-US,Yes,Campaign-map inspector value,,approved,,true
+loc:ui/campaign_map/value/no,en-US,No,Campaign-map inspector value,,approved,,true
+loc:ui/campaign_map/value/none,en-US,None,Campaign-map inspector value,,approved,,true
+loc:ui/campaign_map/value/uncontrolled,en-US,Uncontrolled,Campaign-map inspector value,,approved,,true
+loc:ui/campaign_map/terrain/plains,en-US,Plains,Campaign-map terrain,,approved,,true
+loc:ui/campaign_map/terrain/hills,en-US,Hills,Campaign-map terrain,,approved,,true
+loc:ui/campaign_map/terrain/mountains,en-US,Mountains,Campaign-map terrain,,approved,,true
+loc:ui/campaign_map/terrain/forest,en-US,Forest,Campaign-map terrain,,approved,,true
+loc:ui/campaign_map/terrain/marsh,en-US,Marsh,Campaign-map terrain,,approved,,true
+loc:ui/campaign_map/terrain/river,en-US,River,Campaign-map terrain,,approved,,true
+loc:ui/campaign_map/terrain/coast,en-US,Coast,Campaign-map terrain,,approved,,true
+loc:ui/campaign_map/terrain/open_sea,en-US,Open sea,Campaign-map terrain,,approved,,true
+loc:ui/campaign_map/terrain/urban,en-US,Urban,Campaign-map terrain,,approved,,true
+loc:ui/campaign_map/stop_type/settlement,en-US,Settlement,Campaign-map stop type,,approved,,true
+loc:ui/campaign_map/stop_type/port,en-US,Port,Campaign-map stop type,,approved,,true
+loc:ui/campaign_map/stop_type/ferry,en-US,Ferry,Campaign-map stop type,,approved,,true
+loc:ui/campaign_map/stop_type/bridge,en-US,Bridge,Campaign-map stop type,,approved,,true
+loc:ui/campaign_map/stop_type/pass,en-US,Pass,Campaign-map stop type,,approved,,true
+loc:ui/campaign_map/stop_type/gate,en-US,Gate,Campaign-map stop type,,approved,,true
+loc:ui/campaign_map/stop_type/fort,en-US,Fort,Campaign-map stop type,,approved,,true
+loc:ui/campaign_map/stop_type/watchtower,en-US,Watchtower,Campaign-map stop type,,approved,,true
+loc:ui/campaign_map/stop_type/camp,en-US,Camp,Campaign-map stop type,,approved,,true
+loc:ui/campaign_map/stop_type/depot,en-US,Depot,Campaign-map stop type,,approved,,true
+loc:ui/campaign_map/stop_type/natural_battlefield,en-US,Natural battlefield,Campaign-map stop type,,approved,,true
+loc:ui/campaign_map/route_type/road,en-US,Road,Campaign-map route type,,approved,,true
+loc:ui/campaign_map/route_type/mountain_path,en-US,Mountain path,Campaign-map route type,,approved,,true
+loc:ui/campaign_map/route_type/river,en-US,River,Campaign-map route type,,approved,,true
+loc:ui/campaign_map/route_type/coastal_lane,en-US,Coastal lane,Campaign-map route type,,approved,,true
+loc:ui/campaign_map/route_type/open_sea_lane,en-US,Open-sea lane,Campaign-map route type,,approved,,true
+loc:ui/campaign_map/route_type/frontier_trail,en-US,Frontier trail,Campaign-map route type,,approved,,true
+loc:ui/campaign_map/route_type/seasonal_passage,en-US,Seasonal passage,Campaign-map route type,,approved,,true
+loc:ui/campaign_map/transport_mode/foot,en-US,Foot,Campaign-map transport mode,,approved,,true
+loc:ui/campaign_map/transport_mode/horse,en-US,Horse,Campaign-map transport mode,,approved,,true
+loc:ui/campaign_map/transport_mode/wagon,en-US,Wagon,Campaign-map transport mode,,approved,,true
+loc:ui/campaign_map/transport_mode/river_boat,en-US,River boat,Campaign-map transport mode,,approved,,true
+loc:ui/campaign_map/transport_mode/coastal_ship,en-US,Coastal ship,Campaign-map transport mode,,approved,,true
+loc:ui/campaign_map/transport_mode/ocean_ship,en-US,Ocean ship,Campaign-map transport mode,,approved,,true
+loc:ui/campaign_map/route_control/open,en-US,Open,Campaign-map route control,,approved,,true
+loc:ui/campaign_map/route_control/controlled,en-US,Controlled,Campaign-map route control,,approved,,true
+loc:ui/campaign_map/route_control/contested,en-US,Contested,Campaign-map route control,,approved,,true
+loc:ui/campaign_map/route_control/blockaded,en-US,Blockaded,Campaign-map route control,,approved,,true
+loc:ui/campaign_map/intelligence/unknown,en-US,Unknown,Campaign-map intelligence level,,approved,,true
+loc:ui/campaign_map/intelligence/rumored,en-US,Rumored,Campaign-map intelligence level,,approved,,true
+loc:ui/campaign_map/intelligence/observed,en-US,Observed,Campaign-map intelligence level,,approved,,true
+loc:ui/campaign_map/intelligence/current,en-US,Current,Campaign-map intelligence level,,approved,,true

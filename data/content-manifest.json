@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "packId": "core:base",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "minimumGameVersion": "0.1.0",
   "contentSchemaVersion": 1,
   "isBuiltIn": true,
@@ -10,24 +10,24 @@
   "loadPriority": 0,
   "files": [
     {
+      "path": "authored/geography-191.json",
+      "kind": "records",
+      "sha256": "d6be0aaf61ba68c0097450db4d3ba340498df023a0b232767b902a82c63a7d00"
+    },
+    {
+      "path": "authored/later-han-geography.json",
+      "kind": "records",
+      "sha256": "2629ccd14bf36ff9197a7a375d8725574fd75be6bf6ca85e29cc1941f4f28a5a"
+    },
+    {
       "path": "authored/synthetic-records.json",
       "kind": "records",
       "sha256": "a413aeae6fcb9d7193011a7f1ab22a6f3410bca190391695c8d5486a3bc42fe1"
     },
     {
-      "path": "authored/geography-191.json",
-      "kind": "records",
-      "sha256": "accf29183abe232fe430ab01dcc2567eb9a45739b61f57ea471fffa51cd0f7db"
-    },
-    {
       "path": "localization/en-US.csv",
       "kind": "localization",
-      "sha256": "26a26fcc26ac7e89b7660aeb4b5c3b6c776019c22cb60901af14751b8b544bad"
-    },
-    {
-      "path": "localization/ko-KR.csv",
-      "kind": "localization",
-      "sha256": "569b4e48e2e20f8ef89e52827ca0e1a98e75f067fbaf1c29c5e2259c4cc00d73"
+      "sha256": "4c6a4ae01a15b0622bb11ff2a7382e00a0c07d49c86820d011af14c2779825e3"
     },
     {
       "path": "localization/glossary.csv",
@@ -35,24 +35,39 @@
       "sha256": "93094251e523fc548f5bcad2ab365e49c1de9a3104fcf73277da831644521970"
     },
     {
-      "path": "research/source-references.json",
-      "kind": "sources",
-      "sha256": "4aee0074d1eaa2e3d2d4fd14db0cd5566ef9cbbd58ebc6491974da48252292a5"
+      "path": "localization/ko-KR.csv",
+      "kind": "localization",
+      "sha256": "3f39a4dca4f4de17f806745abc078887deb13dc968f4a43ce390f654797c6a14"
+    },
+    {
+      "path": "localization/later-han.en-US.csv",
+      "kind": "localization",
+      "sha256": "235ed8e19c5af4e1f5efd1a6dfa0002127851c3d77efb5e490fafaf669c598f8"
+    },
+    {
+      "path": "localization/later-han.ko-KR.csv",
+      "kind": "localization",
+      "sha256": "de09407251d26e74574aeee437157715baf688f79d171547db29bd6fee83a3cd"
     },
     {
       "path": "provenance/asset-provenance.json",
       "kind": "provenance",
       "sha256": "1a368c3bbd9bed7650413cbc3cd81f8004d5de2309d0826cb8aeb2c24ce95d94"
+    },
+    {
+      "path": "research/source-references.json",
+      "kind": "sources",
+      "sha256": "a4a8dedb81090e1198868765fad032c61cb9c7c5c6b5198130d3bb8c40389553"
     }
   ],
   "authors": [
     "Three Kingdoms project"
   ],
   "provenance": {
-    "license": "Project-owned development fixture",
-    "rightsHolder": "Three Kingdoms project",
+    "license": "Mixed: project-owned gameplay compilation; DILA-derived location snapshot CC BY-SA 3.0; Unicode readings Unicode-3.0",
+    "rightsHolder": "Three Kingdoms project and respective cited source licensors",
     "sourceRegister": "research/source-references.json",
     "assetRegister": "provenance/asset-provenance.json"
   },
-  "checksum": "6c527133073ffece29d4d75f7372cc783f2855f6354ed5be9eb1a6c971936449"
+  "checksum": "f6024dea64ac6db0ae3af3bdc134a449e6f68223f89e98657e7dab120aa656ef"
 }

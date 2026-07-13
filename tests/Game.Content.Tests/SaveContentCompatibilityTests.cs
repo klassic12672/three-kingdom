@@ -28,6 +28,9 @@ public sealed class SaveContentCompatibilityTests
 
             ContentManifestReference changed = registry.ToSaveManifestReferences()[0] with { Checksum = new string('c', 64) };
             Assert.Throws<SaveCompatibilityException>(() => store.Load(path, [changed]));
+
+            ContentManifestReference olderVersion = registry.ToSaveManifestReferences()[0] with { Version = "0.1.0" };
+            Assert.Throws<SaveCompatibilityException>(() => store.Load(path, [olderVersion]));
             Assert.True(File.Exists(path));
         }
         finally

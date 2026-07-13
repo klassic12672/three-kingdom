@@ -34,8 +34,33 @@ public static class Program
             "validate" => Validate(root),
             "manifest" => WriteManifest(root, args),
             "content" => RunContent(root, args),
+            "later-han" => RunLaterHan(root, args),
             _ => UnknownCommand(args[0]),
         };
+    }
+
+    private static int RunLaterHan(string root, string[] args)
+    {
+        if (args.Length >= 2 && args[1] == "import-locations")
+        {
+            string source = RequiredOption(args, "--dila-xml");
+            LocationImportResult import = LaterHanLocationImporter.Import(root, source);
+            Console.WriteLine($"Imported Later Han locations: records={import.Records} " +
+                string.Join(' ', import.StatusCounts.Select(item => $"{item.Key}={item.Value}")) + $" output={import.OutputPath}");
+            return 0;
+        }
+
+        if (args.Length < 2 || args[1] != "generate")
+        {
+            PrintUsage();
+            return 2;
+        }
+
+        GenerationResult result = LaterHanGeographyGenerator.Generate(root);
+        Console.WriteLine(
+            $"Generated Later Han geography: regions={result.Regions} districts={result.Districts} " +
+            $"localities={result.Localities}.");
+        return 0;
     }
 
     private static int Validate(string root)
@@ -172,5 +197,7 @@ public static class Program
         Console.Error.WriteLine("  Tools.ContentPipeline content report --output FILE [--data-root PATH] [--game-version VERSION]");
         Console.Error.WriteLine("  Tools.ContentPipeline content fixtures --output FILE [--data-root PATH] [--game-version VERSION]");
         Console.Error.WriteLine("  Tools.ContentPipeline content geography --output FILE [--data-root PATH] [--game-version VERSION]");
+        Console.Error.WriteLine("  Tools.ContentPipeline later-han generate [--repository-root PATH]");
+        Console.Error.WriteLine("  Tools.ContentPipeline later-han import-locations --dila-xml PATH [--repository-root PATH]");
     }
 }

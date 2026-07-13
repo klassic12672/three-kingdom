@@ -226,6 +226,359 @@ public sealed class GeographyTests
     }
 
     [Fact]
+    public void CampaignMapPresentationFiltersSupplyAndRouteOperationsByIntelligence()
+    {
+        ArmyGeographicState undersupplied = GeographyFixture.Army(
+            "undersupplied",
+            GeographyFixture.FactionOne,
+            GeographyFixture.A) with
+        {
+            Supply = 25,
+            DailySupplyDemand = 100,
+        };
+        GeographicWorldSnapshot source = GeographyFixture.Snapshot([undersupplied]);
+        source = source with
+        {
+            Routes = source.Routes.Select(route => route.RouteId == GeographyFixture.RoadAb
+                ? route with { DisruptionPermille = 250 }
+                : route).ToArray(),
+        };
+        GeographicWorldState geography = new(source);
+
+        CampaignMapPresentationState known = geography.GetCampaignMapPresentation(GeographyFixture.FactionOne);
+        KnownLocationPresentationState knownLocation = Assert.Single(
+            known.Locations,
+            location => location.StopId == GeographyFixture.A);
+        KnownRoutePresentationState knownRoute = Assert.Single(
+            known.Routes,
+            route => route.RouteId == GeographyFixture.RoadAb);
+
+        Assert.Equal(IntelligenceLevel.Current, knownLocation.Intelligence);
+        Assert.Equal(10_000, knownLocation.Stores);
+        Assert.Equal(100, knownLocation.DailyProduction);
+        Assert.Equal(100, knownLocation.StationedArmyDailyDemand);
+        Assert.Equal(75, knownLocation.StationedArmyDailyShortage);
+        Assert.Equal(100, knownLocation.Population);
+        Assert.Equal(new EntityId("culture:test/han"), knownLocation.CultureId);
+        Assert.Equal(5_000, knownRoute.Capacity);
+        Assert.Equal(4_000, knownRoute.SupplyThroughput);
+        Assert.Equal(3_000, knownRoute.EffectiveSupplyThroughput);
+        Assert.Equal(250, knownRoute.DisruptionPermille);
+        Assert.Equal(RouteControlState.Open, knownRoute.ControlState);
+        Assert.True(knownRoute.AvailableToObserver);
+
+        CampaignMapPresentationState hidden = geography.GetCampaignMapPresentation(
+            new EntityId("faction:test/uninformed"));
+        Assert.All(hidden.Locations, location =>
+        {
+            Assert.Equal(IntelligenceLevel.Unknown, location.Intelligence);
+            Assert.Null(location.ControllerId);
+            Assert.Null(location.Stores);
+            Assert.Null(location.DailyProduction);
+            Assert.Null(location.StationedArmyDailyDemand);
+            Assert.Null(location.StationedArmyDailyShortage);
+            Assert.Null(location.Population);
+            Assert.Null(location.CultureId);
+            Assert.Equal(IntelligenceLevel.Unknown, location.PoliticalState.Intelligence);
+            Assert.Null(location.PoliticalState.ControllerId);
+            Assert.Empty(location.PoliticalState.Claims);
+        });
+        Assert.All(hidden.Routes, route =>
+        {
+            Assert.Equal(IntelligenceLevel.Unknown, route.Intelligence);
+            Assert.Null(route.Capacity);
+            Assert.Null(route.SupplyThroughput);
+            Assert.Null(route.EffectiveSupplyThroughput);
+            Assert.Null(route.ControllerId);
+            Assert.Null(route.ControlState);
+            Assert.Null(route.DisruptionPermille);
+            Assert.Null(route.AvailableToObserver);
+        });
+    }
+
+    [Fact]
+    public void CampaignMapPresentationAppliesEachLocationIntelligenceThreshold()
+    {
+        EntityId observer = new("faction:test/presentation_observer");
+        IntelligenceLevel[] levels =
+        [
+            IntelligenceLevel.Unknown,
+            IntelligenceLevel.Rumored,
+            IntelligenceLevel.Observed,
+            IntelligenceLevel.Current,
+        ];
+        GeographicWorldSnapshot source = GeographyFixture.Snapshot();
+        source = source with
+        {
+            Locations = source.Locations.Select((location, index) => location with
+            {
+                LegalAppointeeId = location.StopId == GeographyFixture.C ? GeographyFixture.Actor : location.LegalAppointeeId,
+                Occupied = location.StopId == GeographyFixture.C || location.Occupied,
+                Intelligence = location.Intelligence
+                    .Append(new LocationIntelligence(observer, levels[index], 0))
+                    .ToArray(),
+            }).ToArray(),
+        };
+
+        CampaignMapPresentationState presentation = new GeographicWorldState(source)
+            .GetCampaignMapPresentation(observer);
+        KnownLocationPresentationState unknown = presentation.Locations[0];
+        KnownLocationPresentationState rumored = presentation.Locations[1];
+        KnownLocationPresentationState observed = presentation.Locations[2];
+        KnownLocationPresentationState current = presentation.Locations[3];
+
+        Assert.Equal(IntelligenceLevel.Unknown, unknown.Intelligence);
+        Assert.Null(unknown.ControllerId);
+        Assert.Equal(DiplomaticRelationCategory.Unknown, unknown.DiplomaticRelation);
+        Assert.Null(unknown.Stores);
+        Assert.Null(unknown.DailyProduction);
+        Assert.Null(unknown.StationedArmyDailyDemand);
+        Assert.Null(unknown.StationedArmyDailyShortage);
+        Assert.Equal(IntelligenceLevel.Unknown, unknown.PoliticalState.Intelligence);
+        Assert.Null(unknown.PoliticalState.ControllerId);
+        Assert.Null(unknown.PoliticalState.LegalAppointeeId);
+        Assert.Null(unknown.PoliticalState.LocalAcceptance);
+        Assert.Empty(unknown.PoliticalState.Claims);
+        Assert.Null(unknown.PoliticalState.Occupied);
+        Assert.Null(unknown.PoliticalState.Stores);
+        Assert.Null(unknown.Population);
+        Assert.Null(unknown.CultureId);
+
+        Assert.Equal(IntelligenceLevel.Rumored, rumored.Intelligence);
+        Assert.Equal(GeographyFixture.FactionOne, rumored.ControllerId);
+        Assert.Equal(DiplomaticRelationCategory.Unknown, rumored.DiplomaticRelation);
+        Assert.Null(rumored.Stores);
+        Assert.Null(rumored.DailyProduction);
+        Assert.Null(rumored.StationedArmyDailyDemand);
+        Assert.Null(rumored.StationedArmyDailyShortage);
+        Assert.Equal(IntelligenceLevel.Rumored, rumored.PoliticalState.Intelligence);
+        Assert.Equal(GeographyFixture.FactionOne, rumored.PoliticalState.ControllerId);
+        Assert.Null(rumored.PoliticalState.LegalAppointeeId);
+        Assert.Null(rumored.PoliticalState.LocalAcceptance);
+        Assert.Empty(rumored.PoliticalState.Claims);
+        Assert.Null(rumored.PoliticalState.Occupied);
+        Assert.Null(rumored.PoliticalState.Stores);
+        Assert.Null(rumored.Population);
+        Assert.Null(rumored.CultureId);
+
+        Assert.Equal(IntelligenceLevel.Observed, observed.Intelligence);
+        Assert.Equal(GeographyFixture.FactionTwo, observed.ControllerId);
+        Assert.Equal(DiplomaticRelationCategory.Unknown, observed.DiplomaticRelation);
+        Assert.Null(observed.Stores);
+        Assert.Null(observed.DailyProduction);
+        Assert.Null(observed.StationedArmyDailyDemand);
+        Assert.Null(observed.StationedArmyDailyShortage);
+        Assert.Equal(IntelligenceLevel.Observed, observed.PoliticalState.Intelligence);
+        Assert.Equal(GeographyFixture.FactionTwo, observed.PoliticalState.ControllerId);
+        Assert.Equal(GeographyFixture.Actor, observed.PoliticalState.LegalAppointeeId);
+        Assert.Null(observed.PoliticalState.LocalAcceptance);
+        Assert.Single(observed.PoliticalState.Claims);
+        Assert.True(observed.PoliticalState.Occupied);
+        Assert.Null(observed.PoliticalState.Stores);
+        Assert.Equal(100, observed.Population);
+        Assert.Equal(new EntityId("culture:test/han"), observed.CultureId);
+        Assert.Null(observed.DailyProduction);
+
+        Assert.Equal(IntelligenceLevel.Current, current.Intelligence);
+        Assert.Equal(GeographyFixture.FactionTwo, current.ControllerId);
+        Assert.Equal(DiplomaticRelationCategory.Unknown, current.DiplomaticRelation);
+        Assert.Equal(IntelligenceLevel.Current, current.PoliticalState.Intelligence);
+        Assert.Equal(530, current.PoliticalState.LocalAcceptance);
+        Assert.Equal(1_000, current.PoliticalState.Stores);
+        Assert.Equal(100, current.Population);
+        Assert.Equal(new EntityId("culture:test/han"), current.CultureId);
+        Assert.Equal(10, current.DailyProduction);
+        Assert.Equal(0, current.StationedArmyDailyDemand);
+        Assert.Equal(0, current.StationedArmyDailyShortage);
+    }
+
+    [Fact]
+    public void CampaignMapPresentationRequiresCurrentIntelligenceAtBothRouteEndpoints()
+    {
+        EntityId observer = new("faction:test/route_observer");
+
+        foreach (IntelligenceLevel endpointLevel in Enum.GetValues<IntelligenceLevel>())
+        {
+            GeographicWorldSnapshot source = GeographyFixture.Snapshot();
+            source = source with
+            {
+                Locations = source.Locations.Select(location => location with
+                {
+                    Intelligence = location.Intelligence
+                        .Append(new LocationIntelligence(
+                            observer,
+                            location.StopId == GeographyFixture.B
+                                ? endpointLevel
+                                : IntelligenceLevel.Current,
+                            0))
+                        .ToArray(),
+                }).ToArray(),
+                Routes = source.Routes.Select(route => route.RouteId == GeographyFixture.RoadAb
+                    ? route with { DisruptionPermille = 250 }
+                    : route).ToArray(),
+            };
+
+            KnownRoutePresentationState route = Assert.Single(
+                new GeographicWorldState(source).GetCampaignMapPresentation(observer).Routes,
+                item => item.RouteId == GeographyFixture.RoadAb);
+
+            Assert.Equal(endpointLevel, route.Intelligence);
+            if (endpointLevel < IntelligenceLevel.Current)
+            {
+                Assert.Null(route.Capacity);
+                Assert.Null(route.SupplyThroughput);
+                Assert.Null(route.EffectiveSupplyThroughput);
+                Assert.Null(route.ControllerId);
+                Assert.Null(route.ControlState);
+                Assert.Null(route.DisruptionPermille);
+                Assert.Null(route.AvailableToObserver);
+                continue;
+            }
+
+            Assert.Equal(5_000, route.Capacity);
+            Assert.Equal(4_000, route.SupplyThroughput);
+            Assert.Equal(3_000, route.EffectiveSupplyThroughput);
+            Assert.Null(route.ControllerId);
+            Assert.Equal(RouteControlState.Open, route.ControlState);
+            Assert.Equal(250, route.DisruptionPermille);
+            Assert.True(route.AvailableToObserver);
+        }
+    }
+
+    [Fact]
+    public void CampaignMapPresentationReportsZeroObserverUsableThroughputForKnownUnavailableOrClosedRoutes()
+    {
+        GeographicWorldSnapshot source = GeographyFixture.Snapshot(season: CampaignSeason.Winter);
+        source = source with
+        {
+            Routes = source.Routes.Select(route => route.RouteId == GeographyFixture.RoadAb
+                ? route with
+                {
+                    ControllerId = GeographyFixture.FactionTwo,
+                    ControlState = RouteControlState.Controlled,
+                    PermittedFactionIds = [],
+                    DisruptionPermille = 250,
+                }
+                : route).ToArray(),
+        };
+
+        CampaignMapPresentationState presentation = new GeographicWorldState(source)
+            .GetCampaignMapPresentation(GeographyFixture.FactionOne);
+        KnownRoutePresentationState unavailable = Assert.Single(
+            presentation.Routes,
+            item => item.RouteId == GeographyFixture.RoadAb);
+
+        Assert.Equal(IntelligenceLevel.Current, unavailable.Intelligence);
+        Assert.Equal(5_000, unavailable.Capacity);
+        Assert.Equal(4_000, unavailable.SupplyThroughput);
+        Assert.Equal(0, unavailable.EffectiveSupplyThroughput);
+        Assert.Equal(GeographyFixture.FactionTwo, unavailable.ControllerId);
+        Assert.Equal(RouteControlState.Controlled, unavailable.ControlState);
+        Assert.Equal(250, unavailable.DisruptionPermille);
+        Assert.False(unavailable.AvailableToObserver);
+
+        KnownRoutePresentationState closed = Assert.Single(
+            presentation.Routes,
+            item => item.RouteId == GeographyFixture.SeasonalAc);
+        Assert.Equal(IntelligenceLevel.Current, closed.Intelligence);
+        Assert.Equal(2_000, closed.Capacity);
+        Assert.Equal(1_000, closed.SupplyThroughput);
+        Assert.Equal(0, closed.EffectiveSupplyThroughput);
+        Assert.Null(closed.ControllerId);
+        Assert.Equal(RouteControlState.Open, closed.ControlState);
+        Assert.Equal(0, closed.DisruptionPermille);
+        Assert.False(closed.AvailableToObserver);
+    }
+
+    [Fact]
+    public void CampaignMapPresentationUsesExplicitNonBinaryDiplomaticRelations()
+    {
+        GeographicWorldSnapshot source = GeographyFixture.Snapshot();
+        source = source with
+        {
+            Locations = source.Locations.Select(location => location.StopId == GeographyFixture.D
+                ? location with { ControllerId = null }
+                : location).ToArray(),
+        };
+        GeographicWorldState geography = new(source);
+
+        CampaignMapPresentationState unspecified = geography.GetCampaignMapPresentation(GeographyFixture.FactionOne);
+        Assert.Equal(
+            DiplomaticRelationCategory.Self,
+            Assert.Single(unspecified.Locations, location => location.StopId == GeographyFixture.A).DiplomaticRelation);
+        Assert.Equal(
+            DiplomaticRelationCategory.Unknown,
+            Assert.Single(unspecified.Locations, location => location.StopId == GeographyFixture.C).DiplomaticRelation);
+        Assert.Equal(
+            DiplomaticRelationCategory.Uncontrolled,
+            Assert.Single(unspecified.Locations, location => location.StopId == GeographyFixture.D).DiplomaticRelation);
+
+        CampaignMapPresentationState hidden = geography.GetCampaignMapPresentation(
+            new EntityId("faction:test/uninformed"),
+            new Dictionary<EntityId, DiplomaticRelationCategory>
+            {
+                [GeographyFixture.FactionTwo] = DiplomaticRelationCategory.Hostile,
+            });
+        Assert.Equal(
+            DiplomaticRelationCategory.Unknown,
+            Assert.Single(hidden.Locations, location => location.StopId == GeographyFixture.C).DiplomaticRelation);
+
+        foreach (DiplomaticRelationCategory relation in new[]
+                 {
+                     DiplomaticRelationCategory.Friendly,
+                     DiplomaticRelationCategory.Neutral,
+                     DiplomaticRelationCategory.Hostile,
+                 })
+        {
+            CampaignMapPresentationState presentation = geography.GetCampaignMapPresentation(
+                GeographyFixture.FactionOne,
+                new Dictionary<EntityId, DiplomaticRelationCategory>
+                {
+                    [GeographyFixture.FactionOne] = DiplomaticRelationCategory.Hostile,
+                    [GeographyFixture.FactionTwo] = relation,
+                });
+
+            Assert.Equal(
+                DiplomaticRelationCategory.Self,
+                Assert.Single(presentation.Locations, location => location.StopId == GeographyFixture.A).DiplomaticRelation);
+            Assert.Equal(
+                relation,
+                Assert.Single(presentation.Locations, location => location.StopId == GeographyFixture.C).DiplomaticRelation);
+        }
+    }
+
+    [Fact]
+    public void CampaignMapPresentationIsDeterministicAndDoesNotMutateSimulation()
+    {
+        GeographicWorldState geography = new(GeographyFixture.Snapshot());
+        string snapshotBefore = System.Text.Json.JsonSerializer.Serialize(
+            geography.CaptureSnapshot(),
+            SimulationJson.CreateOptions());
+
+        CampaignMapPresentationState first = geography.GetCampaignMapPresentation(
+            GeographyFixture.FactionOne,
+            new Dictionary<EntityId, DiplomaticRelationCategory>
+            {
+                [GeographyFixture.FactionTwo] = DiplomaticRelationCategory.Neutral,
+            });
+        CampaignMapPresentationState second = geography.GetCampaignMapPresentation(
+            GeographyFixture.FactionOne,
+            new Dictionary<EntityId, DiplomaticRelationCategory>
+            {
+                [GeographyFixture.FactionTwo] = DiplomaticRelationCategory.Neutral,
+            });
+
+        Assert.Equal(first.Locations.OrderBy(location => location.StopId), first.Locations);
+        Assert.Equal(first.Routes.OrderBy(route => route.RouteId), first.Routes);
+        Assert.Equal(
+            System.Text.Json.JsonSerializer.Serialize(first, SimulationJson.CreateOptions()),
+            System.Text.Json.JsonSerializer.Serialize(second, SimulationJson.CreateOptions()));
+        Assert.Equal(
+            snapshotBefore,
+            System.Text.Json.JsonSerializer.Serialize(geography.CaptureSnapshot(), SimulationJson.CreateOptions()));
+    }
+
+    [Fact]
     public void ReinforcementAndBattleDescriptorsAreEngineIndependent()
     {
         ArmyGeographicState nearby = GeographyFixture.Army("nearby", GeographyFixture.FactionOne, GeographyFixture.A);

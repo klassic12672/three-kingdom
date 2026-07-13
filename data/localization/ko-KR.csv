@@ -3,18 +3,9 @@ loc:asset/banner/description,ko-KR,합성 프로젝트 깃발,Asset accessibilit
 loc:character/test_officer/name,ko-KR,시험 무장,Synthetic character display name,,approved,character:synthetic/test_officer,true
 loc:claim/luoyang_population/summary,ko-KR,논쟁 중인 낙양 인구,Development research claim,,reviewed,claim:synthetic/luoyang_population,false
 loc:region/luoyang/name,ko-KR,낙양,Region display name,,approved,region:synthetic/luoyang,true
-loc:admin/jun,ko-KR,군,Historical administrative label,,approved,district:year191/henan|district:year191/yingchuan,true
-loc:admin/xian,ko-KR,현,Historical administrative label,,approved,locality:year191/luoyang|locality:year191/mengjin|locality:year191/hulao|locality:year191/yingyin|locality:year191/chenliu|locality:year191/songshan,true
-loc:admin/zhou,ko-KR,주,Historical administrative label,,approved,region:year191/central_plains,true
-loc:district/henan/name,ko-KR,하남,District display name,,approved,district:year191/henan,true
-loc:district/yingchuan/name,ko-KR,영천,District display name,,approved,district:year191/yingchuan,true
-loc:locality/chenliu/name,ko-KR,진류,Locality display name,,approved,locality:year191/chenliu,true
-loc:locality/hulao/name,ko-KR,호뢰,Locality display name,,approved,locality:year191/hulao,true
-loc:locality/luoyang/name,ko-KR,낙양,Locality display name,,approved,locality:year191/luoyang,true
-loc:locality/mengjin/name,ko-KR,맹진,Locality display name,,approved,locality:year191/mengjin,true
-loc:locality/songshan/name,ko-KR,숭산,Locality display name,,approved,locality:year191/songshan,true
-loc:locality/yingyin/name,ko-KR,영음,Locality display name,,approved,locality:year191/yingyin,true
-loc:region/central_plains/name,ko-KR,중원,Region display name,,approved,region:year191/central_plains,true
+loc:admin/jun,ko-KR,군,Historical administrative label,,approved,,true
+loc:admin/xian,ko-KR,현,Historical administrative label,,approved,,true
+loc:admin/zhou,ko-KR,주,Historical administrative label,,approved,,true
 loc:route/ferry_hulao/name,ko-KR,도하장–호뢰 변경로,Route display name,,approved,route:year191/ferry_hulao,true
 loc:route/hulao_xingyang/name,ko-KR,호뢰 산길,Route display name,,approved,route:year191/hulao_xingyang,true
 loc:route/hulao_yingyin/name,ko-KR,호뢰–영음 변경로,Route display name,,approved,route:year191/hulao_yingyin,true
@@ -25,7 +16,7 @@ loc:route/songshan_luoyang/name,ko-KR,숭산 계절 통로,Route display name,,a
 loc:route/xingyang_yingyin/name,ko-KR,형양–영음 가도,Route display name,,approved,route:year191/xingyang_yingyin,true
 loc:route/yingyin_chenliu/name,ko-KR,영음–진류 가도,Route display name,,approved,route:year191/yingyin_chenliu,true
 loc:route/yingyin_songshan/name,ko-KR,영음 산길,Route display name,,approved,route:year191/yingyin_songshan,true
-loc:scenario/central_plains/name,ko-KR,191년 중원,Scenario display name,,approved,scenario:year191/central_plains,true
+loc:scenario/central_plains/name,ko-KR,191년 후한 천하,Scenario display name,,approved,scenario:year191/central_plains,true
 loc:stop/chenliu_depot/name,ko-KR,진류 보급고,Route-stop display name,,approved,stop:year191/chenliu_depot,true
 loc:stop/hulao_gate/name,ko-KR,호뢰관,Route-stop display name,,approved,stop:year191/hulao_gate,true
 loc:stop/luoyang_city/name,ko-KR,낙양성,Route-stop display name,,approved,stop:year191/luoyang_city,true
@@ -34,3 +25,108 @@ loc:stop/songshan_pass/name,ko-KR,숭산 고개,Route-stop display name,,approve
 loc:stop/xingyang_fort/name,ko-KR,형양 요새,Route-stop display name,,approved,stop:year191/xingyang_fort,true
 loc:stop/yellow_river_ferry/name,ko-KR,황하 도하장,Route-stop display name,,approved,stop:year191/yellow_river_ferry,true
 loc:stop/yingyin_city/name,ko-KR,영음성,Route-stop display name,,approved,stop:year191/yingyin_city,true
+actor:hu_zhen,ko-KR,호진,Campaign-map actor display name,,approved,,true
+actor:kong_zhou,ko-KR,공주,Campaign-map actor display name,,approved,,true
+actor:wang_yun,ko-KR,왕윤,Campaign-map actor display name,,approved,,true
+actor:zhang_miao,ko-KR,장막,Campaign-map actor display name,,approved,,true
+culture:han,ko-KR,한,Campaign-map culture display name,,approved,,true
+faction:coalition,ko-KR,관동 연합군,Campaign-map faction display name,,approved,,true
+faction:han_court,ko-KR,한 조정,Campaign-map faction display name,,approved,,true
+loc:ui/campaign_map/title,ko-KR,삼국지 · 191년 군사 지도,Campaign-map title,,approved,,true
+loc:ui/campaign_map/status,ko-KR,주 {regions} · 군/국 {districts} · 현급 {localities} · 거점 {stops} · 경로 {routes},Campaign-map hierarchy and route status,districts|localities|regions|routes|stops,approved,,true
+loc:ui/campaign_map/navigation_hint,ko-KR,휠 확대/축소 · 가운데 버튼 드래그 이동,Campaign-map navigation hint,,approved,,true
+loc:ui/campaign_map/locale/en,ko-KR,영어,Campaign-map locale option,,approved,,true
+loc:ui/campaign_map/locale/ko,ko-KR,한국어,Campaign-map locale option,,approved,,true
+loc:ui/campaign_map/mode/political_control,ko-KR,정치적 지배,Campaign-map mode,,approved,,true
+loc:ui/campaign_map/mode/claims,ko-KR,영유권 주장,Campaign-map mode,,approved,,true
+loc:ui/campaign_map/mode/administration,ko-KR,행정,Campaign-map mode,,approved,,true
+loc:ui/campaign_map/mode/diplomacy,ko-KR,외교,Campaign-map mode,,approved,,true
+loc:ui/campaign_map/mode/supply,ko-KR,보급,Campaign-map mode,,approved,,true
+loc:ui/campaign_map/mode/population,ko-KR,인구,Campaign-map mode,,approved,,true
+loc:ui/campaign_map/mode/culture,ko-KR,문화,Campaign-map mode,,approved,,true
+loc:ui/campaign_map/mode/intelligence,ko-KR,정보,Campaign-map mode,,approved,,true
+loc:ui/campaign_map/mode/routes,ko-KR,경로,Campaign-map mode,,approved,,true
+loc:ui/campaign_map/hint/political_control,ko-KR,색: 실지배 · 온회색: 무통제 · 남회색: 미상 · 붉은 ×: 점령,Campaign-map legend hint,,approved,,true
+loc:ui/campaign_map/hint/claims,ko-KR,색: 관측된 주장 · 온회색: 주장 없음 확인 · 남회색: 미상,Campaign-map legend hint,,approved,,true
+loc:ui/campaign_map/hint/administration,ko-KR,색: 법적 임명 · 온회색: 임명 없음 확인 · 남회색: 미상 · 고리: 수용도,Campaign-map legend hint,,approved,,true
+loc:ui/campaign_map/hint/diplomacy,ko-KR,녹색: 자신 · 청색: 우호 · 황색: 중립 · 적색: 적대 · 회색: 무통제 · 남회색: 미상,Campaign-map legend hint,,approved,,true
+loc:ui/campaign_map/hint/supply,ko-KR,거점: 알려진 비축 · 선 굵기: 처리량 · 붉은 점선: 알려진 교란,Campaign-map legend hint,,approved,,true
+loc:ui/campaign_map/hint/population,ko-KR,색: 알려진 지역 인구,Campaign-map legend hint,,approved,,true
+loc:ui/campaign_map/hint/culture,ko-KR,색: 알려진 지역 문화,Campaign-map legend hint,,approved,,true
+loc:ui/campaign_map/hint/intelligence,ko-KR,"어두움→밝음: 미상, 풍문, 관측, 현재",Campaign-map legend hint,,approved,,true
+loc:ui/campaign_map/hint/routes,ko-KR,색과 무늬: 경로 유형 · 도형: 거점 유형,Campaign-map legend hint,,approved,,true
+loc:ui/campaign_map/field/stop,ko-KR,거점,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/route,ko-KR,경로,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/terrain,ko-KR,지형,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/controller,ko-KR,실지배,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/legal_appointee,ko-KR,법적 임명,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/local_acceptance,ko-KR,현지 수용,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/occupation,ko-KR,점령,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/claims,ko-KR,영유권,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/stores,ko-KR,비축,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/intelligence,ko-KR,정보,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/traversal_cost,ko-KR,이동 비용,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/capacity,ko-KR,수용력,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/supply_throughput,ko-KR,보급 처리량,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/effective_throughput,ko-KR,유효 처리량,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/available,ko-KR,통행 가능,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/daily_production,ko-KR,일일 생산,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/stationed_demand,ko-KR,주둔 수요,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/shortage,ko-KR,부족,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/tier,ko-KR,계층,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/region,ko-KR,권역,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/district,ko-KR,행정구,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/locality,ko-KR,지역,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/contains,ko-KR,포함,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/districts,ko-KR,행정구,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/localities,ko-KR,지역,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/stops,ko-KR,거점,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/transport,ko-KR,수송,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/control,ko-KR,통제,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/field/disruption,ko-KR,교란,Campaign-map inspector field,,approved,,true
+loc:ui/campaign_map/value/unknown,ko-KR,알 수 없음,Campaign-map inspector value,,approved,,true
+loc:ui/campaign_map/value/yes,ko-KR,예,Campaign-map inspector value,,approved,,true
+loc:ui/campaign_map/value/no,ko-KR,아니요,Campaign-map inspector value,,approved,,true
+loc:ui/campaign_map/value/none,ko-KR,없음,Campaign-map inspector value,,approved,,true
+loc:ui/campaign_map/value/uncontrolled,ko-KR,무통제,Campaign-map inspector value,,approved,,true
+loc:ui/campaign_map/terrain/plains,ko-KR,평원,Campaign-map terrain,,approved,,true
+loc:ui/campaign_map/terrain/hills,ko-KR,구릉,Campaign-map terrain,,approved,,true
+loc:ui/campaign_map/terrain/mountains,ko-KR,산악,Campaign-map terrain,,approved,,true
+loc:ui/campaign_map/terrain/forest,ko-KR,삼림,Campaign-map terrain,,approved,,true
+loc:ui/campaign_map/terrain/marsh,ko-KR,습지,Campaign-map terrain,,approved,,true
+loc:ui/campaign_map/terrain/river,ko-KR,하천,Campaign-map terrain,,approved,,true
+loc:ui/campaign_map/terrain/coast,ko-KR,해안,Campaign-map terrain,,approved,,true
+loc:ui/campaign_map/terrain/open_sea,ko-KR,외해,Campaign-map terrain,,approved,,true
+loc:ui/campaign_map/terrain/urban,ko-KR,도시,Campaign-map terrain,,approved,,true
+loc:ui/campaign_map/stop_type/settlement,ko-KR,성읍,Campaign-map stop type,,approved,,true
+loc:ui/campaign_map/stop_type/port,ko-KR,항구,Campaign-map stop type,,approved,,true
+loc:ui/campaign_map/stop_type/ferry,ko-KR,도하장,Campaign-map stop type,,approved,,true
+loc:ui/campaign_map/stop_type/bridge,ko-KR,교량,Campaign-map stop type,,approved,,true
+loc:ui/campaign_map/stop_type/pass,ko-KR,고개,Campaign-map stop type,,approved,,true
+loc:ui/campaign_map/stop_type/gate,ko-KR,관문,Campaign-map stop type,,approved,,true
+loc:ui/campaign_map/stop_type/fort,ko-KR,요새,Campaign-map stop type,,approved,,true
+loc:ui/campaign_map/stop_type/watchtower,ko-KR,망루,Campaign-map stop type,,approved,,true
+loc:ui/campaign_map/stop_type/camp,ko-KR,진영,Campaign-map stop type,,approved,,true
+loc:ui/campaign_map/stop_type/depot,ko-KR,보급고,Campaign-map stop type,,approved,,true
+loc:ui/campaign_map/stop_type/natural_battlefield,ko-KR,자연 전장,Campaign-map stop type,,approved,,true
+loc:ui/campaign_map/route_type/road,ko-KR,가도,Campaign-map route type,,approved,,true
+loc:ui/campaign_map/route_type/mountain_path,ko-KR,산길,Campaign-map route type,,approved,,true
+loc:ui/campaign_map/route_type/river,ko-KR,수로,Campaign-map route type,,approved,,true
+loc:ui/campaign_map/route_type/coastal_lane,ko-KR,연안 항로,Campaign-map route type,,approved,,true
+loc:ui/campaign_map/route_type/open_sea_lane,ko-KR,외해 항로,Campaign-map route type,,approved,,true
+loc:ui/campaign_map/route_type/frontier_trail,ko-KR,변경로,Campaign-map route type,,approved,,true
+loc:ui/campaign_map/route_type/seasonal_passage,ko-KR,계절 통로,Campaign-map route type,,approved,,true
+loc:ui/campaign_map/transport_mode/foot,ko-KR,도보,Campaign-map transport mode,,approved,,true
+loc:ui/campaign_map/transport_mode/horse,ko-KR,기마,Campaign-map transport mode,,approved,,true
+loc:ui/campaign_map/transport_mode/wagon,ko-KR,수레,Campaign-map transport mode,,approved,,true
+loc:ui/campaign_map/transport_mode/river_boat,ko-KR,하천선,Campaign-map transport mode,,approved,,true
+loc:ui/campaign_map/transport_mode/coastal_ship,ko-KR,연안선,Campaign-map transport mode,,approved,,true
+loc:ui/campaign_map/transport_mode/ocean_ship,ko-KR,대양선,Campaign-map transport mode,,approved,,true
+loc:ui/campaign_map/route_control/open,ko-KR,개방,Campaign-map route control,,approved,,true
+loc:ui/campaign_map/route_control/controlled,ko-KR,통제,Campaign-map route control,,approved,,true
+loc:ui/campaign_map/route_control/contested,ko-KR,분쟁,Campaign-map route control,,approved,,true
+loc:ui/campaign_map/route_control/blockaded,ko-KR,봉쇄,Campaign-map route control,,approved,,true
+loc:ui/campaign_map/intelligence/unknown,ko-KR,미상,Campaign-map intelligence level,,approved,,true
+loc:ui/campaign_map/intelligence/rumored,ko-KR,풍문,Campaign-map intelligence level,,approved,,true
+loc:ui/campaign_map/intelligence/observed,ko-KR,관측,Campaign-map intelligence level,,approved,,true
+loc:ui/campaign_map/intelligence/current,ko-KR,현재,Campaign-map intelligence level,,approved,,true

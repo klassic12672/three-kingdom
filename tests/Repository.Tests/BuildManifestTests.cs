@@ -16,8 +16,8 @@ public sealed class BuildManifestTests
         Assert.Equal("0.1.0", manifest.ProjectVersion);
         Assert.Equal("4.6.1.stable.mono.official.14d19694e", manifest.GodotVersion);
         Assert.Equal("10.0.301", manifest.DotnetSdkVersion);
-        Assert.Equal("6c527133073ffece29d4d75f7372cc783f2855f6354ed5be9eb1a6c971936449", manifest.ContentManifestChecksum);
-        Assert.Equal("e937297a171e33d102e18e02ba774b44d61e1b6b5d1b4e485fcb8b2878de672d", manifest.ContentRegistryChecksum);
+        Assert.Equal("f6024dea64ac6db0ae3af3bdc134a449e6f68223f89e98657e7dab120aa656ef", manifest.ContentManifestChecksum);
+        Assert.Equal("b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0", manifest.ContentRegistryChecksum);
         Assert.NotEqual(manifest.ContentManifestChecksum, manifest.ContentRegistryChecksum);
     }
 
@@ -37,10 +37,10 @@ public sealed class BuildManifestTests
             Assert.Equal("Release", document.RootElement.GetProperty("buildConfiguration").GetString());
             Assert.Equal(2, document.RootElement.GetProperty("schemaVersion").GetInt32());
             Assert.Equal(
-                "6c527133073ffece29d4d75f7372cc783f2855f6354ed5be9eb1a6c971936449",
+                "f6024dea64ac6db0ae3af3bdc134a449e6f68223f89e98657e7dab120aa656ef",
                 document.RootElement.GetProperty("contentManifestChecksum").GetString());
             Assert.Equal(
-                "e937297a171e33d102e18e02ba774b44d61e1b6b5d1b4e485fcb8b2878de672d",
+                "b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0",
                 document.RootElement.GetProperty("contentRegistryChecksum").GetString());
         }
         finally

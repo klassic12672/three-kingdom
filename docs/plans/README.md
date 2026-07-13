@@ -3,14 +3,14 @@
 Master plan: [version 0.2.0](../MASTER_PLAN.md)
 Active milestone: **M2 — 191 campaign slice**
 
-Subplans elaborate the master plan but may not redefine it. Exact SHA `7f62a97cf880ae6ded8e47af8737a11e53479977` closes SP-00/M0 and SP-01/SP-02/M1. M2 and SP-03 are active. SP-03's engine/content implementation is present, while rendering, map modes, picking, route highlighting, localization, label overlap, and interactive visual evidence remain active work. Physical Windows and production signing remain M4/SP-15 gates under ADR-0001.
+Subplans elaborate the master plan but may not redefine it. Exact SHA `7f62a97cf880ae6ded8e47af8737a11e53479977` closes SP-00/M0 and SP-01/SP-02/M1. M2 and SP-03 are active. SP-03's engine/content and expanded Later Han Apple Silicon presentation criteria are locally verified and product-accepted; accepted-revision hosted macOS/Windows evidence is still pending. Physical Windows and production signing remain M4/SP-15 gates under ADR-0001.
 
 | ID | Subplan | First milestone | Status | Dependencies |
 |---|---|---|---|---|
 | SP-00 | [Repository, toolchain, CI, and packaging](SP-00-repository-toolchain-ci-packaging.md) | M0 | **Complete** | None |
 | SP-01 | [Simulation, calendar, determinism, and saves](SP-01-simulation-calendar-determinism-saves.md) | M1 | **Complete** | SP-00 |
 | SP-02 | [Content, localization, modding, and research](SP-02-content-localization-modding-research.md) | M1 | **Complete** | SP-01 |
-| SP-03 | [Campaign map, regions, routes, and supply](SP-03-campaign-map-regions-routes-supply.md) | M2 | **Active — presentation acceptance in progress** | SP-01, SP-02 |
+| SP-03 | [Campaign map, regions, routes, and supply](SP-03-campaign-map-regions-routes-supply.md) | M2 | **Active — locally accepted; hosted revision gates pending** | SP-01, SP-02 |
 | SP-04 | [Characters, family, marriage, and succession](SP-04-characters-family-marriage-succession.md) | M2 | Planned/ready; not selected | SP-01, SP-02 |
 | SP-05 | [Factions, court, emperor, diplomacy, and espionage](SP-05-factions-court-emperor-diplomacy-espionage.md) | M2 | Planned/blocked | SP-03, SP-04 |
 | SP-06 | [Population, economy, administration, and technology](SP-06-population-economy-administration-technology.md) | M2 | Planned/blocked | SP-03, SP-04, SP-05 |

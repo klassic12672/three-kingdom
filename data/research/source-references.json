@@ -20,6 +20,56 @@
       "notes": "Retained separately to exercise disputed-source handling.",
       "citation": "SP-02 synthetic fixture note",
       "sourceTier": "development_fixture"
+    },
+    {
+      "schemaVersion": 1,
+      "sourceId": "source:hou_han_shu_jun_guo",
+      "claim": "The commandery register supplies the Later Han province, commandery/kingdom, and county-rank name hierarchy used as the gameplay baseline.",
+      "location": "https://ctext.org/hou-han-shu/jun-guo-yi/zh through https://ctext.org/hou-han-shu/jun-guo-wu/zh",
+      "confidence": "high",
+      "notes": "Treated as an early-140s baseline, not a perfectly synchronized 191 census; dependent-state sections are outside this package scope.",
+      "citation": "Fan Ye, Book of Later Han, Treatise on Commanderies and States 1-5",
+      "sourceTier": "primary_historical_text"
+    },
+    {
+      "schemaVersion": 1,
+      "sourceId": "source:later_han_audited_workbook",
+      "claim": "The audited user workbook supplies corrected Hanja, Korean readings, source-cell identity, and retained 군/국-county hierarchy rows.",
+      "location": "data/research/later-han-administrative-units.json; audited workbook SHA-256 4f6509b8d4d64b58319cd17f0617a5460fa2e6b2c89759eb7ae4ecdab7a35cf0",
+      "confidence": "medium",
+      "notes": "Historical facts and corrected names only. CHGIS/TGAZ coordinates, identifiers, record text, and licensed bulk data are not included in shipped content.",
+      "citation": "Later Han Administrative Units — Source Audit, 2026-07-13",
+      "sourceTier": "project_research_compilation"
+    },
+    {
+      "schemaVersion": 1,
+      "sourceId": "source:unicode_unihan_17",
+      "claim": "Unicode Unihan kMandarin readings provide independently generated research-facing English romanization bases.",
+      "location": "https://www.unicode.org/Public/UNIDATA/Unihan.zip; Unihan_Readings.txt SHA-256 575e69c9ad85a4737a889a4f94cbd987042a90a1a6cc16dd3f4ed995c715b17c",
+      "confidence": "medium",
+      "notes": "Generated readings are gameplay labels and may require later human correction for historical or polyphonic place-name readings. Unicode-3.0 license.",
+      "citation": "Unicode Character Database 17.0.0, Unihan_Readings.txt",
+      "sourceTier": "open_reference_data"
+    },
+    {
+      "schemaVersion": 1,
+      "sourceId": "source:dila_place_authority_2026_07",
+      "claim": "The DILA Place Authority TEI supplies attributed coordinate candidates used to place Later Han administrative anchors.",
+      "location": "data/research/later-han-locations.json; upstream commit 385e3f557285d7a60346f85d698193e19b6cea2f; TEI SHA-256 6fcc9f650b0737f4379f58d605cb65de5ce08680de8ab5631dbc1427f3552efb",
+      "confidence": "medium",
+      "notes": "CC BY-SA 3.0 attribution and derivation metadata are retained in the portable snapshot. Direct, disambiguated, and inferred placements are distinguished; the complete upstream TEI is not redistributed.",
+      "citation": "Dharma Drum Institute of Liberal Arts, Buddhist Studies Place Authority Database, dataset dated through 2026-07-01",
+      "sourceTier": "open_reference_data"
+    },
+    {
+      "schemaVersion": 1,
+      "sourceId": "source:later_han_stylized_layout",
+      "claim": "The map projection, inferred-anchor offsets, terrain decoration, and presentation geometry are project-authored stylizations around attributed coordinate candidates.",
+      "location": "tools/Tools.ContentPipeline/LaterHanGeographyGenerator.cs",
+      "confidence": "low",
+      "notes": "These are not surveyed administrative boundaries. Inferred anchors are visibly separated in the research snapshot from DILA-derived coordinates and may be refined without changing route mechanics.",
+      "citation": "Three Kingdoms SP-03 stylized Later Han layout",
+      "sourceTier": "gameplay_synthesis"
     }
   ]
 }

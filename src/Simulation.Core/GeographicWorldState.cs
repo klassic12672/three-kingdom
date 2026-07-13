@@ -17,6 +17,10 @@ public interface IGeographicWorldQuery
     IReadOnlyList<ArmyGeographicState> Armies { get; }
 
     GeographicContext GetContext(EntityId stopId, EntityId observerId);
+
+    CampaignMapPresentationState GetCampaignMapPresentation(
+        EntityId observerId,
+        IReadOnlyDictionary<EntityId, DiplomaticRelationCategory>? diplomaticRelations = null);
 }
 
 public sealed class GeographicWorldState : IGeographicWorldQuery
@@ -478,19 +482,7 @@ public sealed class GeographicWorldState : IGeographicWorldQuery
             ? foundDistrict
             : throw new SimulationValidationException($"Locality '{locality.Id}' has no district.");
         LocationState state = locations[stopId];
-        LocationIntelligence? intelligence = state.Intelligence.FirstOrDefault(item => item.ObserverId == observerId);
-        IntelligenceLevel level = state.ControllerId == observerId
-            ? IntelligenceLevel.Current
-            : intelligence?.Level ?? IntelligenceLevel.Unknown;
-        KnownLocationState known = new(
-            stopId,
-            level,
-            level >= IntelligenceLevel.Rumored ? state.ControllerId : null,
-            level >= IntelligenceLevel.Observed ? state.LegalAppointeeId : null,
-            level >= IntelligenceLevel.Current ? state.LocalAcceptance : null,
-            level >= IntelligenceLevel.Observed ? state.Claims.ToArray() : [],
-            level >= IntelligenceLevel.Observed ? state.Occupied : null,
-            level >= IntelligenceLevel.Current ? state.Stores : null);
+        KnownLocationState known = GetKnownLocationState(state, observerId);
         Route[] connected = Graph.GetRoutes(stopId).ToArray();
         return new GeographicContext(
             stopId,
@@ -506,6 +498,155 @@ public sealed class GeographicWorldState : IGeographicWorldQuery
             locality.CultureId,
             locality.Population,
             Graph.GetBattleLocation(stopId, Weather));
+    }
+
+    public CampaignMapPresentationState GetCampaignMapPresentation(
+        EntityId observerId,
+        IReadOnlyDictionary<EntityId, DiplomaticRelationCategory>? diplomaticRelations = null)
+    {
+        KnownLocationPresentationState[] knownLocations = locations.Values
+            .Select(location =>
+            {
+                KnownLocationState politicalState = GetKnownLocationState(location, observerId);
+                IntelligenceLevel intelligence = politicalState.Intelligence;
+                bool current = intelligence >= IntelligenceLevel.Current;
+                EntityId? knownController = politicalState.ControllerId;
+                RouteStop stop = Graph.TryGetStop(location.StopId, out RouteStop? foundStop)
+                    ? foundStop
+                    : throw new SimulationValidationException($"Unknown geographic stop '{location.StopId}'.");
+                Locality locality = Graph.TryGetLocality(stop.LocalityId, out Locality? foundLocality)
+                    ? foundLocality
+                    : throw new SimulationValidationException($"Stop '{location.StopId}' has no locality.");
+                ArmyGeographicState[] stationedArmies = current
+                    ? armies.Values
+                        .Where(army => army.ActiveRouteId is null && army.CurrentStopId == location.StopId)
+                        .ToArray()
+                    : [];
+                long? dailyDemand = current
+                    ? stationedArmies.Aggregate(0L, (total, army) => checked(total + army.DailySupplyDemand))
+                    : null;
+                long? dailyShortage = current
+                    ? stationedArmies.Aggregate(
+                        0L,
+                        (total, army) => checked(total + Math.Max(0, army.DailySupplyDemand - army.Supply)))
+                    : null;
+                return new KnownLocationPresentationState(
+                    location.StopId,
+                    intelligence,
+                    knownController,
+                    ResolveDiplomaticRelation(
+                        observerId,
+                        intelligence,
+                        knownController,
+                        diplomaticRelations),
+                    current ? location.Stores : null,
+                    current ? location.DailyProduction : null,
+                    dailyDemand,
+                    dailyShortage,
+                    politicalState,
+                    intelligence >= IntelligenceLevel.Observed ? locality.Population : null,
+                    intelligence >= IntelligenceLevel.Observed ? locality.CultureId : null);
+            })
+            .OrderBy(location => location.StopId)
+            .ToArray();
+
+        KnownRoutePresentationState[] knownRoutes = Graph.Definition.Routes
+            .Select(route =>
+            {
+                IntelligenceLevel intelligence = (IntelligenceLevel)Math.Min(
+                    (int)GetIntelligence(locations[route.FromStopId], observerId),
+                    (int)GetIntelligence(locations[route.ToStopId], observerId));
+                if (intelligence < IntelligenceLevel.Current)
+                {
+                    return new KnownRoutePresentationState(
+                        route.Id,
+                        intelligence,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null);
+                }
+
+                RouteState state = routes[route.Id];
+                bool available = IsRouteAvailable(state, observerId) && !IsClosed(route);
+                return new KnownRoutePresentationState(
+                    route.Id,
+                    intelligence,
+                    route.Capacity,
+                    route.SupplyThroughput,
+                    available ? GetEffectiveCapacity(route, supply: true) : 0,
+                    state.ControllerId,
+                    state.ControlState,
+                    state.DisruptionPermille,
+                    available);
+            })
+            .OrderBy(route => route.RouteId)
+            .ToArray();
+
+        return new CampaignMapPresentationState(knownLocations, knownRoutes);
+    }
+
+    private static IntelligenceLevel GetIntelligence(LocationState location, EntityId observerId)
+    {
+        if (location.ControllerId == observerId)
+        {
+            return IntelligenceLevel.Current;
+        }
+
+        return location.Intelligence.FirstOrDefault(item => item.ObserverId == observerId)?.Level
+            ?? IntelligenceLevel.Unknown;
+    }
+
+    private static KnownLocationState GetKnownLocationState(LocationState location, EntityId observerId)
+    {
+        IntelligenceLevel intelligence = GetIntelligence(location, observerId);
+        return new KnownLocationState(
+            location.StopId,
+            intelligence,
+            intelligence >= IntelligenceLevel.Rumored ? location.ControllerId : null,
+            intelligence >= IntelligenceLevel.Observed ? location.LegalAppointeeId : null,
+            intelligence >= IntelligenceLevel.Current ? location.LocalAcceptance : null,
+            intelligence >= IntelligenceLevel.Observed ? location.Claims.ToArray() : [],
+            intelligence >= IntelligenceLevel.Observed ? location.Occupied : null,
+            intelligence >= IntelligenceLevel.Current ? location.Stores : null);
+    }
+
+    private static DiplomaticRelationCategory ResolveDiplomaticRelation(
+        EntityId observerId,
+        IntelligenceLevel intelligence,
+        EntityId? knownController,
+        IReadOnlyDictionary<EntityId, DiplomaticRelationCategory>? diplomaticRelations)
+    {
+        if (intelligence < IntelligenceLevel.Rumored)
+        {
+            return DiplomaticRelationCategory.Unknown;
+        }
+
+        if (knownController is null)
+        {
+            return DiplomaticRelationCategory.Uncontrolled;
+        }
+
+        if (knownController == observerId)
+        {
+            return DiplomaticRelationCategory.Self;
+        }
+
+        if (diplomaticRelations is null
+            || !diplomaticRelations.TryGetValue(knownController.Value, out DiplomaticRelationCategory relation)
+            || !Enum.IsDefined(relation))
+        {
+            return DiplomaticRelationCategory.Unknown;
+        }
+
+        return relation is DiplomaticRelationCategory.Friendly
+            or DiplomaticRelationCategory.Neutral
+            or DiplomaticRelationCategory.Hostile
+            ? relation
+            : DiplomaticRelationCategory.Unknown;
     }
 
     private MovementProposal PlanMovement(ArmyGeographicState army)

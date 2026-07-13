@@ -64,13 +64,11 @@ Before M4, estimates are internal ranges only. After M4, record measured velocit
 
 ## Current work order
 
-1. Resolve or recheck the Godot `.NET: Initializing module` launch stall on the development Mac.
-2. Render the illustrated 2.5D route map for the bounded 191 slice.
-3. Verify all required map modes against authoritative known-information queries.
-4. Test interactive picking and route highlighting.
-5. Review Korean/English labels and label overlap on the development Mac.
-6. Capture interactive visual evidence without checking unsupported presentation criteria early.
+1. Preserve the locally accepted SP-03 functional-map baseline and its expanded Later Han Apple Silicon [working-tree presentation evidence](evidence/SP-03-later-han-map-working-tree-2026-07-13/README.md). Detailed cartographic refinement is deferred to pre–Early Access work.
+2. Run the required exact-SHA hosted macOS/Windows gates for the accepted revision.
+3. Reconcile the historical working-tree evidence with that revision without claiming clean-checkout provenance early.
+4. Close SP-03 only after accepted-revision evidence is healthy, then select the first independently verifiable SP-04 package.
 
-M0 and M1 are complete. SP-03 is active with its engine/content criteria preserved and its presentation criteria still unchecked.
+M0 and M1 are complete. SP-03 remains active: its engine/content and Apple Silicon presentation criteria are locally verified and product-accepted, while exact-SHA accepted-revision coverage is pending. M2 is not complete.
 
 See the [subsystem plan index](plans/README.md) for dependency status.

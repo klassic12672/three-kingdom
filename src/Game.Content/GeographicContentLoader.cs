@@ -11,6 +11,7 @@ public static class GeographicContentLoader
     {
         NormalizedContentRecord scenarioRecord = GetRecord(registry, scenarioId, "geography_scenario");
         GeographyScenarioData scenario = Deserialize<GeographyScenarioData>(scenarioRecord);
+        _ = GetDiplomaticRelations(scenario);
         GeographicGraphDefinition graph = new(
             scenario.RegionIds.Select(id =>
             {
@@ -62,24 +63,59 @@ public static class GeographicContentLoader
             scenario.Armies).Canonicalize();
     }
 
-    public static GeographicWorldSnapshot LoadSingleScenario(ContentRegistry registry)
+    public static GeographicWorldSnapshot LoadSingleScenario(ContentRegistry registry) =>
+        LoadScenario(registry, GetSingleScenarioRecord(registry).Id);
+
+    public static GeographicRuntimeArtifact CreateRuntimeArtifact(ContentRegistry registry)
+    {
+        NormalizedContentRecord scenarioRecord = GetSingleScenarioRecord(registry);
+        GeographyScenarioData scenario = Deserialize<GeographyScenarioData>(scenarioRecord);
+        GeographicDiplomaticRelation[] relations = GetDiplomaticRelations(scenario);
+
+        return new GeographicRuntimeArtifact(
+            1,
+            registry.Checksum,
+            LoadScenario(registry, scenarioRecord.Id),
+            registry.LocalizationEntries)
+        {
+            DiplomaticRelations = relations,
+        };
+    }
+
+    private static GeographicDiplomaticRelation[] GetDiplomaticRelations(GeographyScenarioData scenario)
+    {
+        GeographicDiplomaticRelation[] relations = (scenario.DiplomaticRelations ?? [])
+            .OrderBy(relation => relation.ObserverId)
+            .ThenBy(relation => relation.CounterpartyId)
+            .ToArray();
+        if (relations.Any(relation => !relation.ObserverId.IsValid
+                || !relation.CounterpartyId.IsValid
+                || relation.ObserverId == relation.CounterpartyId
+                || relation.Relation is not (DiplomaticRelationCategory.Friendly
+                    or DiplomaticRelationCategory.Neutral
+                    or DiplomaticRelationCategory.Hostile))
+            || relations.Select(relation => (relation.ObserverId, relation.CounterpartyId)).Distinct().Count()
+                != relations.Length)
+        {
+            throw new InvalidDataException("Geography scenario diplomatic relations must have unique valid observer/counterparty pairs and a friendly, neutral, or hostile category.");
+        }
+
+        return relations;
+    }
+
+    private static NormalizedContentRecord GetSingleScenarioRecord(ContentRegistry registry)
     {
         NormalizedContentRecord[] scenarios = registry.Records
             .Where(record => record.RecordType == "geography_scenario")
+            .OrderBy(record => record.Id)
             .ToArray();
         return scenarios.Length switch
         {
-            1 => LoadScenario(registry, scenarios[0].Id),
+            1 => scenarios[0],
             0 => throw new InvalidDataException("No geography_scenario record is loaded."),
             _ => throw new InvalidDataException("More than one geography_scenario is loaded; select one explicitly."),
         };
     }
-
-    public static GeographicRuntimeArtifact CreateRuntimeArtifact(ContentRegistry registry) => new(
-        1,
-        registry.Checksum,
-        LoadSingleScenario(registry),
-        registry.LocalizationEntries);
 
     private static NormalizedContentRecord GetRecord(ContentRegistry registry, EntityId id, string expectedType)
     {
@@ -158,11 +194,21 @@ public static class GeographicContentLoader
         IReadOnlyList<LocationState> Locations,
         IReadOnlyList<RouteState> RouteStates,
         IReadOnlyList<ArmyGeographicState> Armies,
-        IReadOnlyList<EntityId> References);
+        IReadOnlyList<EntityId> References,
+        IReadOnlyList<GeographicDiplomaticRelation>? DiplomaticRelations = null);
 }
 
 public sealed record GeographicRuntimeArtifact(
     int SchemaVersion,
     string ContentChecksum,
     GeographicWorldSnapshot Geography,
-    IReadOnlyList<LocalizationEntry> Localization);
+    IReadOnlyList<LocalizationEntry> Localization)
+{
+    // Additive schema-1 field: older artifacts deserialize with an empty relation set.
+    public IReadOnlyList<GeographicDiplomaticRelation> DiplomaticRelations { get; init; } = [];
+}
+
+public sealed record GeographicDiplomaticRelation(
+    EntityId ObserverId,
+    EntityId CounterpartyId,
+    DiplomaticRelationCategory Relation);

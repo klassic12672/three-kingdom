@@ -25,6 +25,24 @@ TestResults/
 artifacts/*
 !artifacts/.gitkeep
 game/generated/*.json
+outputs/
+
+# Superseded SP-03 visual diagnostics; retain only the report's authoritative sweep.
+docs/evidence/SP-03-presentation-working-tree-2026-07-12/*.png
+!docs/evidence/SP-03-presentation-working-tree-2026-07-12/final-01-political-uncontrolled-en.png
+!docs/evidence/SP-03-presentation-working-tree-2026-07-12/final-02-claims-known-none-en.png
+!docs/evidence/SP-03-presentation-working-tree-2026-07-12/final-03-administration-ko.png
+!docs/evidence/SP-03-presentation-working-tree-2026-07-12/final-04-diplomacy-uncontrolled-ko.png
+!docs/evidence/SP-03-presentation-working-tree-2026-07-12/final-05-supply-selected-route-en.png
+!docs/evidence/SP-03-presentation-working-tree-2026-07-12/final-06-population-en.png
+!docs/evidence/SP-03-presentation-working-tree-2026-07-12/final-07-culture-ko.png
+!docs/evidence/SP-03-presentation-working-tree-2026-07-12/final-08-intelligence-rumored-en.png
+!docs/evidence/SP-03-presentation-working-tree-2026-07-12/final-09-routes-selected-ko.png
+!docs/evidence/SP-03-presentation-working-tree-2026-07-12/final-10-selected-region-en.png
+!docs/evidence/SP-03-presentation-working-tree-2026-07-12/final-11-selected-district-ko.png
+!docs/evidence/SP-03-presentation-working-tree-2026-07-12/final-12-selected-locality-en.png
+!docs/evidence/SP-03-presentation-working-tree-2026-07-12/final-19-actual-window-hover-route-en.png
+!docs/evidence/SP-03-presentation-working-tree-2026-07-12/final-20-routes-1024x768-en.png
 
 # Operating-system files
 .DS_Store

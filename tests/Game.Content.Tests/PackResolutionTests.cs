@@ -15,9 +15,9 @@ public sealed class PackResolutionTests
         ContentLoadResult result = new ContentPackLoader().LoadRepository(Path.Combine(root, "data"), "0.1.0");
 
         Assert.False(result.Report.HasErrors);
-        Assert.Equal(32, result.Registry.RecordCount);
-        Assert.Equal(70, result.Registry.LocalizationCount);
-        Assert.Equal("e937297a171e33d102e18e02ba774b44d61e1b6b5d1b4e485fcb8b2878de672d", result.Registry.Checksum);
+        Assert.Equal(1_295, result.Registry.RecordCount);
+        Assert.Equal(2_820, result.Registry.LocalizationCount);
+        Assert.Equal("b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0", result.Registry.Checksum);
     }
 
     [Fact]

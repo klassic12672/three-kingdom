@@ -125,6 +125,16 @@ public enum IntelligenceLevel
     Current,
 }
 
+public enum DiplomaticRelationCategory
+{
+    Unknown,
+    Self,
+    Uncontrolled,
+    Friendly,
+    Neutral,
+    Hostile,
+}
+
 public enum BattleFrontType
 {
     Field,
@@ -327,6 +337,34 @@ public sealed record KnownLocationState(
     IReadOnlyList<ClaimState> Claims,
     bool? Occupied,
     long? Stores);
+
+public sealed record KnownLocationPresentationState(
+    EntityId StopId,
+    IntelligenceLevel Intelligence,
+    EntityId? ControllerId,
+    DiplomaticRelationCategory DiplomaticRelation,
+    long? Stores,
+    long? DailyProduction,
+    long? StationedArmyDailyDemand,
+    long? StationedArmyDailyShortage,
+    KnownLocationState PoliticalState,
+    long? Population,
+    EntityId? CultureId);
+
+public sealed record KnownRoutePresentationState(
+    EntityId RouteId,
+    IntelligenceLevel Intelligence,
+    int? Capacity,
+    int? SupplyThroughput,
+    int? EffectiveSupplyThroughput,
+    EntityId? ControllerId,
+    RouteControlState? ControlState,
+    int? DisruptionPermille,
+    bool? AvailableToObserver);
+
+public sealed record CampaignMapPresentationState(
+    IReadOnlyList<KnownLocationPresentationState> Locations,
+    IReadOnlyList<KnownRoutePresentationState> Routes);
 
 public sealed record BattleLocationDescriptor(
     EntityId LocationId,
