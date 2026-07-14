@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **Active — functional baseline locally accepted; accepted-revision gates pending** |
+| Status | **Complete** |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -108,7 +108,7 @@ The accepted local package imports the complete 13-region, 99-district, and 1,16
 
 The previous [bounded-layout report](../evidence/SP-03-presentation-working-tree-2026-07-12/README.md) remains historical evidence for the earlier tree and does not establish the replacement layout. Final command counts, checksums, and performance figures are recorded only in the current report.
 
-This verifies and product-accepts the two presentation criteria locally but is not exact-SHA or clean-checkout evidence. Detailed cartographic refinement is deferred to pre–Early Access work. SP-03 remains Active until the accepted revision keeps hosted macOS/Windows gates healthy. M2 remains Active.
+The working-tree report verifies and product-accepts the two presentation criteria locally. Exact implementation SHA `f91dfce730f1e116bd17321e8a0a654a69823c69` then passed [hosted macOS arm64 and Windows x64 CI](../evidence/SP-03-EXACT-SHA-f91dfce.md) through LFS checkout, validation, build, 113/113 tests, Godot import, native development export, automated smoke, manifest checks, and artifact upload with the same expected content checksums. Together the local presentation record and exact-SHA hosted evidence complete SP-03. Detailed cartographic refinement remains deferred to pre–Early Access work. M2 remains Active, and SP-04 package planning is next.
 
 ## Risks
 

@@ -158,4 +158,4 @@ Still unsupported by this evidence:
 - non-default custom UI scaling beyond the reviewed Retina backing scale;
 - automated pixel/layout/picking assertions; these visual behaviors remain manually evidenced.
 
-SP-03 remains Active until the package is committed and accepted-revision hosted gates exist. M2 remains Active and is not complete.
+At collection time SP-03 remained Active because no accepted-revision hosted gates existed. The coordinate-backed replacement and its later [exact-SHA hosted report](../SP-03-EXACT-SHA-f91dfce.md) subsequently completed SP-03; this report remains historical evidence for the preceding bounded layout and does not establish the replacement map. M2 remains Active and is not complete.

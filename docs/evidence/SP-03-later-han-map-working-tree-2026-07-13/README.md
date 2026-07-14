@@ -4,7 +4,13 @@
 
 The uncommitted SP-03 working tree loads 13 region-tier records, 99 ordinary 군/국 or capital-equivalent district-tier records, and 1,160 county-rank localities. It preserves the existing eight strategic stops and ten movement/supply routes. The former circular test layout is replaced by an attributed coordinate snapshot, explicit low-confidence inferred anchors, a project-authored projection, rivers, mountains, convex presentation hulls, and semantic zoom.
 
-This is dirty-working-tree evidence from the development Apple Silicon Mac. On 2026-07-14, the user product-accepted this functional map baseline and deferred detailed cartographic refinement until pre–Early Access work. This report is still not exact-SHA, clean-checkout, hosted, exported-build, physical-Windows, or release evidence. SP-03 and M2 remain active pending the applicable gates.
+This is dirty-working-tree evidence from the development Apple Silicon Mac. On 2026-07-14, the user product-accepted this functional map baseline and deferred detailed cartographic refinement until pre–Early Access work. This report is still not exact-SHA, clean-checkout, hosted, exported-build, physical-Windows, or release evidence. At collection time SP-03 and M2 remained active pending the applicable gates.
+
+## Later exact-SHA reconciliation
+
+The accepted working tree was committed as `f91dfce730f1e116bd17321e8a0a654a69823c69`. That exact revision subsequently passed hosted macOS arm64 and Windows x64 validation, build, 113/113 tests, import, native development export, automated smoke, manifest checks, and artifact upload in [CI run 29297543256](https://github.com/klassic12672/three-kingdom/actions/runs/29297543256). Both hosted artifacts reproduce this report's content pack checksum `f6024dea...` and registry/geography checksum `b04754a...`; see the [exact-SHA hosted report](../SP-03-EXACT-SHA-f91dfce.md).
+
+That later evidence does not retroactively make these captures clean-checkout, hosted, exported-build, or Windows visual evidence. This report remains the local Apple Silicon visual, interaction, performance, and product-acceptance record; the exact-SHA report supplies the accepted-revision portability and artifact identities. Taken together they justify SP-03 completion while M2 remains Active and SP-04 package planning becomes next.
 
 ## Revision and environment
 
@@ -117,6 +123,6 @@ The first full run after the source change failed only the three expected golden
 - Convex hulls are stylized containment cues, not historical borders.
 - The eight provisional Korean readings still need human language review before release marking.
 - Broader multi-window cartographic polish and play review are deliberately deferred to pre–Early Access refinement rather than treated as an SP-03 closeout gate.
-- No current accepted revision exists, so exact-SHA hosted macOS/Windows build, test, import, export, automated smoke, and artifact identity remain pending.
+- At collection time no accepted revision or exact-SHA hosted evidence existed. Commit `f91dfce...` and its later [hosted report](../SP-03-EXACT-SHA-f91dfce.md) close that historical gap.
 - Physical Windows visual/input review remains an M4 gate under ADR-0001, not an SP-03 working-tree gate.
-- M2 and SP-03 are not complete.
+- At collection time M2 and SP-03 were not complete. SP-03 subsequently completed from the combined local and exact-SHA hosted evidence; M2 remains Active.

@@ -26,12 +26,12 @@ This directory contains reusable prompts and agent routing for executing the app
 
 ## Current order
 
-M0 and M1 are complete. The current safe order is:
+M0, M1, and SP-03 are complete. The current safe order is:
 
-1. Recheck or resolve the SP-03 Godot `.NET: Initializing module` launch stall.
-2. Complete route-map, map-mode, picking, highlight, localized-label, and overlap review.
-3. Capture interactive macOS visual evidence before checking the remaining presentation criteria.
-4. Otherwise select later M2 work according to the active roadmap and dependency gates.
+1. Use the package planner to define the first independently verifiable SP-04 package.
+2. Keep the next task planning-only until its boundary, contracts, tests, and acceptance evidence are explicit.
+3. Begin SP-04 implementation only after that package is selected; preserve the completed SP-03 baseline and its deferred pre–Early Access refinement boundary.
+4. Continue later M2 work according to the active roadmap and dependency gates.
 5. Before M4/public demo, collect physical Windows evidence.
 6. Before public promotion, complete SP-15 signing/notarization and Steam evidence.
 

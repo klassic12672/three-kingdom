@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Planned/ready — dependencies complete; not selected while SP-03 is active |
+| Status | Planned/ready — dependencies complete; next package to plan |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |

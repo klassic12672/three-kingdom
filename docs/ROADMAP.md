@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Master-plan version | 0.2.0 |
-| Updated | 2026-07-12 |
+| Updated | 2026-07-14 |
 | Active milestone | **M2 — 191 campaign slice** |
 | Scheduling policy | Milestone gates; no public dates before M4 |
 
@@ -64,11 +64,10 @@ Before M4, estimates are internal ranges only. After M4, record measured velocit
 
 ## Current work order
 
-1. Preserve the locally accepted SP-03 functional-map baseline and its expanded Later Han Apple Silicon [working-tree presentation evidence](evidence/SP-03-later-han-map-working-tree-2026-07-13/README.md). Detailed cartographic refinement is deferred to pre–Early Access work.
-2. Run the required exact-SHA hosted macOS/Windows gates for the accepted revision.
-3. Reconcile the historical working-tree evidence with that revision without claiming clean-checkout provenance early.
-4. Close SP-03 only after accepted-revision evidence is healthy, then select the first independently verifiable SP-04 package.
+1. Preserve the completed SP-03 functional-map baseline established by the accepted Later Han Apple Silicon [working-tree presentation evidence](evidence/SP-03-later-han-map-working-tree-2026-07-13/README.md) and exact-SHA [hosted macOS/Windows evidence](evidence/SP-03-EXACT-SHA-f91dfce.md).
+2. Keep detailed cartographic refinement deferred to pre–Early Access work.
+3. Plan the first independently verifiable SP-04 package; do not begin implementation until its package boundary and acceptance evidence are defined.
 
-M0 and M1 are complete. SP-03 remains active: its engine/content and Apple Silicon presentation criteria are locally verified and product-accepted, while exact-SHA accepted-revision coverage is pending. M2 is not complete.
+M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 package planning is next.
 
 See the [subsystem plan index](plans/README.md) for dependency status.
