@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Text.Json;
 
 namespace Simulation.Core;
 
@@ -8,8 +9,7 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
         MarriageProhibitedKinship.DirectLine | MarriageProhibitedKinship.Siblings;
 
     private readonly IAuthoritativeCharacterWorldQuery characters;
-    private readonly CampaignDate snapshotDate;
-    private readonly long snapshotTurnIndex;
+    private CampaignCalendar calendar;
     private readonly SortedDictionary<EntityId, MarriagePracticeState> practices = [];
     private readonly SortedDictionary<EntityId, MarriageProposalState> proposals = [];
     private readonly SortedDictionary<EntityId, PoliticalBetrothalState> betrothals = [];
@@ -36,8 +36,7 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
                 "Character-marriage snapshot calendar is invalid.");
         }
 
-        snapshotDate = calendar.Date;
-        snapshotTurnIndex = calendar.TurnIndex;
+        this.calendar = calendar;
         ValidateSnapshotShape(snapshot);
         AddPractices(snapshot.Practices);
         AddProposals(snapshot.Proposals);
@@ -327,6 +326,1355 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
         romanceRoutes.Values.Select(Clone).ToArray(),
         history.Values.Select(Clone).ToArray());
 
+    internal void UpdateCampaignCalendar(CampaignCalendar value)
+    {
+        if (!value.Date.IsValid || value.TurnIndex < 0)
+        {
+            throw new SimulationValidationException(
+                "Character-marriage campaign calendar is invalid.");
+        }
+
+        if (value.Date.CompareTo(calendar.Date) < 0 || value.TurnIndex < calendar.TurnIndex)
+        {
+            throw new SimulationValidationException(
+                "Character-marriage campaign calendar cannot move backward.");
+        }
+
+        calendar = value;
+    }
+
+    public CommandValidationResult ValidateAction(
+        EntityId actingCharacterId,
+        CharacterMarriageActionCommandPayload payload,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex)
+    {
+        List<ValidationIssue> issues = [];
+        ValidateActionEnvelope(
+            actingCharacterId,
+            payload,
+            resolutionDate,
+            authoritativeTurnIndex,
+            validateAcceptanceEligibility: true,
+            issues);
+        return issues.Count == 0 ? CommandValidationResult.Valid : new(false, issues);
+    }
+
+    public CharacterMarriageActionResolvedEventPayload PlanAction(
+        EntityId actingCharacterId,
+        CharacterMarriageActionCommandPayload payload,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        List<ValidationIssue> issues = [];
+        ValidateActionEnvelope(
+            actingCharacterId,
+            payload,
+            resolutionDate,
+            authoritativeTurnIndex,
+            validateAcceptanceEligibility: false,
+            issues);
+        ThrowIfInvalid(issues);
+        RequireNamespacedId(commandId, "command:", "Character-marriage command ID");
+        RequireNamespacedId(eventId, "event:", "Character-marriage event ID");
+        if (eventId != CharacterMarriageIds.DeriveActionEventId(resolutionDate, commandId))
+        {
+            throw new SimulationValidationException(
+                $"Character-marriage event ID '{eventId}' does not match command '{commandId}'.");
+        }
+
+        ICharacterMarriageAction action = Clone(payload.Action);
+        ICharacterMarriageActionOutcome outcome = action switch
+        {
+            ProposePoliticalMarriageAction value => PlanProposal(
+                actingCharacterId,
+                value,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId),
+            RespondToPoliticalMarriageProposalAction value => PlanProposalResponse(
+                actingCharacterId,
+                value,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId),
+            WithdrawPoliticalMarriageProposalAction value => PlanProposalWithdrawal(
+                value,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId),
+            CancelPoliticalBetrothalAction value => PlanBetrothalCancellation(
+                value,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId),
+            FulfillPoliticalBetrothalAction value => PlanBetrothalFulfillment(
+                actingCharacterId,
+                value,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId),
+            _ => throw new SimulationValidationException(
+                "Unsupported character-marriage action type."),
+        };
+
+        return new CharacterMarriageActionResolvedEventPayload(
+            actingCharacterId,
+            action,
+            Clone(outcome));
+    }
+
+    public void PrevalidateOutcome(
+        CharacterMarriageActionResolvedEventPayload payload,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId) => _ = PrepareOutcome(
+            payload,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+
+    internal CharacterMarriageWorldUpdatePlan PrepareOutcome(
+        CharacterMarriageActionResolvedEventPayload payload,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (payload is null || payload.Action is null || payload.Outcome is null)
+        {
+            throw new SimulationValidationException(
+                "Character-marriage action outcome payload cannot contain null data.");
+        }
+
+        CharacterMarriageActionResolvedEventPayload expected = PlanAction(
+            payload.ActingCharacterId,
+            new CharacterMarriageActionCommandPayload(payload.Action),
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+        string expectedJson = JsonSerializer.Serialize(expected, SimulationJson.CreateOptions());
+        string actualJson = JsonSerializer.Serialize(payload, SimulationJson.CreateOptions());
+        if (!StringComparer.Ordinal.Equals(expectedJson, actualJson))
+        {
+            throw new SimulationValidationException(
+                "Character-marriage action outcome does not match the exact deterministic plan.");
+        }
+
+        CharacterMarriageWorldSnapshot updated = ApplyOutcomeToSnapshot(
+            CaptureSnapshot(),
+            payload.Outcome);
+        updated = NormalizeRetention(updated);
+        CampaignCalendar candidateCalendar = new(
+            resolutionDate.CompareTo(calendar.Date) > 0 ? resolutionDate : calendar.Date,
+            Math.Max(calendar.TurnIndex, authoritativeTurnIndex));
+        CharacterMarriageWorldState candidate = new(updated, characters, candidateCalendar);
+        return new CharacterMarriageWorldUpdatePlan(candidate);
+    }
+
+    internal void ApplyPrepared(CharacterMarriageWorldUpdatePlan plan)
+    {
+        if (plan?.Candidate is null)
+        {
+            throw new SimulationValidationException(
+                "Prepared character-marriage update cannot be null.");
+        }
+
+        ReplaceFrom(plan.Candidate);
+    }
+
+    private ICharacterMarriageActionOutcome PlanProposal(
+        EntityId actingCharacterId,
+        ProposePoliticalMarriageAction action,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId)
+    {
+        MarriageProposalState proposal = new(
+            CharacterMarriageContractVersions.State,
+            CharacterMarriageIds.DeriveProposalId(action.Kind, resolutionDate, commandId),
+            action.Kind,
+            MarriageBasis.Political,
+            action.ProposedForm,
+            MarriageConsentKind.PoliticalArrangement,
+            actingCharacterId,
+            action.RecipientCharacterId,
+            action.ConcubinagePrincipalCharacterId,
+            action.PracticeId,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            MarriageProposalStatus.Active,
+            null,
+            null,
+            null);
+        return new MarriageProposalCreatedOutcome(proposal);
+    }
+
+    private ICharacterMarriageActionOutcome PlanProposalResponse(
+        EntityId actingCharacterId,
+        RespondToPoliticalMarriageProposalAction action,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId)
+    {
+        MarriageProposalState proposal = proposals[action.ProposalId];
+        if (action.Response == MarriageProposalResponse.Refuse)
+        {
+            return new MarriageProposalRefusedOutcome(TerminalizeProposal(
+                proposal,
+                MarriageProposalStatus.Refused,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId));
+        }
+
+        MarriageEligibilityResult eligibility = EvaluateProposalAcceptance(
+            proposal,
+            resolutionDate);
+        if (!eligibility.IsEligible)
+        {
+            return new MarriageProposalCancelledOutcome(TerminalizeProposal(
+                proposal,
+                MarriageProposalStatus.Cancelled,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId));
+        }
+
+        MarriageProposalState accepted = TerminalizeProposal(
+            proposal,
+            MarriageProposalStatus.Accepted,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId);
+        (EntityId first, EntityId second) = CanonicalPair(
+            proposal.ProposerCharacterId,
+            proposal.RecipientCharacterId);
+        if (proposal.Kind == MarriageProposalKind.PoliticalBetrothal)
+        {
+            PoliticalBetrothalState betrothal = new(
+                CharacterMarriageContractVersions.State,
+                CharacterMarriageIds.DerivePoliticalBetrothalId(proposal.ProposalId),
+                first,
+                second,
+                proposal.ProposedForm,
+                proposal.ConcubinagePrincipalCharacterId,
+                proposal.PracticeId,
+                proposal.ProposalId,
+                resolutionDate,
+                authoritativeTurnIndex,
+                PoliticalBetrothalStatus.Active,
+                null,
+                null,
+                null,
+                null);
+            return new PoliticalBetrothalAcceptedOutcome(accepted, betrothal);
+        }
+
+        MarriageUnionState union = CreateUnion(
+            accepted,
+            first,
+            second,
+            resolutionDate,
+            authoritativeTurnIndex);
+        return new DirectPoliticalUnionAcceptedOutcome(accepted, union);
+    }
+
+    private ICharacterMarriageActionOutcome PlanProposalWithdrawal(
+        WithdrawPoliticalMarriageProposalAction action,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId) => new MarriageProposalWithdrawnOutcome(TerminalizeProposal(
+            proposals[action.ProposalId],
+            MarriageProposalStatus.Withdrawn,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId));
+
+    private ICharacterMarriageActionOutcome PlanBetrothalCancellation(
+        CancelPoliticalBetrothalAction action,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId) => new PoliticalBetrothalCancelledOutcome(
+            TerminalizeBetrothal(
+                betrothals[action.BetrothalId],
+                PoliticalBetrothalStatus.Cancelled,
+                null,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId));
+
+    private ICharacterMarriageActionOutcome PlanBetrothalFulfillment(
+        EntityId actingCharacterId,
+        FulfillPoliticalBetrothalAction action,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId)
+    {
+        PoliticalBetrothalState betrothal = betrothals[action.BetrothalId];
+        MarriageEligibilityResult eligibility = EvaluateFulfillmentEligibility(
+            betrothal,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId);
+        if (!eligibility.IsEligible)
+        {
+            throw new SimulationValidationException(string.Join(
+                "; ",
+                eligibility.Issues.Select(issue => issue.Reason.ToString())));
+        }
+
+        EntityId recipient = actingCharacterId == betrothal.FirstCharacterId
+            ? betrothal.SecondCharacterId
+            : betrothal.FirstCharacterId;
+        EntityId proposalId = CharacterMarriageIds.DeriveProposalId(
+            MarriageProposalKind.LegalUnion,
+            resolutionDate,
+            commandId);
+        MarriageProposalState fulfillmentProposal = new(
+            CharacterMarriageContractVersions.State,
+            proposalId,
+            MarriageProposalKind.LegalUnion,
+            MarriageBasis.Political,
+            betrothal.IntendedForm,
+            MarriageConsentKind.PoliticalArrangement,
+            actingCharacterId,
+            recipient,
+            betrothal.ConcubinagePrincipalCharacterId,
+            betrothal.PracticeId,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            MarriageProposalStatus.Accepted,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId);
+        MarriageUnionState union = CreateUnion(
+            fulfillmentProposal,
+            betrothal.FirstCharacterId,
+            betrothal.SecondCharacterId,
+            resolutionDate,
+            authoritativeTurnIndex);
+        PoliticalBetrothalState fulfilled = TerminalizeBetrothal(
+            betrothal,
+            PoliticalBetrothalStatus.Fulfilled,
+            union.UnionId,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId);
+        return new PoliticalBetrothalFulfilledOutcome(
+            fulfilled,
+            fulfillmentProposal,
+            union);
+    }
+
+    private MarriageEligibilityResult EvaluateProposalAcceptance(
+        MarriageProposalState proposal,
+        CampaignDate resolutionDate) => EvaluateEligibility(
+            new MarriageEligibilityRequest(
+                CharacterMarriageContractVersions.Eligibility,
+                proposal.Kind == MarriageProposalKind.LegalUnion
+                    ? MarriageEligibilityCategory.VoluntaryLegalUnion
+                    : MarriageEligibilityCategory.PoliticalBetrothal,
+                proposal.ProposerCharacterId,
+                proposal.RecipientCharacterId,
+                proposal.PracticeId,
+                proposal.ProposedForm,
+                proposal.ConcubinagePrincipalCharacterId),
+            resolutionDate);
+
+    private MarriageEligibilityResult EvaluateFulfillmentEligibility(
+        PoliticalBetrothalState betrothal,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId)
+    {
+        PoliticalBetrothalState released = TerminalizeBetrothal(
+            betrothal,
+            PoliticalBetrothalStatus.Cancelled,
+            null,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId);
+        CharacterMarriageWorldSnapshot temporary = CaptureSnapshot() with
+        {
+            Betrothals = betrothals.Values
+                .Select(item => item.BetrothalId == betrothal.BetrothalId ? released : Clone(item))
+                .ToArray(),
+        };
+        CampaignCalendar candidateCalendar = new(
+            resolutionDate.CompareTo(calendar.Date) > 0 ? resolutionDate : calendar.Date,
+            Math.Max(calendar.TurnIndex, authoritativeTurnIndex));
+        CharacterMarriageWorldState replacement = new(temporary, characters, candidateCalendar);
+        return replacement.EvaluateEligibility(
+            new MarriageEligibilityRequest(
+                CharacterMarriageContractVersions.Eligibility,
+                MarriageEligibilityCategory.VoluntaryLegalUnion,
+                betrothal.FirstCharacterId,
+                betrothal.SecondCharacterId,
+                betrothal.PracticeId,
+                betrothal.IntendedForm,
+                betrothal.ConcubinagePrincipalCharacterId),
+            resolutionDate);
+    }
+
+    private void ValidateActionEnvelope(
+        EntityId actingCharacterId,
+        CharacterMarriageActionCommandPayload? payload,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        bool validateAcceptanceEligibility,
+        ICollection<ValidationIssue> issues)
+    {
+        AuthoritativeCharacterProfile? actor = null;
+        if (!actingCharacterId.IsValid)
+        {
+            issues.Add(new("invalid_actor", "Character-marriage actor ID is invalid."));
+        }
+        else if (!characters.TryGetCharacterProfile(
+                actingCharacterId,
+                out actor))
+        {
+            issues.Add(new(
+                "unknown_actor",
+                $"Character-marriage actor '{actingCharacterId}' does not exist."));
+        }
+        else if (resolutionDate.IsValid && actor.BirthDate.CompareTo(resolutionDate) > 0)
+        {
+            issues.Add(new("actor_not_born", "Character-marriage actor is not born."));
+        }
+        else if (actor.Condition.VitalStatus != CharacterVitalStatus.Alive)
+        {
+            issues.Add(new("actor_dead", "Character-marriage actor is dead."));
+        }
+
+        if (!resolutionDate.IsValid)
+        {
+            issues.Add(new(
+                "invalid_resolution_date",
+                "Character-marriage resolution date is invalid."));
+        }
+        else if (resolutionDate.CompareTo(calendar.Date) < 0)
+        {
+            issues.Add(new(
+                "past_resolution_date",
+                "Character-marriage resolution date precedes marriage state."));
+        }
+
+        if (authoritativeTurnIndex != calendar.TurnIndex)
+        {
+            issues.Add(new(
+                "invalid_turn_index",
+                "Character-marriage action must resolve on the authoritative turn."));
+        }
+
+        if (payload?.Action is null)
+        {
+            issues.Add(new(
+                "invalid_payload",
+                "Character-marriage action payload cannot be null."));
+            return;
+        }
+
+        switch (payload.Action)
+        {
+            case ProposePoliticalMarriageAction action:
+                ValidateProposalAction(
+                    actingCharacterId,
+                    action,
+                    resolutionDate,
+                    issues);
+                break;
+            case RespondToPoliticalMarriageProposalAction action:
+                if (!Enum.IsDefined(action.Response))
+                {
+                    issues.Add(new(
+                        "invalid_proposal_response",
+                        "Political-marriage response is invalid."));
+                }
+
+                if (!TryRequireActiveProposal(action.ProposalId, issues, out MarriageProposalState? responseProposal))
+                {
+                    break;
+                }
+
+                if (responseProposal.RecipientCharacterId != actingCharacterId)
+                {
+                    issues.Add(new(
+                        "recipient_authority_required",
+                        "Only the political-marriage proposal recipient may respond."));
+                }
+
+                if (validateAcceptanceEligibility
+                    && action.Response == MarriageProposalResponse.Accept
+                    && !EvaluateProposalAcceptance(responseProposal, resolutionDate).IsEligible)
+                {
+                    issues.Add(new(
+                        "proposal_acceptance_ineligible",
+                        "Political-marriage proposal is not currently eligible for acceptance."));
+                }
+
+                break;
+            case WithdrawPoliticalMarriageProposalAction action:
+                if (TryRequireActiveProposal(
+                        action.ProposalId,
+                        issues,
+                        out MarriageProposalState? withdrawalProposal)
+                    && withdrawalProposal.ProposerCharacterId != actingCharacterId)
+                {
+                    issues.Add(new(
+                        "proposer_authority_required",
+                        "Only the political-marriage proposer may withdraw the proposal."));
+                }
+
+                break;
+            case CancelPoliticalBetrothalAction action:
+                if (TryRequireActiveBetrothal(
+                        action.BetrothalId,
+                        issues,
+                        out PoliticalBetrothalState? cancellationBetrothal)
+                    && !Involves(
+                        cancellationBetrothal.FirstCharacterId,
+                        cancellationBetrothal.SecondCharacterId,
+                        actingCharacterId))
+                {
+                    issues.Add(new(
+                        "participant_authority_required",
+                        "Only a political-betrothal participant may cancel it."));
+                }
+
+                break;
+            case FulfillPoliticalBetrothalAction action:
+                if (TryRequireActiveBetrothal(
+                        action.BetrothalId,
+                        issues,
+                        out PoliticalBetrothalState? fulfillmentBetrothal)
+                    && !Involves(
+                        fulfillmentBetrothal.FirstCharacterId,
+                        fulfillmentBetrothal.SecondCharacterId,
+                        actingCharacterId))
+                {
+                    issues.Add(new(
+                        "participant_authority_required",
+                        "Only a political-betrothal participant may fulfill it."));
+                }
+
+                break;
+            default:
+                issues.Add(new(
+                    "unsupported_character_marriage_action",
+                    "Only registered political-marriage actions are supported."));
+                break;
+        }
+    }
+
+    private void ValidateProposalAction(
+        EntityId actingCharacterId,
+        ProposePoliticalMarriageAction action,
+        CampaignDate resolutionDate,
+        ICollection<ValidationIssue> issues)
+    {
+        if (!Enum.IsDefined(action.Kind))
+        {
+            issues.Add(new("invalid_proposal_kind", "Marriage proposal kind is invalid."));
+            return;
+        }
+
+        MarriageEligibilityResult eligibility = EvaluateEligibility(
+            new MarriageEligibilityRequest(
+                CharacterMarriageContractVersions.Eligibility,
+                action.Kind == MarriageProposalKind.LegalUnion
+                    ? MarriageEligibilityCategory.VoluntaryLegalUnion
+                    : MarriageEligibilityCategory.PoliticalBetrothal,
+                actingCharacterId,
+                action.RecipientCharacterId,
+                action.PracticeId,
+                action.ProposedForm,
+                action.ConcubinagePrincipalCharacterId),
+            resolutionDate);
+        foreach (MarriageEligibilityIssue issue in eligibility.Issues)
+        {
+            issues.Add(new(
+                $"marriage_{issue.Reason.ToString().ToLowerInvariant()}",
+                $"Political-marriage proposal is ineligible: {issue.Reason}."));
+        }
+
+        if (proposals.Values.Count(item =>
+                item.Status == MarriageProposalStatus.Active
+                && item.RecipientCharacterId == action.RecipientCharacterId)
+            >= CharacterMarriageLimits.ActiveProposalsPerRecipient)
+        {
+            issues.Add(new(
+                "active_proposal_limit_reached",
+                "Political-marriage recipient has eight active proposals."));
+        }
+
+        if (proposals.Values.Any(item =>
+            item.Status == MarriageProposalStatus.Active
+            && SamePair(
+                item.ProposerCharacterId,
+                item.RecipientCharacterId,
+                actingCharacterId,
+                action.RecipientCharacterId)))
+        {
+            issues.Add(new(
+                "duplicate_active_proposal",
+                "The participant pair already has an active marriage proposal."));
+        }
+
+        foreach (EntityId participantId in new[]
+                 {
+                     actingCharacterId,
+                     action.RecipientCharacterId,
+                 }.Distinct())
+        {
+            if (PinnedProposalCount(participantId)
+                >= CharacterMarriageLimits.RetainedRecordsPerCategoryPerCharacter)
+            {
+                issues.Add(new(
+                    "retained_proposal_capacity_reached",
+                    $"Character '{participantId}' already has the maximum retained active marriage proposals and outcomes."));
+            }
+        }
+    }
+
+    private int PinnedProposalCount(EntityId characterId) => proposals.Values.Count(proposal =>
+        Involves(
+            proposal.ProposerCharacterId,
+            proposal.RecipientCharacterId,
+            characterId)
+        && IsPinnedProposal(proposal));
+
+    private bool IsPinnedProposal(MarriageProposalState proposal)
+    {
+        if (proposal.Status == MarriageProposalStatus.Active)
+        {
+            return true;
+        }
+
+        if (proposal.Status != MarriageProposalStatus.Accepted)
+        {
+            return false;
+        }
+
+        if (unions.Values.Any(item =>
+                item.SourceProposalId == proposal.ProposalId
+                && item.Status == MarriageUnionStatus.Active)
+            || betrothals.Values.Any(item =>
+                item.SourceProposalId == proposal.ProposalId
+                && item.Status == PoliticalBetrothalStatus.Active))
+        {
+            return true;
+        }
+
+        return betrothals.Values.Any(item =>
+            item.SourceProposalId == proposal.ProposalId
+            && item.Status == PoliticalBetrothalStatus.Fulfilled
+            && item.FulfillmentUnionId is EntityId unionId
+            && unions.TryGetValue(unionId, out MarriageUnionState? union)
+            && union.Status == MarriageUnionStatus.Active);
+    }
+
+    private bool TryRequireActiveProposal(
+        EntityId proposalId,
+        ICollection<ValidationIssue> issues,
+        [NotNullWhen(true)] out MarriageProposalState? proposal)
+    {
+        if (!proposalId.IsValid || !proposals.TryGetValue(proposalId, out proposal))
+        {
+            issues.Add(new(
+                "unknown_proposal",
+                $"Political-marriage proposal '{proposalId}' does not exist."));
+            proposal = null;
+            return false;
+        }
+
+        if (proposal.Status != MarriageProposalStatus.Active)
+        {
+            issues.Add(new(
+                "proposal_not_active",
+                $"Political-marriage proposal '{proposalId}' is already terminal."));
+            proposal = null;
+            return false;
+        }
+
+        if (proposal.Basis != MarriageBasis.Political
+            || proposal.ConsentKind != MarriageConsentKind.PoliticalArrangement)
+        {
+            issues.Add(new(
+                "proposal_not_political_arrangement",
+                $"Marriage proposal '{proposalId}' is outside the political-arrangement workflow."));
+            proposal = null;
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool TryRequireActiveBetrothal(
+        EntityId betrothalId,
+        ICollection<ValidationIssue> issues,
+        [NotNullWhen(true)] out PoliticalBetrothalState? betrothal)
+    {
+        if (!betrothalId.IsValid || !betrothals.TryGetValue(betrothalId, out betrothal))
+        {
+            issues.Add(new(
+                "unknown_betrothal",
+                $"Political betrothal '{betrothalId}' does not exist."));
+            betrothal = null;
+            return false;
+        }
+
+        if (betrothal.Status != PoliticalBetrothalStatus.Active)
+        {
+            issues.Add(new(
+                "betrothal_not_active",
+                $"Political betrothal '{betrothalId}' is already terminal."));
+            betrothal = null;
+            return false;
+        }
+
+        return true;
+    }
+
+    private static MarriageProposalState TerminalizeProposal(
+        MarriageProposalState proposal,
+        MarriageProposalStatus status,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId) => proposal with
+        {
+            Status = status,
+            ResolutionDate = resolutionDate,
+            ResolutionTurnIndex = authoritativeTurnIndex,
+            ResolutionCommandId = commandId,
+        };
+
+    private static PoliticalBetrothalState TerminalizeBetrothal(
+        PoliticalBetrothalState betrothal,
+        PoliticalBetrothalStatus status,
+        EntityId? fulfillmentUnionId,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId) => betrothal with
+        {
+            Status = status,
+            FulfillmentUnionId = fulfillmentUnionId,
+            ResolutionDate = resolutionDate,
+            ResolutionTurnIndex = authoritativeTurnIndex,
+            ResolutionCommandId = commandId,
+        };
+
+    private static MarriageUnionState CreateUnion(
+        MarriageProposalState acceptedProposal,
+        EntityId first,
+        EntityId second,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex) => new(
+            CharacterMarriageContractVersions.State,
+            CharacterMarriageIds.DeriveMarriageUnionId(acceptedProposal.ProposalId),
+            first,
+            second,
+            acceptedProposal.ProposedForm,
+            acceptedProposal.ConcubinagePrincipalCharacterId,
+            MarriageBasis.Political,
+            MarriageConsentKind.PoliticalArrangement,
+            acceptedProposal.PracticeId,
+            acceptedProposal.ProposalId,
+            resolutionDate,
+            authoritativeTurnIndex,
+            MarriageUnionStatus.Active,
+            null,
+            null,
+            null,
+            null);
+
+    private static CharacterMarriageWorldSnapshot ApplyOutcomeToSnapshot(
+        CharacterMarriageWorldSnapshot snapshot,
+        ICharacterMarriageActionOutcome outcome)
+    {
+        List<MarriageProposalState> proposalList = snapshot.Proposals.Select(Clone).ToList();
+        List<PoliticalBetrothalState> betrothalList = snapshot.Betrothals.Select(Clone).ToList();
+        List<MarriageUnionState> unionList = snapshot.Unions.Select(Clone).ToList();
+        switch (outcome)
+        {
+            case MarriageProposalCreatedOutcome value:
+                AddNew(proposalList, value.Proposal, item => item.ProposalId, "marriage proposal");
+                break;
+            case MarriageProposalRefusedOutcome value:
+                Replace(proposalList, value.Proposal, item => item.ProposalId, "marriage proposal");
+                break;
+            case MarriageProposalWithdrawnOutcome value:
+                Replace(proposalList, value.Proposal, item => item.ProposalId, "marriage proposal");
+                break;
+            case MarriageProposalCancelledOutcome value:
+                Replace(proposalList, value.Proposal, item => item.ProposalId, "marriage proposal");
+                break;
+            case PoliticalBetrothalAcceptedOutcome value:
+                Replace(proposalList, value.Proposal, item => item.ProposalId, "marriage proposal");
+                AddNew(betrothalList, value.Betrothal, item => item.BetrothalId, "political betrothal");
+                break;
+            case DirectPoliticalUnionAcceptedOutcome value:
+                Replace(proposalList, value.Proposal, item => item.ProposalId, "marriage proposal");
+                AddNew(unionList, value.Union, item => item.UnionId, "marriage union");
+                break;
+            case PoliticalBetrothalCancelledOutcome value:
+                Replace(betrothalList, value.Betrothal, item => item.BetrothalId, "political betrothal");
+                break;
+            case PoliticalBetrothalFulfilledOutcome value:
+                Replace(betrothalList, value.Betrothal, item => item.BetrothalId, "political betrothal");
+                AddNew(proposalList, value.FulfillmentProposal, item => item.ProposalId, "marriage proposal");
+                AddNew(unionList, value.Union, item => item.UnionId, "marriage union");
+                break;
+            default:
+                throw new SimulationValidationException(
+                    $"Unregistered character-marriage outcome '{outcome.GetType().Name}'.");
+        }
+
+        return snapshot with
+        {
+            Proposals = proposalList,
+            Betrothals = betrothalList,
+            Unions = unionList,
+        };
+    }
+
+    private static void AddNew<T>(
+        ICollection<T> source,
+        T value,
+        Func<T, EntityId> id,
+        string description)
+    {
+        if (source.Any(item => id(item) == id(value)))
+        {
+            throw new SimulationValidationException(
+                $"Duplicate {description} '{id(value)}'.");
+        }
+
+        source.Add(value);
+    }
+
+    private static void Replace<T>(
+        IList<T> source,
+        T value,
+        Func<T, EntityId> id,
+        string description)
+    {
+        int index = source.ToList().FindIndex(item => id(item) == id(value));
+        if (index < 0)
+        {
+            throw new SimulationValidationException(
+                $"Missing {description} '{id(value)}'.");
+        }
+
+        source[index] = value;
+    }
+
+    private void ReplaceFrom(CharacterMarriageWorldState source)
+    {
+        CharacterMarriageWorldSnapshot snapshot = source.CaptureSnapshot();
+        practices.Clear();
+        proposals.Clear();
+        betrothals.Clear();
+        unions.Clear();
+        romanceRoutes.Clear();
+        history.Clear();
+        foreach (MarriagePracticeState item in snapshot.Practices)
+        {
+            practices.Add(item.PracticeId, Clone(item));
+        }
+
+        foreach (MarriageProposalState item in snapshot.Proposals)
+        {
+            proposals.Add(item.ProposalId, Clone(item));
+        }
+
+        foreach (PoliticalBetrothalState item in snapshot.Betrothals)
+        {
+            betrothals.Add(item.BetrothalId, Clone(item));
+        }
+
+        foreach (MarriageUnionState item in snapshot.Unions)
+        {
+            unions.Add(item.UnionId, Clone(item));
+        }
+
+        foreach (RomanceRouteState item in snapshot.RomanceRoutes)
+        {
+            romanceRoutes.Add(item.RouteId, Clone(item));
+        }
+
+        foreach (CharacterMarriageHistoryAggregate item in snapshot.History)
+        {
+            history.Add(item.CharacterId, Clone(item));
+        }
+
+        calendar = source.calendar;
+    }
+
+    private static void ThrowIfInvalid(IReadOnlyCollection<ValidationIssue> issues)
+    {
+        if (issues.Count > 0)
+        {
+            throw new SimulationValidationException(string.Join(
+                "; ",
+                issues.Select(issue => $"{issue.Code}: {issue.Message}")));
+        }
+    }
+
+    private static CharacterMarriageWorldSnapshot NormalizeRetention(
+        CharacterMarriageWorldSnapshot snapshot)
+    {
+        Dictionary<EntityId, MarriageProposalState> proposalById = snapshot.Proposals
+            .ToDictionary(item => item.ProposalId);
+        Dictionary<EntityId, PoliticalBetrothalState> betrothalByProposal = snapshot.Betrothals
+            .ToDictionary(item => item.SourceProposalId);
+        Dictionary<EntityId, MarriageUnionState> unionByProposal = snapshot.Unions
+            .ToDictionary(item => item.SourceProposalId);
+        Dictionary<EntityId, MarriageUnionState> unionById = snapshot.Unions
+            .ToDictionary(item => item.UnionId);
+        Dictionary<EntityId, EntityId> fulfillmentPartners = [];
+        foreach (PoliticalBetrothalState betrothal in snapshot.Betrothals.Where(
+                     item => item.Status == PoliticalBetrothalStatus.Fulfilled))
+        {
+            if (betrothal.FulfillmentUnionId is not EntityId unionId
+                || !unionById.TryGetValue(unionId, out MarriageUnionState? union)
+                || !proposalById.ContainsKey(betrothal.SourceProposalId)
+                || !proposalById.ContainsKey(union.SourceProposalId)
+                || !fulfillmentPartners.TryAdd(
+                    betrothal.SourceProposalId,
+                    union.SourceProposalId)
+                || !fulfillmentPartners.TryAdd(
+                    union.SourceProposalId,
+                    betrothal.SourceProposalId))
+            {
+                throw new SimulationValidationException(
+                    $"Fulfilled political betrothal '{betrothal.BetrothalId}' has an invalid retention chain.");
+            }
+        }
+
+        HashSet<EntityId> retainedProposals = SelectRetainedProposalGroups(
+            snapshot.Proposals,
+            fulfillmentPartners,
+            betrothalByProposal,
+            unionByProposal);
+        HashSet<EntityId> retainedBetrothals = snapshot.Betrothals
+            .Where(item => retainedProposals.Contains(item.SourceProposalId))
+            .Select(item => item.BetrothalId)
+            .ToHashSet();
+        HashSet<EntityId> retainedUnions = snapshot.Unions
+            .Where(item => retainedProposals.Contains(item.SourceProposalId))
+            .Select(item => item.UnionId)
+            .ToHashSet();
+        HashSet<EntityId> retainedRoutes = SelectRetained(
+            snapshot.RomanceRoutes,
+            item => item.RouteId,
+            item => (item.FirstCharacterId, item.SecondCharacterId),
+            item => item.Status == RomanceRouteStatus.Active,
+            item => item.ResolutionTurnIndex ?? item.StartTurnIndex,
+            item => item.ResolutionDate ?? item.StartDate,
+            "romance routes");
+
+        Dictionary<EntityId, CharacterMarriageHistoryAggregate> folded = snapshot.History
+            .ToDictionary(item => item.CharacterId, Clone);
+        foreach (MarriageProposalState item in snapshot.Proposals.Where(
+                     value => !retainedProposals.Contains(value.ProposalId)))
+        {
+            FoldRecord(
+                folded,
+                item.ProposerCharacterId,
+                item.RecipientCharacterId,
+                item.CreatedDate,
+                item.ResolutionDate ?? item.CreatedDate,
+                MarriageRecordCategory.Proposal);
+        }
+
+        foreach (PoliticalBetrothalState item in snapshot.Betrothals.Where(
+                     value => !retainedBetrothals.Contains(value.BetrothalId)))
+        {
+            FoldRecord(
+                folded,
+                item.FirstCharacterId,
+                item.SecondCharacterId,
+                item.StartDate,
+                item.ResolutionDate ?? item.StartDate,
+                MarriageRecordCategory.Betrothal);
+        }
+
+        foreach (MarriageUnionState item in snapshot.Unions.Where(
+                     value => !retainedUnions.Contains(value.UnionId)))
+        {
+            FoldRecord(
+                folded,
+                item.FirstCharacterId,
+                item.SecondCharacterId,
+                item.StartDate,
+                item.EndDate ?? item.StartDate,
+                MarriageRecordCategory.Union);
+        }
+
+        foreach (RomanceRouteState item in snapshot.RomanceRoutes.Where(
+                     value => !retainedRoutes.Contains(value.RouteId)))
+        {
+            FoldRecord(
+                folded,
+                item.FirstCharacterId,
+                item.SecondCharacterId,
+                item.StartDate,
+                item.ResolutionDate ?? item.StartDate,
+                MarriageRecordCategory.RomanceRoute);
+        }
+
+        return snapshot with
+        {
+            Proposals = snapshot.Proposals
+                .Where(item => retainedProposals.Contains(item.ProposalId))
+                .ToArray(),
+            Betrothals = snapshot.Betrothals
+                .Where(item => retainedBetrothals.Contains(item.BetrothalId))
+                .ToArray(),
+            Unions = snapshot.Unions
+                .Where(item => retainedUnions.Contains(item.UnionId))
+                .ToArray(),
+            RomanceRoutes = snapshot.RomanceRoutes
+                .Where(item => retainedRoutes.Contains(item.RouteId))
+                .ToArray(),
+            History = folded.Values.OrderBy(item => item.CharacterId).ToArray(),
+        };
+    }
+
+    private static HashSet<EntityId> SelectRetainedProposalGroups(
+        IReadOnlyList<MarriageProposalState> proposals,
+        IReadOnlyDictionary<EntityId, EntityId> fulfillmentPartners,
+        IReadOnlyDictionary<EntityId, PoliticalBetrothalState> betrothals,
+        IReadOnlyDictionary<EntityId, MarriageUnionState> unions)
+    {
+        Dictionary<EntityId, MarriageProposalState> proposalById = proposals
+            .ToDictionary(item => item.ProposalId);
+        HashSet<EntityId> grouped = [];
+        List<ProposalRetentionGroup> groups = [];
+        foreach (MarriageProposalState proposal in proposals.OrderBy(item => item.ProposalId))
+        {
+            if (!grouped.Add(proposal.ProposalId))
+            {
+                continue;
+            }
+
+            List<MarriageProposalState> members = [proposal];
+            if (fulfillmentPartners.TryGetValue(
+                    proposal.ProposalId,
+                    out EntityId partnerId))
+            {
+                if (!proposalById.TryGetValue(partnerId, out MarriageProposalState? partner)
+                    || !grouped.Add(partnerId))
+                {
+                    throw new SimulationValidationException(
+                        $"Marriage proposal '{proposal.ProposalId}' has an invalid fulfillment retention partner.");
+                }
+
+                members.Add(partner);
+            }
+
+            (long TerminalTurn, CampaignDate TerminalDate) terminal = members
+                .Select(item => (
+                    TerminalTurn: ProposalRetentionTurn(item, betrothals, unions),
+                    TerminalDate: ProposalRetentionDate(item, betrothals, unions)))
+                .OrderByDescending(item => item.TerminalTurn)
+                .ThenByDescending(item => item.TerminalDate)
+                .First();
+            Dictionary<EntityId, int> participantCosts = members
+                .SelectMany(item => new[]
+                {
+                    item.ProposerCharacterId,
+                    item.RecipientCharacterId,
+                }.Distinct())
+                .GroupBy(item => item)
+                .ToDictionary(group => group.Key, group => group.Count());
+            groups.Add(new ProposalRetentionGroup(
+                members.Min(item => item.ProposalId),
+                members.Select(item => item.ProposalId).Order().ToArray(),
+                participantCosts,
+                members.Any(item => IsDirectlyPinnedProposal(item, betrothals, unions)),
+                terminal.TerminalTurn,
+                terminal.TerminalDate));
+        }
+
+        HashSet<EntityId> retained = [];
+        Dictionary<EntityId, int> counts = [];
+        foreach (ProposalRetentionGroup group in groups
+                     .Where(item => item.IsPinned)
+                     .OrderBy(item => item.GroupId))
+        {
+            AddGroup(group, required: true);
+        }
+
+        foreach (ProposalRetentionGroup group in groups
+                     .Where(item => !item.IsPinned)
+                     .OrderByDescending(item => item.TerminalTurn)
+                     .ThenByDescending(item => item.TerminalDate)
+                     .ThenBy(item => item.GroupId))
+        {
+            AddGroup(group, required: false);
+        }
+
+        return retained;
+
+        void AddGroup(ProposalRetentionGroup group, bool required)
+        {
+            bool capacity = group.ParticipantCosts.All(item =>
+                counts.GetValueOrDefault(item.Key) <=
+                CharacterMarriageLimits.RetainedRecordsPerCategoryPerCharacter - item.Value);
+            if (!capacity)
+            {
+                if (required)
+                {
+                    throw new SimulationValidationException(
+                        $"Active marriage-proposal causal groups exceed the retained per-character bound of {CharacterMarriageLimits.RetainedRecordsPerCategoryPerCharacter}.");
+                }
+
+                return;
+            }
+
+            retained.UnionWith(group.ProposalIds);
+            foreach ((EntityId characterId, int cost) in group.ParticipantCosts)
+            {
+                counts[characterId] = checked(counts.GetValueOrDefault(characterId) + cost);
+            }
+        }
+    }
+
+    private static bool IsDirectlyPinnedProposal(
+        MarriageProposalState proposal,
+        IReadOnlyDictionary<EntityId, PoliticalBetrothalState> betrothals,
+        IReadOnlyDictionary<EntityId, MarriageUnionState> unions) =>
+        proposal.Status == MarriageProposalStatus.Active
+        || proposal.Status == MarriageProposalStatus.Accepted
+        && (betrothals.TryGetValue(
+                proposal.ProposalId,
+                out PoliticalBetrothalState? betrothal)
+            && betrothal.Status == PoliticalBetrothalStatus.Active
+            || unions.TryGetValue(
+                proposal.ProposalId,
+                out MarriageUnionState? union)
+            && union.Status == MarriageUnionStatus.Active);
+
+    private sealed record ProposalRetentionGroup(
+        EntityId GroupId,
+        IReadOnlyList<EntityId> ProposalIds,
+        IReadOnlyDictionary<EntityId, int> ParticipantCosts,
+        bool IsPinned,
+        long TerminalTurn,
+        CampaignDate TerminalDate);
+
+    private static long ProposalRetentionTurn(
+        MarriageProposalState proposal,
+        IReadOnlyDictionary<EntityId, PoliticalBetrothalState> betrothals,
+        IReadOnlyDictionary<EntityId, MarriageUnionState> unions)
+    {
+        if (proposal.Status == MarriageProposalStatus.Accepted
+            && proposal.Kind == MarriageProposalKind.PoliticalBetrothal
+            && betrothals.TryGetValue(
+                proposal.ProposalId,
+                out PoliticalBetrothalState? betrothal))
+        {
+            return betrothal.ResolutionTurnIndex ?? betrothal.StartTurnIndex;
+        }
+
+        if (proposal.Status == MarriageProposalStatus.Accepted
+            && proposal.Kind == MarriageProposalKind.LegalUnion
+            && unions.TryGetValue(proposal.ProposalId, out MarriageUnionState? union))
+        {
+            return union.EndTurnIndex ?? union.StartTurnIndex;
+        }
+
+        return proposal.ResolutionTurnIndex ?? proposal.CreatedTurnIndex;
+    }
+
+    private static CampaignDate ProposalRetentionDate(
+        MarriageProposalState proposal,
+        IReadOnlyDictionary<EntityId, PoliticalBetrothalState> betrothals,
+        IReadOnlyDictionary<EntityId, MarriageUnionState> unions)
+    {
+        if (proposal.Status == MarriageProposalStatus.Accepted
+            && proposal.Kind == MarriageProposalKind.PoliticalBetrothal
+            && betrothals.TryGetValue(
+                proposal.ProposalId,
+                out PoliticalBetrothalState? betrothal))
+        {
+            return betrothal.ResolutionDate ?? betrothal.StartDate;
+        }
+
+        if (proposal.Status == MarriageProposalStatus.Accepted
+            && proposal.Kind == MarriageProposalKind.LegalUnion
+            && unions.TryGetValue(proposal.ProposalId, out MarriageUnionState? union))
+        {
+            return union.EndDate ?? union.StartDate;
+        }
+
+        return proposal.ResolutionDate ?? proposal.CreatedDate;
+    }
+
+    private static HashSet<EntityId> SelectRetained<T>(
+        IEnumerable<T> records,
+        Func<T, EntityId> id,
+        Func<T, (EntityId First, EntityId Second)> participants,
+        Func<T, bool> pinned,
+        Func<T, long> terminalTurn,
+        Func<T, CampaignDate> terminalDate,
+        string description)
+    {
+        T[] values = records.ToArray();
+        HashSet<EntityId> retained = [];
+        Dictionary<EntityId, int> counts = [];
+        foreach (T item in values.Where(pinned).OrderBy(id))
+        {
+            AddRetained(item, required: true);
+        }
+
+        foreach (T item in values
+                     .Where(item => !pinned(item))
+                     .OrderByDescending(terminalTurn)
+                     .ThenByDescending(terminalDate)
+                     .ThenBy(id))
+        {
+            AddRetained(item, required: false);
+        }
+
+        return retained;
+
+        void AddRetained(T item, bool required)
+        {
+            (EntityId first, EntityId second) = participants(item);
+            EntityId[] participantIds = new[] { first, second }.Distinct().ToArray();
+            bool capacity = participantIds.All(characterId =>
+                counts.GetValueOrDefault(characterId)
+                    < CharacterMarriageLimits.RetainedRecordsPerCategoryPerCharacter);
+            if (!capacity)
+            {
+                if (required)
+                {
+                    throw new SimulationValidationException(
+                        $"Active {description} exceed the retained per-character bound of {CharacterMarriageLimits.RetainedRecordsPerCategoryPerCharacter}.");
+                }
+
+                return;
+            }
+
+            retained.Add(id(item));
+            foreach (EntityId characterId in participantIds)
+            {
+                counts[characterId] = checked(counts.GetValueOrDefault(characterId) + 1);
+            }
+        }
+    }
+
+    private static void FoldRecord(
+        IDictionary<EntityId, CharacterMarriageHistoryAggregate> target,
+        EntityId first,
+        EntityId second,
+        CampaignDate earliest,
+        CampaignDate latest,
+        MarriageRecordCategory category)
+    {
+        foreach (EntityId characterId in new[] { first, second }.Distinct())
+        {
+            CharacterMarriageHistoryAggregate aggregate = target.TryGetValue(
+                characterId,
+                out CharacterMarriageHistoryAggregate? stored)
+                ? stored
+                : CharacterMarriageHistoryAggregate.Empty(characterId);
+            try
+            {
+                aggregate = category switch
+                {
+                    MarriageRecordCategory.Proposal => aggregate with
+                    {
+                        FoldedProposalCount = checked(aggregate.FoldedProposalCount + 1),
+                    },
+                    MarriageRecordCategory.Betrothal => aggregate with
+                    {
+                        FoldedBetrothalCount = checked(aggregate.FoldedBetrothalCount + 1),
+                    },
+                    MarriageRecordCategory.Union => aggregate with
+                    {
+                        FoldedUnionCount = checked(aggregate.FoldedUnionCount + 1),
+                    },
+                    MarriageRecordCategory.RomanceRoute => aggregate with
+                    {
+                        FoldedRomanceRouteCount = checked(
+                            aggregate.FoldedRomanceRouteCount + 1),
+                    },
+                    _ => throw new SimulationValidationException(
+                        "Unregistered character-marriage retention category."),
+                };
+            }
+            catch (OverflowException exception)
+            {
+                throw new SimulationValidationException(
+                    $"Character-marriage history for '{characterId}' exceeds Int64 capacity: {exception.Message}");
+            }
+
+            target[characterId] = aggregate with
+            {
+                EarliestDate = aggregate.EarliestDate is null
+                    || earliest.CompareTo(aggregate.EarliestDate.Value) < 0
+                        ? earliest
+                        : aggregate.EarliestDate,
+                LatestDate = aggregate.LatestDate is null
+                    || latest.CompareTo(aggregate.LatestDate.Value) > 0
+                        ? latest
+                        : aggregate.LatestDate,
+            };
+        }
+    }
+
+    private enum MarriageRecordCategory
+    {
+        Proposal,
+        Betrothal,
+        Union,
+        RomanceRoute,
+    }
+
+    private static ICharacterMarriageAction Clone(ICharacterMarriageAction value) => value switch
+    {
+        ProposePoliticalMarriageAction item => item with { },
+        RespondToPoliticalMarriageProposalAction item => item with { },
+        WithdrawPoliticalMarriageProposalAction item => item with { },
+        CancelPoliticalBetrothalAction item => item with { },
+        FulfillPoliticalBetrothalAction item => item with { },
+        _ => throw new SimulationValidationException(
+            $"Unregistered character-marriage action '{value.GetType().Name}'."),
+    };
+
+    private static ICharacterMarriageActionOutcome Clone(
+        ICharacterMarriageActionOutcome value) => value switch
+        {
+            MarriageProposalCreatedOutcome item => new MarriageProposalCreatedOutcome(Clone(item.Proposal)),
+            MarriageProposalRefusedOutcome item => new MarriageProposalRefusedOutcome(Clone(item.Proposal)),
+            MarriageProposalWithdrawnOutcome item => new MarriageProposalWithdrawnOutcome(Clone(item.Proposal)),
+            MarriageProposalCancelledOutcome item => new MarriageProposalCancelledOutcome(Clone(item.Proposal)),
+            PoliticalBetrothalAcceptedOutcome item => new PoliticalBetrothalAcceptedOutcome(
+                Clone(item.Proposal),
+                Clone(item.Betrothal)),
+            DirectPoliticalUnionAcceptedOutcome item => new DirectPoliticalUnionAcceptedOutcome(
+                Clone(item.Proposal),
+                Clone(item.Union)),
+            PoliticalBetrothalCancelledOutcome item => new PoliticalBetrothalCancelledOutcome(Clone(item.Betrothal)),
+            PoliticalBetrothalFulfilledOutcome item => new PoliticalBetrothalFulfilledOutcome(
+                Clone(item.Betrothal),
+                Clone(item.FulfillmentProposal),
+                Clone(item.Union)),
+            _ => throw new SimulationValidationException(
+                $"Unregistered character-marriage outcome '{value.GetType().Name}'."),
+        };
+
     private static void ValidateSnapshotShape(CharacterMarriageWorldSnapshot snapshot)
     {
         if (snapshot.ContractVersion != CharacterMarriageContractVersions.Snapshot)
@@ -579,7 +1927,7 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
                 aggregate.CharacterId);
             AuthoritativeCharacterProfile owner = RequireBornCharacter(
                 aggregate.CharacterId,
-                snapshotDate,
+                calendar.Date,
                 $"Character-marriage history '{aggregate.CharacterId}' owner");
             long total;
             try
@@ -605,11 +1953,11 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
                 || (aggregate.EarliestDate is CampaignDate earliest
                     && (!earliest.IsValid
                         || earliest.CompareTo(owner.BirthDate) < 0
-                        || earliest.CompareTo(snapshotDate) > 0))
+                        || earliest.CompareTo(calendar.Date) > 0))
                 || (aggregate.LatestDate is CampaignDate latest
                     && (!latest.IsValid
                         || latest.CompareTo(owner.BirthDate) < 0
-                        || latest.CompareTo(snapshotDate) > 0))
+                        || latest.CompareTo(calendar.Date) > 0))
                 || (aggregate.EarliestDate is CampaignDate first
                     && aggregate.LatestDate is CampaignDate last
                     && first.CompareTo(last) > 0))
@@ -1157,9 +2505,9 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
     private void ValidateStart(CampaignDate date, long turnIndex, string label)
     {
         if (!date.IsValid
-            || date.CompareTo(snapshotDate) > 0
+            || date.CompareTo(calendar.Date) > 0
             || turnIndex < 0
-            || turnIndex > snapshotTurnIndex)
+            || turnIndex > calendar.TurnIndex)
         {
             throw new SimulationValidationException(
                 $"{label} has an invalid or future start date or turn index.");
@@ -1190,10 +2538,10 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
         if (resolutionDate is not CampaignDate terminalDate
             || !terminalDate.IsValid
             || terminalDate.CompareTo(startDate) < 0
-            || terminalDate.CompareTo(snapshotDate) > 0
+            || terminalDate.CompareTo(calendar.Date) > 0
             || resolutionTurnIndex is not long terminalTurn
             || terminalTurn < startTurnIndex
-            || terminalTurn > snapshotTurnIndex
+            || terminalTurn > calendar.TurnIndex
             || resolutionCommandId is not EntityId terminalCommand)
         {
             throw new SimulationValidationException($"{label} terminal status lacks coherent terminal data.");
@@ -1221,10 +2569,10 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
         if (union.EndDate is not CampaignDate endDate
             || !endDate.IsValid
             || endDate.CompareTo(union.StartDate) < 0
-            || endDate.CompareTo(snapshotDate) > 0
+            || endDate.CompareTo(calendar.Date) > 0
             || union.EndTurnIndex is not long endTurn
             || endTurn < union.StartTurnIndex
-            || endTurn > snapshotTurnIndex
+            || endTurn > calendar.TurnIndex
             || union.EndCommandId is not EntityId endCommand
             || union.EndReason is not MarriageUnionEndReason)
         {
@@ -1401,8 +2749,8 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
     {
         if (form == MarriageUnionForm.PrincipalSpouse)
         {
-            if (ActivePrincipalCount(first) >= practice.MaximumActivePrincipalSpousesPerCharacter
-                || ActivePrincipalCount(second) >= practice.MaximumActivePrincipalSpousesPerCharacter)
+            if (WouldExceedPrincipalLimit(first, practice)
+                || WouldExceedPrincipalLimit(second, practice))
             {
                 AddIssue(issues, MarriageEligibilityReason.ActiveUnionLimitReached);
             }
@@ -1425,11 +2773,43 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
             && item.Form == MarriageUnionForm.Concubinage
             && item.ConcubinagePrincipalCharacterId != partner
             && Involves(item.FirstCharacterId, item.SecondCharacterId, partner));
-        if (principalCount >= practice.MaximumActiveConcubinageUnionsPerPrincipal
-            || partnerCount >= practice.MaximumActiveConcubinageUnionsPerPartner)
+        int proposedPrincipalCount = checked(principalCount + 1);
+        int proposedPartnerCount = checked(partnerCount + 1);
+        bool exceedsPrincipalLimit = proposedPrincipalCount
+                > practice.MaximumActiveConcubinageUnionsPerPrincipal
+            || unions.Values.Any(item =>
+                item.Status == MarriageUnionStatus.Active
+                && item.Form == MarriageUnionForm.Concubinage
+                && item.ConcubinagePrincipalCharacterId == principal
+                && proposedPrincipalCount
+                    > practices[item.PracticeId].MaximumActiveConcubinageUnionsPerPrincipal);
+        bool exceedsPartnerLimit = proposedPartnerCount
+                > practice.MaximumActiveConcubinageUnionsPerPartner
+            || unions.Values.Any(item =>
+                item.Status == MarriageUnionStatus.Active
+                && item.Form == MarriageUnionForm.Concubinage
+                && item.ConcubinagePrincipalCharacterId != partner
+                && Involves(item.FirstCharacterId, item.SecondCharacterId, partner)
+                && proposedPartnerCount
+                    > practices[item.PracticeId].MaximumActiveConcubinageUnionsPerPartner);
+        if (exceedsPrincipalLimit || exceedsPartnerLimit)
         {
             AddIssue(issues, MarriageEligibilityReason.ActiveUnionLimitReached);
         }
+    }
+
+    private bool WouldExceedPrincipalLimit(
+        EntityId characterId,
+        MarriagePracticeState proposedPractice)
+    {
+        int proposedCount = checked(ActivePrincipalCount(characterId) + 1);
+        return proposedCount > proposedPractice.MaximumActivePrincipalSpousesPerCharacter
+            || unions.Values.Any(item =>
+                item.Status == MarriageUnionStatus.Active
+                && item.Form == MarriageUnionForm.PrincipalSpouse
+                && Involves(item.FirstCharacterId, item.SecondCharacterId, characterId)
+                && proposedCount
+                    > practices[item.PracticeId].MaximumActivePrincipalSpousesPerCharacter);
     }
 
     private void AddActiveLegalRelationshipLimitIssue(
@@ -1643,3 +3023,6 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
     private static CharacterMarriageHistoryAggregate Clone(
         CharacterMarriageHistoryAggregate value) => value with { };
 }
+
+internal sealed record CharacterMarriageWorldUpdatePlan(
+    CharacterMarriageWorldState Candidate);

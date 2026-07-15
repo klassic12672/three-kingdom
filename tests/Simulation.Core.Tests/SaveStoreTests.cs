@@ -17,6 +17,7 @@ public sealed class SaveStoreTests : IDisposable
     private const string FrozenSchemaSevenChecksum = "0c9033c2a0e145a73218aa234f3725878fc7b781b9e6a8e83adad74b10b79d72";
     private const string FrozenSchemaEightChecksum = "ba485b0efc67e7cff38cf6de4b4536dbda2191ee87f5577ff1ee2d1d0031424f";
     private const string FrozenSchemaNineChecksum = "1ef0f8728311ab217e84d9e6ff432342a7bac85b74aae6eee2cf92159d541684";
+    private const string FrozenSchemaTenChecksum = "6e644f0db882a7b7440653060c5b635d6020844a1f032ee05afbe48dd90bce12";
     // Reconstructed literally from the exact schema-4 serializer contract at eaa3aaf.
     // Unlike the inferred schema-1/2 fixtures, this contains nonempty character history.
     private const string FrozenSchemaFourFixture = """{"schemaVersion":4,"contractVersion":2,"gameVersion":"0.1.0","createdUtc":"2026-07-15T00:00:00+00:00","contentManifests":[{"packId":{"value":"base:synthetic"},"version":"1.0.0","checksum":"sha256:abc","requiredForSimulation":true}],"seed":99,"snapshot":{"contractVersion":1,"calendar":{"date":{"year":191,"month":7,"day":14},"turnIndex":0,"daysInCurrentTurn":3},"rootSeed":99,"randomStreams":[],"entities":[],"pendingCommands":[],"systemVersions":[{"systemId":"simulation.calendar","version":1},{"systemId":"simulation.synthetic_entities","version":1},{"systemId":"simulation.command_events","version":1},{"systemId":"simulation.geography","version":1},{"systemId":"simulation.characters","version":1}],"lastEventDate":null,"lastEventPhase":null,"lastEventPriority":null,"lastEventId":null,"geography":{"graph":{"regions":[],"districts":[],"localities":[],"stops":[],"routes":[]},"season":0,"weather":0,"locations":[],"routes":[],"armies":[]},"characters":{"contractVersion":1,"identityDefinitions":[{"contractVersion":1,"id":{"value":"ability:synthetic/command"},"kind":0,"nameKey":{"value":"loc:ability/synthetic_command"}}],"characterDefinitions":[{"contractVersion":1,"id":{"value":"character:synthetic/adult"},"nameKey":{"value":"loc:character/synthetic_adult"},"birthDate":{"year":160,"month":1,"day":1},"abilityIds":[{"value":"ability:synthetic/command"}],"aptitudeIds":[],"traitIds":[],"ambitionIds":[],"reputationIds":[]}],"familyDefinitions":[],"householdDefinitions":[],"characterStates":[{"contractVersion":1,"characterId":{"value":"character:synthetic/adult"},"parentIds":[]}],"familyStates":[],"householdStates":[]}},"diagnosticCommands":[],"diagnosticEvents":[],"checksum":"48b94dad9d4dda78591243341afa16ece40e0ed157368f84c1189641684ecd3e"}""";
@@ -1348,6 +1349,99 @@ public sealed class SaveStoreTests : IDisposable
         Assert.Equal(sourceBytes, File.ReadAllBytes(path));
     }
 
+    [Fact]
+    public void SchemaTen_AuthenticatesAndMigratesExactD0StateWithoutChangingSource()
+    {
+        JsonObject frozen = CreateHistoricalFixture(10);
+        Assert.Equal(FrozenSchemaTenChecksum, frozen["checksum"]!.GetValue<string>());
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(frozen, 10);
+        WorldSnapshot historical = frozen["snapshot"]!.Deserialize<WorldSnapshot>(CanonicalJson.Options)!;
+        string historicalCommands = JsonSerializer.Serialize(
+            frozen["diagnosticCommands"],
+            CanonicalJson.Options);
+        string historicalEvents = JsonSerializer.Serialize(
+            frozen["diagnosticEvents"],
+            CanonicalJson.Options);
+        string path = Path.Combine(directory, "schema-ten-history-backed.save.gz");
+        WriteFrozenHistoricalFixture(path, 10);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        SaveEnvelope migrated = new SaveStore().Load(path);
+
+        Assert.Equal(SaveEnvelope.CurrentSchemaVersion, migrated.SchemaVersion);
+        Assert.Equal(frozen["contractVersion"]!.GetValue<int>(), migrated.ContractVersion);
+        Assert.Equal(frozen["gameVersion"]!.GetValue<string>(), migrated.GameVersion);
+        Assert.Equal(
+            DateTimeOffset.Parse(
+                frozen["createdUtc"]!.GetValue<string>(),
+                System.Globalization.CultureInfo.InvariantCulture),
+            migrated.CreatedUtc);
+        Assert.Equal(frozen["seed"]!.GetValue<ulong>(), migrated.Seed);
+        Assert.Equal(
+            JsonSerializer.Serialize(frozen["contentManifests"], CanonicalJson.Options),
+            JsonSerializer.Serialize(migrated.ContentManifests, CanonicalJson.Options));
+        Assert.Equal(
+            JsonSerializer.Serialize(historical, CanonicalJson.Options),
+            JsonSerializer.Serialize(migrated.Snapshot, CanonicalJson.Options));
+        Assert.Equal(FrozenSchemaTenChecksum, migrated.Checksum);
+        Assert.Equal(SimulationChecksum.Compute(migrated.Snapshot).Value, migrated.Checksum);
+        Assert.Single(migrated.Snapshot.CharacterMarriages.Practices);
+        MarriageProposalState proposal = Assert.Single(
+            migrated.Snapshot.CharacterMarriages.Proposals);
+        MarriageUnionState union = Assert.Single(migrated.Snapshot.CharacterMarriages.Unions);
+        Assert.Equal(MarriageProposalStatus.Accepted, proposal.Status);
+        Assert.Equal(MarriageConsentKind.PoliticalArrangement, union.ConsentKind);
+        Assert.Equal(proposal.ProposalId, union.SourceProposalId);
+        Assert.Single(migrated.Snapshot.CharacterEstateHoldings.Holdings);
+        Assert.Equal(
+            historicalCommands,
+            JsonSerializer.Serialize(migrated.DiagnosticCommands, CanonicalJson.Options));
+        Assert.Equal(
+            historicalEvents,
+            JsonSerializer.Serialize(migrated.DiagnosticEvents, CanonicalJson.Options));
+        Assert.Equal(65, migrated.DiagnosticCommands.Count);
+        Assert.Equal(65, migrated.DiagnosticEvents.Count);
+        _ = WorldState.Restore(migrated.Snapshot);
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Theory]
+    [InlineData("pending-command")]
+    [InlineData("diagnostic-command")]
+    [InlineData("diagnostic-event")]
+    public void SchemaTen_RejectsFutureD1DiscriminatorsWithoutChangingSource(string mutation)
+    {
+        JsonObject invalid = CreateHistoricalFixture(10);
+        JsonObject future = new()
+        {
+            ["payload"] = new JsonObject
+            {
+                ["$type"] = mutation == "diagnostic-event"
+                    ? "character_marriage_action_resolved.v1"
+                    : "character_marriage_action.v1",
+            },
+        };
+        switch (mutation)
+        {
+            case "pending-command":
+                invalid["snapshot"]!["pendingCommands"]!.AsArray().Add(future);
+                break;
+            case "diagnostic-command":
+                invalid["diagnosticCommands"]!.AsArray().Add(future);
+                break;
+            case "diagnostic-event":
+                invalid["diagnosticEvents"]!.AsArray().Add(future);
+                break;
+        }
+
+        string path = Path.Combine(directory, $"schema-ten-future-{mutation}.save.gz");
+        WriteJsonGzip(path, invalid);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        Assert.Throws<SaveCompatibilityException>(() => new SaveStore().Load(path));
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
     [Theory]
     [InlineData("marriage-snapshot")]
     [InlineData("marriage-system-version")]
@@ -1598,6 +1692,7 @@ public sealed class SaveStoreTests : IDisposable
     [InlineData(7)]
     [InlineData(8)]
     [InlineData(9)]
+    [InlineData(10)]
     public void CorruptedHistoricalSnapshotFailsAuthenticationWithoutOverwritingSource(int schemaVersion)
     {
         JsonObject historical = CreateHistoricalFixture(schemaVersion);
@@ -2550,6 +2645,7 @@ public sealed class SaveStoreTests : IDisposable
         // Schema 7 is generated from the exact SP-04C1 contract at d5d2705.
         // Schema 8 is generated from the exact accepted SP-04C2 contract at e2d9590.
         // Schema 9 is generated from the exact accepted SP-04C3 contract at 7b9f795.
+        // Schema 10 is generated from the exact accepted SP-04D0 contract at f7fef24.
         // Schema 1/2 are synthetic fixtures inferred from the registered migration contracts.
         string fileName = schemaVersion switch
         {
@@ -2562,6 +2658,7 @@ public sealed class SaveStoreTests : IDisposable
             7 => "save-schema-7-history-backed.json",
             8 => "save-schema-8-history-backed.json",
             9 => "save-schema-9-history-backed.json",
+            10 => "save-schema-10-history-backed.json",
             _ => throw new ArgumentOutOfRangeException(nameof(schemaVersion)),
         };
         return schemaVersion == 4

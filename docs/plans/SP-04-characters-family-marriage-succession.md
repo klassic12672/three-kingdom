@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2/SP-04C3/SP-04D0 exact-SHA hosted verified; later packages pending |
+| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2/SP-04C3/SP-04D0 exact-SHA hosted verified; SP-04D1 locally verified with hosted acceptance pending; later packages pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -349,6 +349,56 @@ Independent adversarial verification initially found missing proposal/outcome bi
 The final local Release performance fixture contains 1,000 characters, 250 active proposals, and 250 active adult romance routes. Construction measured 38.405 ms, 1,000 aggregate record queries measured 67.561 ms, and snapshot plus full-world checksum measured 191.298 ms; checksum `6542e48b7ccdceee890fc757fd9104c6b4f73164ef4263b7b451947766777e06`. The test asserts shape and correctness, not a wall-clock threshold. These working-tree results are not themselves exact-SHA, hosted, cross-platform, physical-Windows, signing, Steam, release, or full-turn performance evidence. Every full SP-04 acceptance criterion remains unchecked and SP-05 remains blocked.
 
 Subsequent exact-SHA evidence on 2026-07-15 does not retroactively relabel the raw working-tree performance measurements. Accepted revision `f7fef247178776d7c6fb1c4bed56f09dece76ff4` passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and static artifact verification](../evidence/SP-04D0-EXACT-SHA-f7fef24.md). D018 therefore passes at that revision. Physical Windows remains an M4 gate, production signing and Steam remain SP-15 gates, and the full SP-04 three-second budget remains unmet.
+
+## Locally verified package: SP-04D1 political marriage workflow
+
+SP-04D1 is the registered political-marriage workflow on the accepted D0 foundation. M2 and SP-04 remain Active; dependencies through D0 exact revision `f7fef247178776d7c6fb1c4bed56f09dece76ff4` are satisfied. The package preserves pure deterministic .NET, inward dependencies, explicit practices, stable namespaced identity, registered commands/events, forward-only saves, non-explicit content, and `CharacterWorldSnapshot.HouseholdStates` as the sole residence authority. No ADR is required.
+
+`CharacterMarriageActionCommandPayload` (`character_marriage_action.v1`) carries one of five version-1 actions: propose political marriage, respond to a proposal, withdraw a proposal, cancel a political betrothal, or fulfill a political betrothal. `CharacterMarriageActionResolvedEventPayload` (`character_marriage_action_resolved.v1`) carries one of eight typed outcomes. Length-framed SHA-256 identities bind action events to resolution date/command, proposals to kind/date/command, betrothals to accepted political proposals, and unions to accepted legal proposals. The outer command, event, world-snapshot, marriage snapshot/state/query, and `simulation.character_marriages@1` versions remain unchanged.
+
+D1-created state is always `Political` and `PoliticalArrangement`. A direct legal proposal requires both participants to be adults and currently alive, capable, free, unrelated under the selected practice, and within widow-remarriage, form, mixed-practice, duplicate, and global limits. Political betrothal permits a minor only when the explicit practice permits it. Only the recipient may accept/refuse, only the proposer may withdraw, and either participant may cancel or fulfill an active betrothal. A valid direct acceptance atomically creates one union; a valid betrothal acceptance atomically creates one betrothal. A still-active proposal defeated by an intervening rule becomes typed `Cancelled`; missing/terminal targets and temporarily ineligible fulfillment produce generic command cancellation without ending the betrothal.
+
+Fulfillment atomically creates a second legal proposal already accepted by the fulfillment command, creates the political-arrangement union sourced by that proposal, fulfills the original betrothal, links the union, and shares one command/date/turn across the four-record chain. The source active betrothal is evaluated as the relationship being replaced, so it is not miscounted as a duplicate or extra legal relationship.
+
+Submission validates shape, authority, phase, target, and applicable current rules. Resolution replans against authoritative state, constructs and validates the full candidate, and converts expected races or capacity failures into deterministic cancellation before any event is applied. Apply-time validation independently requires the Commands phase, causal command, deterministic event ID, canonical affected IDs, authoritative date/turn, exact nested action/outcome, and a complete valid candidate. A malformed or injected event leaves state and event-order coordinates unchanged.
+
+Retention is bounded by proposal-root causal groups. An accepted proposal remains with its direct betrothal or union. A fulfilled betrothal links both proposal roots so the proposal/betrothal/proposal/union chain consumes two proposal slots per participant and is retained or folded atomically. Active outcomes pin the complete group; terminal groups are selected by their latest child terminal turn/date and stable group ID. Capacity that cannot preserve a required group cancels before mutation. Folding writes checked `2/1/1` proposal/betrothal/union counts for a fulfillment chain and updates both participants' date range. Independent romance-route retention remains unchanged.
+
+Save schema 11 is required because D1 adds persisted command/action/event/outcome discriminators. The 321,757-byte literal schema-10 fixture was generated from detached exact D0 source `f7fef247178776d7c6fb1c4bed56f09dece76ff4`; it retains nonempty marriage, estate, relationship, career, resource, household, and 65-command/event diagnostic state. Its stored historical checksum is `6e644f0db882a7b7440653060c5b635d6020844a1f032ee05afbe48dd90bce12`, and its file SHA-256 is `05d52f0445c777a186e1a4c0a5eb18638c5b11b4f40a9c9c07bebafeac8f6c0e`. The authenticated 10→11 migration rejects every D1 discriminator in schema-10 pending/diagnostic collections, preserves the snapshot, diagnostics, manifests, and source bytes, and advances only the envelope compatibility contract. Historical checksums now cover schema 10, and the complete 1→11 chain remains forward-only with the existing schema-1/2 field-compatibility limitation.
+
+D1 does not add adult romance progression, romantic scenes or attraction effects, household membership/movement/authority/conflict, coercion consequences, third-party guardian/family/faction/court authority, coerced unions, union ending, lifecycle, succession, content, localization, UI, AI, battle, or platform behavior. D2 owns adult non-explicit romance progression; D3 owns household decisions, conflict, and coercion effects. Every full SP-04 acceptance criterion remains unchecked.
+
+### SP-04D1 verification matrix
+
+| ID | Observable package criterion | Required evidence | Closeout classification |
+|---|---|---|---|
+| D101 | M2/SP-04 are Active; D0 is accepted; D1 boundary is unblocked and requires no ADR | Source-of-truth and architecture review | Local pass |
+| D102 | Version-1 political action/outcome contracts and outer discriminators are explicit, registered, and platform-neutral | Contract/API/JSON tests | Local pass |
+| D103 | D1 construction cannot encode romantic or coerced state and imports no D2/D3 behavior | Workflow negatives and complete-diff review | Local pass |
+| D104 | Commands require the Commands phase and exact proposer/recipient/participant authority at submission, resolution, and application | Authority, phase-injection, and target tests | Local pass after remediation |
+| D105 | Direct unions use exact adult birthday/capacity/custody rules; minors enter only explicitly enabled political betrothal | Boundary and policy tests | Local pass |
+| D106 | Refusal, withdrawal, stale typed cancellation, terminal-target generic cancellation, and same-turn races leave no partial outcome | Concurrent workflow tests | Local pass |
+| D107 | Direct acceptance atomically creates exactly one political-arrangement union | Outcome/state/causality tests | Local pass |
+| D108 | Betrothal acceptance and either-participant cancellation are atomic and non-romantic | Outcome/authority tests | Local pass |
+| D109 | Fulfillment creates the exact second accepted proposal/union and common four-record causality; temporary ineligibility preserves the active betrothal | Fulfillment and cancellation tests | Local pass |
+| D110 | Kinship, widow-remarriage, custody/capacity, duplicate, global, form, and mixed-practice limits agree between eligibility and construction | Foundation and mixed-practice race tests | Local pass after remediation |
+| D111 | Exact event/causal/affected/nested data, candidate prevalidation, background-injection rejection, and rollback hold | Tamper, phase, overflow, and no-mutation tests | Local pass after remediation |
+| D112 | Length-framed SHA-256 identities have exact goldens; shuffled submission produces identical events/checksum | Golden-ID and replay tests | Local pass |
+| D113 | The 8/64 bounds, active pinning, terminal selection, causal grouping, checked two-party folding, and saturation cancellation hold | Proposal/betrothal/mixed/fulfillment aging and capacity tests | Local pass after remediation |
+| D114 | Snapshot/restore/checksum/current-save/diagnostic/unknown-discriminator coverage includes D1; loaded pending commands resolve identically | Restore/save/load/replay tests | Local pass after remediation |
+| D115 | Exact-D0 schema 10 authenticates before 10→11 and preserves nonempty prior state, diagnostics, source, and source bytes | Frozen fixture identity and migration test | Local pass |
+| D116 | Schema 10 rejects D1 discriminators; current raw shape, corruption, recovery, future schema, and complete 1→11 chain remain covered | Save/recovery suites | Local pass |
+| D117 | Ten-year deterministic soak golden remains exact | Cross-platform assertion in complete Core suite | Local pass; hosted pending |
+| D118 | A 1,000-character/250-proposal fixture records bounded workflow, snapshot/checksum, JSON, and gzip behavior without a brittle threshold | Raw local Apple Silicon measurement | Local macOS pass; full SP-04 budget unproven |
+| D119 | Independent adversarial and architecture re-review find no remaining correctness or package-boundary blocker | Read-only reviews and focused reruns | Local pass after remediation |
+| D120 | Repository validation, complete Release suites, touched-file formatting, diff, and LFS gates pass | Local repository gates | Local pass |
+| D121 | The same accepted revision passes deterministic validation and complete suites on hosted macOS arm64 and Windows x64 | Exact-SHA clean-checkout hosted evidence | Pending |
+
+Final local verification on 2026-07-15 uses Darwin 25.5.0 arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 407 Simulation.Core, 71 Game.Content, 6 Game.Application, and 18 repository tests. The focused marriage/save slice passes 233 tests; focused final marriage review passes 66 tests. The ten-year/1,000-entity checksum remains `0a92aa6dec435a9b33a399898ed7985210d7142dc10027b23a0bc4e392666b36`. Touched-file formatting, `git diff --check`, and `git lfs fsck` pass.
+
+Independent review remediated candidate-capacity turn abort, background-phase event injection, mixed-practice eligibility/construction mismatch, loaded pending-command replay evidence, and two-root fulfillment-chain retention. The final retention regressions prove active-chain pinning, saturated fulfillment cancellation, and ended-chain atomic folding with `2/1/1` counts and union-end ordering. Architecture and verification re-review report no remaining blocker.
+
+The final representative local Release performance run contains 1,000 characters and 250 bounded political proposals. Workflow measured 1,525.199 ms; snapshot plus checksum measured 120.596 ms; snapshot JSON was 930,668 bytes; gzip was 32,440 bytes; checksum was `9610a37a8e68825fa9d907ab58832240f1357b5f3ef227f4d61a57bd86f8d215`. The test asserts shape/correctness, not a wall-clock threshold. These working-tree measurements are not exact-SHA, hosted, cross-platform, physical-Windows, signing, Steam, release, or full-turn performance evidence. D121 remains pending, every full SP-04 acceptance criterion remains unchecked, SP-05 remains blocked, and D2 is the next package only after exact-SHA D1 acceptance.
 
 ## Edge cases and failure handling
 

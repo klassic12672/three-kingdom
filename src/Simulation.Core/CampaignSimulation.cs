@@ -260,6 +260,37 @@ public sealed class CampaignSimulation
                 }
 
                 break;
+            case CharacterMarriageActionCommandPayload marriageAction:
+                if (command.Phase != ResolutionPhase.Commands)
+                {
+                    issues.Add(new(
+                        "character_marriage_phase",
+                        "Character-marriage actions must resolve in the Commands phase."));
+                }
+
+                AddIssues(
+                    World.CharacterMarriages.ValidateAction(
+                        command.IssuingActor,
+                        marriageAction,
+                        command.IssuedDate,
+                        World.Calendar.TurnIndex),
+                    issues);
+                if (command.CommandId.IsValid && command.IssuedDate.IsValid)
+                {
+                    try
+                    {
+                        _ = CharacterMarriageIds.DeriveActionEventId(
+                            command.IssuedDate,
+                            command.CommandId);
+                    }
+                    catch (Exception exception) when (exception is ArgumentException
+                        or OverflowException)
+                    {
+                        issues.Add(new("invalid_character_marriage_action", exception.Message));
+                    }
+                }
+
+                break;
             default:
                 issues.Add(new("unregistered_payload", $"Command payload '{command.Payload?.GetType().Name ?? "null"}' is not registered."));
                 break;
@@ -455,6 +486,39 @@ public sealed class CampaignSimulation
                     }
 
                     break;
+                case CharacterMarriageActionCommandPayload marriageAction:
+                    try
+                    {
+                        EntityId marriageEventId = GetEventId(command);
+                        CharacterMarriageActionResolvedEventPayload resolvedMarriageAction =
+                            World.CharacterMarriages.PlanAction(
+                                command.IssuingActor,
+                                marriageAction,
+                                date,
+                                World.Calendar.TurnIndex,
+                                command.CommandId,
+                                marriageEventId);
+                        World.CharacterMarriages.PrevalidateOutcome(
+                            resolvedMarriageAction,
+                            date,
+                            World.Calendar.TurnIndex,
+                            command.CommandId,
+                            marriageEventId);
+                        payload = resolvedMarriageAction;
+                        affected = WorldState.GetCharacterMarriageActionAffectedIds(
+                            resolvedMarriageAction);
+                    }
+                    catch (Exception exception) when (exception is SimulationValidationException
+                        or ArgumentException
+                        or OverflowException)
+                    {
+                        payload = new CommandCancelledEventPayload(
+                            "command_invalidated",
+                            exception.Message);
+                        affected = [];
+                    }
+
+                    break;
                 default:
                     throw new SimulationValidationException($"Unregistered command payload '{command.Payload.GetType().Name}'.");
             }
@@ -492,6 +556,7 @@ public sealed class CampaignSimulation
     private bool IsActorAvailable(CampaignCommand command) => command.Payload is RelationshipActionCommandPayload
         or CharacterActionCommandPayload
         or CharacterResourceActionCommandPayload
+        or CharacterMarriageActionCommandPayload
         ? World.Characters.TryGetCharacterProfile(command.IssuingActor, out _)
         : World.TryGetEntity(command.IssuingActor, out _);
 
@@ -510,6 +575,13 @@ public sealed class CampaignSimulation
         if (command.Payload is CharacterResourceActionCommandPayload)
         {
             return CharacterResourceIds.DeriveActionEventId(
+                command.IssuedDate,
+                command.CommandId);
+        }
+
+        if (command.Payload is CharacterMarriageActionCommandPayload)
+        {
+            return CharacterMarriageIds.DeriveActionEventId(
                 command.IssuedDate,
                 command.CommandId);
         }

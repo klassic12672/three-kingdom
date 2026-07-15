@@ -1,4 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json.Serialization;
 
 namespace Simulation.Core;
@@ -9,6 +12,8 @@ public static class CharacterMarriageContractVersions
     public const int State = 1;
     public const int Practice = 1;
     public const int Eligibility = 1;
+    public const int Action = 1;
+    public const int Outcome = 1;
     public const int AuthoritativeQuery = 1;
 }
 
@@ -71,6 +76,12 @@ public enum MarriageProposalStatus
     Withdrawn = 3,
     Cancelled = 4,
     Invalidated = 5,
+}
+
+public enum MarriageProposalResponse
+{
+    Accept = 0,
+    Refuse = 1,
 }
 
 public enum PoliticalBetrothalStatus
@@ -329,4 +340,187 @@ public interface IAuthoritativeCharacterMarriageWorldQuery
     MarriageEligibilityResult EvaluateEligibility(
         MarriageEligibilityRequest request,
         CampaignDate date);
+}
+
+[JsonPolymorphic(
+    TypeDiscriminatorPropertyName = "$type",
+    UnknownDerivedTypeHandling = JsonUnknownDerivedTypeHandling.FailSerialization)]
+[JsonDerivedType(typeof(ProposePoliticalMarriageAction), "propose_political_marriage.v1")]
+[JsonDerivedType(typeof(RespondToPoliticalMarriageProposalAction), "respond_political_marriage_proposal.v1")]
+[JsonDerivedType(typeof(WithdrawPoliticalMarriageProposalAction), "withdraw_political_marriage_proposal.v1")]
+[JsonDerivedType(typeof(CancelPoliticalBetrothalAction), "cancel_political_betrothal.v1")]
+[JsonDerivedType(typeof(FulfillPoliticalBetrothalAction), "fulfill_political_betrothal.v1")]
+public interface ICharacterMarriageAction;
+
+public sealed record ProposePoliticalMarriageAction(
+    EntityId RecipientCharacterId,
+    MarriageProposalKind Kind,
+    MarriageUnionForm ProposedForm,
+    EntityId? ConcubinagePrincipalCharacterId,
+    EntityId PracticeId) : ICharacterMarriageAction;
+
+public sealed record RespondToPoliticalMarriageProposalAction(
+    EntityId ProposalId,
+    MarriageProposalResponse Response) : ICharacterMarriageAction;
+
+public sealed record WithdrawPoliticalMarriageProposalAction(EntityId ProposalId)
+    : ICharacterMarriageAction;
+
+public sealed record CancelPoliticalBetrothalAction(EntityId BetrothalId)
+    : ICharacterMarriageAction;
+
+public sealed record FulfillPoliticalBetrothalAction(EntityId BetrothalId)
+    : ICharacterMarriageAction;
+
+[method: JsonConstructor]
+public sealed record CharacterMarriageActionCommandPayload(ICharacterMarriageAction Action)
+    : ICampaignCommandPayload;
+
+[JsonPolymorphic(
+    TypeDiscriminatorPropertyName = "$type",
+    UnknownDerivedTypeHandling = JsonUnknownDerivedTypeHandling.FailSerialization)]
+[JsonDerivedType(typeof(MarriageProposalCreatedOutcome), "marriage_proposal_created.v1")]
+[JsonDerivedType(typeof(MarriageProposalRefusedOutcome), "marriage_proposal_refused.v1")]
+[JsonDerivedType(typeof(MarriageProposalWithdrawnOutcome), "marriage_proposal_withdrawn.v1")]
+[JsonDerivedType(typeof(MarriageProposalCancelledOutcome), "marriage_proposal_cancelled.v1")]
+[JsonDerivedType(typeof(PoliticalBetrothalAcceptedOutcome), "political_betrothal_accepted.v1")]
+[JsonDerivedType(typeof(DirectPoliticalUnionAcceptedOutcome), "direct_political_union_accepted.v1")]
+[JsonDerivedType(typeof(PoliticalBetrothalCancelledOutcome), "political_betrothal_cancelled.v1")]
+[JsonDerivedType(typeof(PoliticalBetrothalFulfilledOutcome), "political_betrothal_fulfilled.v1")]
+public interface ICharacterMarriageActionOutcome;
+
+public sealed record MarriageProposalCreatedOutcome(MarriageProposalState Proposal)
+    : ICharacterMarriageActionOutcome;
+
+public sealed record MarriageProposalRefusedOutcome(MarriageProposalState Proposal)
+    : ICharacterMarriageActionOutcome;
+
+public sealed record MarriageProposalWithdrawnOutcome(MarriageProposalState Proposal)
+    : ICharacterMarriageActionOutcome;
+
+public sealed record MarriageProposalCancelledOutcome(MarriageProposalState Proposal)
+    : ICharacterMarriageActionOutcome;
+
+public sealed record PoliticalBetrothalAcceptedOutcome(
+    MarriageProposalState Proposal,
+    PoliticalBetrothalState Betrothal) : ICharacterMarriageActionOutcome;
+
+public sealed record DirectPoliticalUnionAcceptedOutcome(
+    MarriageProposalState Proposal,
+    MarriageUnionState Union) : ICharacterMarriageActionOutcome;
+
+public sealed record PoliticalBetrothalCancelledOutcome(PoliticalBetrothalState Betrothal)
+    : ICharacterMarriageActionOutcome;
+
+public sealed record PoliticalBetrothalFulfilledOutcome(
+    PoliticalBetrothalState Betrothal,
+    MarriageProposalState FulfillmentProposal,
+    MarriageUnionState Union) : ICharacterMarriageActionOutcome;
+
+public sealed record CharacterMarriageActionResolvedEventPayload(
+    EntityId ActingCharacterId,
+    ICharacterMarriageAction Action,
+    ICharacterMarriageActionOutcome Outcome) : ICampaignEventPayload;
+
+public static class CharacterMarriageIds
+{
+    public static EntityId DeriveActionEventId(
+        CampaignDate resolutionDate,
+        EntityId commandId)
+    {
+        RequireDate(resolutionDate, nameof(resolutionDate));
+        RequireId(commandId, nameof(commandId));
+        return Hash(
+            "event",
+            "character-marriage-action-event.v1",
+            FormatDate(resolutionDate),
+            commandId.Value);
+    }
+
+    public static EntityId DeriveProposalId(
+        MarriageProposalKind kind,
+        CampaignDate createdDate,
+        EntityId commandId)
+    {
+        RequireDefined(kind, nameof(kind));
+        RequireDate(createdDate, nameof(createdDate));
+        RequireId(commandId, nameof(commandId));
+        return Hash(
+            "marriage_proposal",
+            "character-marriage-proposal.v1",
+            ((int)kind).ToString(CultureInfo.InvariantCulture),
+            FormatDate(createdDate),
+            commandId.Value);
+    }
+
+    public static EntityId DerivePoliticalBetrothalId(EntityId sourceProposalId)
+    {
+        RequireId(sourceProposalId, nameof(sourceProposalId));
+        return Hash(
+            "political_betrothal",
+            "political-betrothal.v1",
+            sourceProposalId.Value);
+    }
+
+    public static EntityId DeriveMarriageUnionId(EntityId sourceProposalId)
+    {
+        RequireId(sourceProposalId, nameof(sourceProposalId));
+        return Hash(
+            "marriage_union",
+            "marriage-union.v1",
+            sourceProposalId.Value);
+    }
+
+    private static EntityId Hash(string entityNamespace, string domain, params string[] fields)
+    {
+        StringBuilder canonical = new();
+        AppendField(canonical, domain);
+        foreach (string field in fields)
+        {
+            AppendField(canonical, field);
+        }
+
+        byte[] digest = SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString()));
+        return new EntityId($"{entityNamespace}:sha256/{Convert.ToHexStringLower(digest)}");
+    }
+
+    private static void AppendField(StringBuilder target, string value)
+    {
+        target.Append(value.Length.ToString(CultureInfo.InvariantCulture));
+        target.Append(':');
+        target.Append(value);
+        target.Append(';');
+    }
+
+    private static string FormatDate(CampaignDate value) => string.Concat(
+        value.Year.ToString("D4", CultureInfo.InvariantCulture),
+        "-",
+        value.Month.ToString("D2", CultureInfo.InvariantCulture),
+        "-",
+        value.Day.ToString("D2", CultureInfo.InvariantCulture));
+
+    private static void RequireId(EntityId value, string parameterName)
+    {
+        if (!value.IsValid)
+        {
+            throw new ArgumentException("A valid stable ID is required.", parameterName);
+        }
+    }
+
+    private static void RequireDate(CampaignDate value, string parameterName)
+    {
+        if (!value.IsValid)
+        {
+            throw new ArgumentException("A valid campaign date is required.", parameterName);
+        }
+    }
+
+    private static void RequireDefined<T>(T value, string parameterName)
+        where T : struct, Enum
+    {
+        if (!Enum.IsDefined(value))
+        {
+            throw new ArgumentOutOfRangeException(parameterName);
+        }
+    }
 }

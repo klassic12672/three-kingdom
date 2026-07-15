@@ -29,6 +29,7 @@ public sealed class SaveSchemaRegistry
             new SaveMigrationV7ToV8(),
             new SaveMigrationV8ToV9(),
             new SaveMigrationV9ToV10(),
+            new SaveMigrationV10ToV11(),
         ]).ToArray();
         if (registered.Any(item => item.ToSchemaVersion != item.FromSchemaVersion + 1))
         {
@@ -98,7 +99,7 @@ public sealed class SaveSchemaRegistry
 
     internal static void ValidateHistoricalSourceChecksum(JsonObject source, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 9)
+        if (schemaVersion is < 1 or > 10)
         {
             throw new SaveCompatibilityException($"Save schema {schemaVersion} has no historical checksum contract.");
         }
@@ -163,13 +164,55 @@ public sealed class SaveSchemaRegistry
             schemaVersion,
             "snapshot.systemVersions");
 
-        if (snapshot.ContainsKey("characterMarriages")
-            || systemVersions.Any(version => IsSystemId(
-                version,
-                CharacterMarriageSystem.SystemId)))
+        if (schemaVersion < 10
+            && (snapshot.ContainsKey("characterMarriages")
+                || systemVersions.Any(version => IsSystemId(
+                    version,
+                    CharacterMarriageSystem.SystemId))))
         {
             throw new SaveCompatibilityException(
                 $"Schema {schemaVersion} unexpectedly contains schema 10 character-marriage data.");
+        }
+
+        if (schemaVersion == 10)
+        {
+            ValidateCharacterMarriageSnapshotShape(
+                RequireHistoricalObject(
+                    snapshot,
+                    "characterMarriages",
+                    schemaVersion,
+                    "snapshot.characterMarriages"),
+                "Save schema 10");
+            if (!systemVersions.Any(version => IsSystemVersion(
+                    version,
+                    CharacterMarriageSystem.SystemId,
+                    CharacterMarriageSystem.Version)))
+            {
+                throw new SaveCompatibilityException(
+                    $"Save schema 10 is missing required '{CharacterMarriageSystem.SystemId}@{CharacterMarriageSystem.Version}' system-version data.");
+            }
+
+            RejectD1Discriminators(
+                RequireHistoricalArray(
+                    snapshot,
+                    "pendingCommands",
+                    schemaVersion,
+                    "snapshot.pendingCommands"),
+                "snapshot pending commands");
+            RejectD1Discriminators(
+                RequireHistoricalArray(
+                    source,
+                    "diagnosticCommands",
+                    schemaVersion,
+                    "diagnosticCommands"),
+                "diagnostic commands");
+            RejectD1Discriminators(
+                RequireHistoricalArray(
+                    source,
+                    "diagnosticEvents",
+                    schemaVersion,
+                    "diagnosticEvents"),
+                "diagnostic events");
         }
 
         if (schemaVersion < 9
@@ -182,7 +225,7 @@ public sealed class SaveSchemaRegistry
                 $"Schema {schemaVersion} unexpectedly contains schema 9 character-estate-holding data.");
         }
 
-        if (schemaVersion == 9)
+        if (schemaVersion >= 9)
         {
             ValidateCharacterEstateHoldingSnapshotShape(
                 RequireHistoricalObject(
@@ -190,14 +233,14 @@ public sealed class SaveSchemaRegistry
                     "characterEstateHoldings",
                     schemaVersion,
                     "snapshot.characterEstateHoldings"),
-                "Save schema 9");
+                $"Save schema {schemaVersion}");
             if (!systemVersions.Any(version => IsSystemVersion(
                     version,
                     CharacterEstateHoldingSystem.SystemId,
                     CharacterEstateHoldingSystem.Version)))
             {
                 throw new SaveCompatibilityException(
-                    $"Save schema 9 is missing required '{CharacterEstateHoldingSystem.SystemId}@{CharacterEstateHoldingSystem.Version}' system-version data.");
+                    $"Save schema {schemaVersion} is missing required '{CharacterEstateHoldingSystem.SystemId}@{CharacterEstateHoldingSystem.Version}' system-version data.");
             }
         }
 
@@ -1417,6 +1460,46 @@ public sealed class SaveSchemaRegistry
         systemVersion["systemId"] is JsonValue systemIdValue
         && systemIdValue.TryGetValue(out string? actualSystemId)
         && StringComparer.Ordinal.Equals(actualSystemId, systemId);
+
+    private static void RejectD1Discriminators(JsonNode node, string description)
+    {
+        if (ContainsD1Discriminator(node))
+        {
+            throw new SaveCompatibilityException(
+                $"Save schema 10 unexpectedly contains schema 11 character-marriage data in {description}.");
+        }
+    }
+
+    private static bool ContainsD1Discriminator(JsonNode? node)
+    {
+        if (node is JsonObject value)
+        {
+            if (value["$type"] is JsonValue discriminator
+                && discriminator.TryGetValue(out string? type)
+                && type is "character_marriage_action.v1"
+                    or "character_marriage_action_resolved.v1"
+                    or "propose_political_marriage.v1"
+                    or "respond_political_marriage_proposal.v1"
+                    or "withdraw_political_marriage_proposal.v1"
+                    or "cancel_political_betrothal.v1"
+                    or "fulfill_political_betrothal.v1"
+                    or "marriage_proposal_created.v1"
+                    or "marriage_proposal_refused.v1"
+                    or "marriage_proposal_withdrawn.v1"
+                    or "marriage_proposal_cancelled.v1"
+                    or "political_betrothal_accepted.v1"
+                    or "direct_political_union_accepted.v1"
+                    or "political_betrothal_cancelled.v1"
+                    or "political_betrothal_fulfilled.v1")
+            {
+                return true;
+            }
+
+            return value.Any(property => ContainsD1Discriminator(property.Value));
+        }
+
+        return node is JsonArray array && array.Any(ContainsD1Discriminator);
+    }
 }
 
 public sealed class SaveMigrationV1ToV2 : ISaveMigration
@@ -1902,6 +1985,30 @@ public sealed class SaveMigrationV9ToV10 : ISaveMigration
         WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(
             SimulationJson.CreateOptions())
             ?? throw new SaveCompatibilityException("Migrated schema 10 snapshot is empty.");
+        source["checksum"] = SimulationChecksum.Compute(migratedSnapshot).Value;
+        source["schemaVersion"] = ToSchemaVersion;
+        return source;
+    }
+}
+
+public sealed class SaveMigrationV10ToV11 : ISaveMigration
+{
+    public int FromSchemaVersion => 10;
+
+    public int ToSchemaVersion => 11;
+
+    public JsonObject Migrate(JsonObject source)
+    {
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(source, FromSchemaVersion);
+        if (source["snapshot"] is not JsonObject snapshot)
+        {
+            throw new SaveCompatibilityException(
+                "Schema 10 save is missing authoritative snapshot data.");
+        }
+
+        WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(
+            SimulationJson.CreateOptions())
+            ?? throw new SaveCompatibilityException("Migrated schema 11 snapshot is empty.");
         source["checksum"] = SimulationChecksum.Compute(migratedSnapshot).Value;
         source["schemaVersion"] = ToSchemaVersion;
         return source;

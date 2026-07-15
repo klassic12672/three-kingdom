@@ -427,6 +427,9 @@ public sealed class WorldState : IWorldQuery
             case CharacterResourceActionResolvedEventPayload resourceAction:
                 ApplyCharacterResourceAction(campaignEvent, resourceAction);
                 break;
+            case CharacterMarriageActionResolvedEventPayload marriageAction:
+                ApplyCharacterMarriageAction(campaignEvent, marriageAction);
+                break;
             default:
                 throw new SimulationValidationException($"Unregistered event payload '{campaignEvent.Payload.GetType().Name}'.");
         }
@@ -443,6 +446,7 @@ public sealed class WorldState : IWorldQuery
         Characters.UpdateCampaignDate(Calendar.Date);
         Careers.UpdateCampaignCalendar(Calendar);
         CharacterResources.UpdateCampaignCalendar(Calendar);
+        CharacterMarriages.UpdateCampaignCalendar(Calendar);
     }
 
     internal IReadOnlyList<CampaignEvent> PlanGeographicEvents(CampaignDate date) =>
@@ -546,6 +550,177 @@ public sealed class WorldState : IWorldQuery
             commandId,
             campaignEvent.EventId);
         CharacterResources.ApplyPrepared(resourcePlan);
+    }
+
+    private void ApplyCharacterMarriageAction(
+        CampaignEvent campaignEvent,
+        CharacterMarriageActionResolvedEventPayload payload)
+    {
+        if (campaignEvent.Phase != ResolutionPhase.Commands)
+        {
+            throw new SimulationValidationException(
+                "Character-marriage action events must resolve in the Commands phase.");
+        }
+
+        if (campaignEvent.CausalId is not EntityId commandId || !commandId.IsValid)
+        {
+            throw new SimulationValidationException(
+                "Character-marriage action event requires a valid causal command ID.");
+        }
+
+        EntityId expectedEventId = CharacterMarriageIds.DeriveActionEventId(
+            campaignEvent.ResolutionDate,
+            commandId);
+        if (campaignEvent.EventId != expectedEventId
+            || campaignEvent.AffectedIds is null
+            || !campaignEvent.AffectedIds.SequenceEqual(
+                GetCharacterMarriageActionAffectedIds(payload)))
+        {
+            throw new SimulationValidationException(
+                "Character-marriage action event identity or affected IDs do not match its exact deterministic outcome.");
+        }
+
+        CharacterMarriageWorldUpdatePlan marriagePlan = CharacterMarriages.PrepareOutcome(
+            payload,
+            campaignEvent.ResolutionDate,
+            Calendar.TurnIndex,
+            commandId,
+            campaignEvent.EventId);
+        CharacterMarriages.ApplyPrepared(marriagePlan);
+    }
+
+    internal static EntityId[] GetCharacterMarriageActionAffectedIds(
+        CharacterMarriageActionResolvedEventPayload payload)
+    {
+        if (payload is null
+            || payload.Action is null
+            || payload.Outcome is null
+            || !payload.ActingCharacterId.IsValid)
+        {
+            throw new SimulationValidationException(
+                "Character-marriage action event contains null or invalid data.");
+        }
+
+        HashSet<EntityId> affected = [payload.ActingCharacterId];
+        switch (payload.Action)
+        {
+            case ProposePoliticalMarriageAction action:
+                affected.Add(action.RecipientCharacterId);
+                affected.Add(action.PracticeId);
+                if (action.ConcubinagePrincipalCharacterId is EntityId principal)
+                {
+                    affected.Add(principal);
+                }
+
+                break;
+            case RespondToPoliticalMarriageProposalAction action:
+                affected.Add(action.ProposalId);
+                break;
+            case WithdrawPoliticalMarriageProposalAction action:
+                affected.Add(action.ProposalId);
+                break;
+            case CancelPoliticalBetrothalAction action:
+                affected.Add(action.BetrothalId);
+                break;
+            case FulfillPoliticalBetrothalAction action:
+                affected.Add(action.BetrothalId);
+                break;
+            default:
+                throw new SimulationValidationException(
+                    $"Unregistered character-marriage action '{payload.Action.GetType().Name}'.");
+        }
+
+        switch (payload.Outcome)
+        {
+            case MarriageProposalCreatedOutcome value:
+                AddMarriageProposal(affected, value.Proposal);
+                break;
+            case MarriageProposalRefusedOutcome value:
+                AddMarriageProposal(affected, value.Proposal);
+                break;
+            case MarriageProposalWithdrawnOutcome value:
+                AddMarriageProposal(affected, value.Proposal);
+                break;
+            case MarriageProposalCancelledOutcome value:
+                AddMarriageProposal(affected, value.Proposal);
+                break;
+            case PoliticalBetrothalAcceptedOutcome value:
+                AddMarriageProposal(affected, value.Proposal);
+                AddPoliticalBetrothal(affected, value.Betrothal);
+                break;
+            case DirectPoliticalUnionAcceptedOutcome value:
+                AddMarriageProposal(affected, value.Proposal);
+                AddMarriageUnion(affected, value.Union);
+                break;
+            case PoliticalBetrothalCancelledOutcome value:
+                AddPoliticalBetrothal(affected, value.Betrothal);
+                break;
+            case PoliticalBetrothalFulfilledOutcome value:
+                AddPoliticalBetrothal(affected, value.Betrothal);
+                AddMarriageProposal(affected, value.FulfillmentProposal);
+                AddMarriageUnion(affected, value.Union);
+                break;
+            default:
+                throw new SimulationValidationException(
+                    $"Unregistered character-marriage outcome '{payload.Outcome.GetType().Name}'.");
+        }
+
+        if (affected.Any(id => !id.IsValid))
+        {
+            throw new SimulationValidationException(
+                "Character-marriage action event contains an invalid affected ID.");
+        }
+
+        return affected.Order().ToArray();
+    }
+
+    private static void AddMarriageProposal(
+        ISet<EntityId> affected,
+        MarriageProposalState proposal)
+    {
+        affected.Add(proposal.ProposalId);
+        affected.Add(proposal.ProposerCharacterId);
+        affected.Add(proposal.RecipientCharacterId);
+        affected.Add(proposal.PracticeId);
+        if (proposal.ConcubinagePrincipalCharacterId is EntityId principal)
+        {
+            affected.Add(principal);
+        }
+    }
+
+    private static void AddPoliticalBetrothal(
+        ISet<EntityId> affected,
+        PoliticalBetrothalState betrothal)
+    {
+        affected.Add(betrothal.BetrothalId);
+        affected.Add(betrothal.FirstCharacterId);
+        affected.Add(betrothal.SecondCharacterId);
+        affected.Add(betrothal.PracticeId);
+        affected.Add(betrothal.SourceProposalId);
+        if (betrothal.ConcubinagePrincipalCharacterId is EntityId principal)
+        {
+            affected.Add(principal);
+        }
+
+        if (betrothal.FulfillmentUnionId is EntityId unionId)
+        {
+            affected.Add(unionId);
+        }
+    }
+
+    private static void AddMarriageUnion(
+        ISet<EntityId> affected,
+        MarriageUnionState union)
+    {
+        affected.Add(union.UnionId);
+        affected.Add(union.FirstCharacterId);
+        affected.Add(union.SecondCharacterId);
+        affected.Add(union.PracticeId);
+        affected.Add(union.SourceProposalId);
+        if (union.ConcubinagePrincipalCharacterId is EntityId principal)
+        {
+            affected.Add(principal);
+        }
     }
 
     internal static EntityId[] GetCharacterResourceActionAffectedIds(
@@ -1117,7 +1292,8 @@ public sealed class WorldState : IWorldQuery
         foreach (CampaignCommand command in commands.Where(
             command => command.Payload is RelationshipActionCommandPayload
                 or CharacterActionCommandPayload
-                or CharacterResourceActionCommandPayload))
+                or CharacterResourceActionCommandPayload
+                or CharacterMarriageActionCommandPayload))
         {
             try
             {
@@ -1130,6 +1306,9 @@ public sealed class WorldState : IWorldQuery
                         command.IssuedDate,
                         command.CommandId),
                     CharacterResourceActionCommandPayload => CharacterResourceIds.DeriveActionEventId(
+                        command.IssuedDate,
+                        command.CommandId),
+                    CharacterMarriageActionCommandPayload => CharacterMarriageIds.DeriveActionEventId(
                         command.IssuedDate,
                         command.CommandId),
                     _ => throw new SimulationValidationException(

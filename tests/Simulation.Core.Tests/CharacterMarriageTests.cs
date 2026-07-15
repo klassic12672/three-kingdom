@@ -19,7 +19,7 @@ public sealed class CharacterMarriageTests
     }
 
     [Fact]
-    public void ContractIsVersionOneDefaultEmptyStateOnlyAndPlatformNeutral()
+    public void ContractIsVersionOneDefaultEmptyPoliticalWorkflowAndPlatformNeutral()
     {
         CharacterMarriageWorldState state = NewState(CreateCharacters(2));
 
@@ -27,6 +27,8 @@ public sealed class CharacterMarriageTests
         Assert.Equal(1, CharacterMarriageContractVersions.State);
         Assert.Equal(1, CharacterMarriageContractVersions.Practice);
         Assert.Equal(1, CharacterMarriageContractVersions.Eligibility);
+        Assert.Equal(1, CharacterMarriageContractVersions.Action);
+        Assert.Equal(1, CharacterMarriageContractVersions.Outcome);
         Assert.Equal(1, CharacterMarriageContractVersions.AuthoritativeQuery);
         Assert.Equal(18, CharacterMarriageLimits.MinimumAdultAge);
         Assert.Equal(64, CharacterMarriageLimits.RetainedRecordsPerCategoryPerCharacter);
@@ -35,17 +37,13 @@ public sealed class CharacterMarriageTests
         Assert.Equal(1, CharacterMarriageSystem.Version);
         Assert.Equal(Serialize(CharacterMarriageWorldSnapshot.Empty), Serialize(state.CaptureSnapshot()));
 
-        string[] mutatorPrefixes = ["Add", "Apply", "End", "Remove", "Replace", "Resolve", "Update"];
-        Assert.DoesNotContain(
+        Assert.Contains(
             typeof(CharacterMarriageWorldState).GetMethods(
                 BindingFlags.Instance
                 | BindingFlags.Public
                 | BindingFlags.NonPublic
                 | BindingFlags.DeclaredOnly),
-            method => (method.IsPublic || method.IsAssembly)
-                && mutatorPrefixes.Any(prefix => method.Name.StartsWith(
-                    prefix,
-                    StringComparison.Ordinal)));
+            method => method.Name == nameof(CharacterMarriageWorldState.ValidateAction));
 
         string serialized = Serialize(state.CaptureSnapshot());
         Assert.DoesNotContain("Godot", serialized, StringComparison.OrdinalIgnoreCase);
