@@ -334,6 +334,48 @@ public sealed class CampaignSimulation
                 }
 
                 break;
+            case CharacterFamilyActionCommandPayload familyAction:
+                if (command.Phase != ResolutionPhase.Commands)
+                {
+                    issues.Add(new(
+                        "character_family_phase",
+                        "Character-family actions must resolve in the Commands phase."));
+                }
+
+                if (command.IssuingActor != CharacterFamilySystem.AuthoritativeActorId)
+                {
+                    issues.Add(new(
+                        "character_family_authority",
+                        "Character-family actions require the reserved authoritative simulation actor."));
+                }
+
+                if (command.CommandId.IsValid && command.IssuedDate.IsValid)
+                {
+                    try
+                    {
+                        EntityId eventId = CharacterFamilyIds.DeriveActionEventId(
+                            command.IssuedDate,
+                            command.CommandId);
+                        if (command.IssuingActor == CharacterFamilySystem.AuthoritativeActorId)
+                        {
+                            _ = World.PrepareCharacterFamilyAction(
+                                command.IssuingActor,
+                                familyAction,
+                                command.IssuedDate,
+                                World.Calendar.TurnIndex,
+                                command.CommandId,
+                                eventId);
+                        }
+                    }
+                    catch (Exception exception) when (exception is SimulationValidationException
+                        or ArgumentException
+                        or OverflowException)
+                    {
+                        issues.Add(new("invalid_character_family_action", exception.Message));
+                    }
+                }
+
+                break;
             case HouseholdDecisionCommandPayload householdDecision:
                 if (command.Phase != ResolutionPhase.Commands)
                 {
@@ -617,6 +659,33 @@ public sealed class CampaignSimulation
                     }
 
                     break;
+                case CharacterFamilyActionCommandPayload familyAction:
+                    try
+                    {
+                        EntityId familyEventId = GetEventId(command);
+                        CharacterFamilyAggregatePlan aggregate =
+                            World.PrepareCharacterFamilyAction(
+                                command.IssuingActor,
+                                familyAction,
+                                date,
+                                World.Calendar.TurnIndex,
+                                command.CommandId,
+                                familyEventId);
+                        payload = aggregate.ResolvedPayload;
+                        affected = WorldState.GetCharacterFamilyActionAffectedIds(
+                            aggregate.ResolvedPayload);
+                    }
+                    catch (Exception exception) when (exception is SimulationValidationException
+                        or ArgumentException
+                        or OverflowException)
+                    {
+                        payload = new CommandCancelledEventPayload(
+                            "command_invalidated",
+                            exception.Message);
+                        affected = [];
+                    }
+
+                    break;
                 case HouseholdDecisionCommandPayload householdDecision:
                     try
                     {
@@ -686,6 +755,11 @@ public sealed class CampaignSimulation
             return command.IssuingActor == CharacterConditionSystem.AuthoritativeActorId;
         }
 
+        if (command.Payload is CharacterFamilyActionCommandPayload)
+        {
+            return command.IssuingActor == CharacterFamilySystem.AuthoritativeActorId;
+        }
+
         return command.Payload is RelationshipActionCommandPayload
             or CharacterActionCommandPayload
             or CharacterResourceActionCommandPayload
@@ -724,6 +798,13 @@ public sealed class CampaignSimulation
         if (command.Payload is CharacterConditionActionCommandPayload)
         {
             return CharacterConditionIds.DeriveActionEventId(
+                command.IssuedDate,
+                command.CommandId);
+        }
+
+        if (command.Payload is CharacterFamilyActionCommandPayload)
+        {
+            return CharacterFamilyIds.DeriveActionEventId(
                 command.IssuedDate,
                 command.CommandId);
         }

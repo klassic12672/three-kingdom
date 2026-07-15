@@ -965,7 +965,7 @@ public sealed class CharacterHouseholdCampaignTests
             SaveEnvelope envelope = SaveEnvelope.Create("test", [], original);
             new SaveStore().SaveAtomic(path, envelope);
             SaveEnvelope loaded = new SaveStore().Load(path);
-            Assert.Equal(13, loaded.SchemaVersion);
+            Assert.Equal(SaveEnvelope.CurrentSchemaVersion, loaded.SchemaVersion);
             Assert.Equal(3, loaded.Snapshot.PendingCommands.Count);
             CampaignSimulation replay = new(WorldState.Restore(loaded.Snapshot));
 
@@ -1076,7 +1076,7 @@ public sealed class CharacterHouseholdCampaignTests
                 SaveEnvelope.Create("test", [], simulation));
             SaveEnvelope loaded = new SaveStore().Load(path);
 
-            Assert.Equal(13, loaded.SchemaVersion);
+            Assert.Equal(SaveEnvelope.CurrentSchemaVersion, loaded.SchemaVersion);
             ICharacterConditionAction[] conditionActions = loaded.DiagnosticCommands
                 .Select(command => command.Payload)
                 .OfType<CharacterConditionActionCommandPayload>()

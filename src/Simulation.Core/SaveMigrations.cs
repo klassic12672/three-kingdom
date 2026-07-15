@@ -32,6 +32,7 @@ public sealed class SaveSchemaRegistry
             new SaveMigrationV10ToV11(),
             new SaveMigrationV11ToV12(),
             new SaveMigrationV12ToV13(),
+            new SaveMigrationV13ToV14(),
         ]).ToArray();
         if (registered.Any(item => item.ToSchemaVersion != item.FromSchemaVersion + 1))
         {
@@ -101,7 +102,7 @@ public sealed class SaveSchemaRegistry
 
     internal static void ValidateHistoricalSourceChecksum(JsonObject source, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 12)
+        if (schemaVersion is < 1 or > 13)
         {
             throw new SaveCompatibilityException($"Save schema {schemaVersion} has no historical checksum contract.");
         }
@@ -176,7 +177,7 @@ public sealed class SaveSchemaRegistry
                 $"Schema {schemaVersion} unexpectedly contains schema 10 character-marriage data.");
         }
 
-        if (schemaVersion is 10 or 11 or 12)
+        if (schemaVersion is 10 or 11 or 12 or 13)
         {
             ValidateCharacterMarriageSnapshotShape(
                 RequireHistoricalObject(
@@ -185,15 +186,15 @@ public sealed class SaveSchemaRegistry
                     schemaVersion,
                     "snapshot.characterMarriages"),
                 $"Save schema {schemaVersion}",
-                expectedSnapshotVersion: schemaVersion == 12
+                expectedSnapshotVersion: schemaVersion >= 12
                     ? CharacterMarriageContractVersions.Snapshot
                     : 1,
-                requireInvitations: schemaVersion == 12,
-                allowVersionTwoRoutes: schemaVersion == 12);
+                requireInvitations: schemaVersion >= 12,
+                allowVersionTwoRoutes: schemaVersion >= 12);
             JsonObject[] marriageSystemVersions = systemVersions
                 .Where(version => IsSystemId(version, CharacterMarriageSystem.SystemId))
                 .ToArray();
-            int expectedMarriageSystemVersion = schemaVersion == 12
+            int expectedMarriageSystemVersion = schemaVersion >= 12
                 ? CharacterMarriageSystem.Version
                 : 1;
             if (marriageSystemVersions.Length != 1
@@ -233,7 +234,7 @@ public sealed class SaveSchemaRegistry
                 RejectD2Discriminators(diagnosticCommands, "diagnostic commands");
                 RejectD2Discriminators(diagnosticEvents, "diagnostic events");
             }
-            else
+            else if (schemaVersion == 12)
             {
                 RejectD3Discriminators(pendingCommands, "snapshot pending commands");
                 RejectD3Discriminators(diagnosticCommands, "diagnostic commands");
@@ -244,6 +245,12 @@ public sealed class SaveSchemaRegistry
                 RejectD3RelationshipSourceKinds(
                     diagnosticEvents,
                     "diagnostic events");
+            }
+            else
+            {
+                RejectE0Discriminators(pendingCommands, "snapshot pending commands");
+                RejectE0Discriminators(diagnosticCommands, "diagnostic commands");
+                RejectE0Discriminators(diagnosticEvents, "diagnostic events");
             }
         }
 
@@ -1604,6 +1611,15 @@ public sealed class SaveSchemaRegistry
         }
     }
 
+    private static void RejectE0Discriminators(JsonNode node, string description)
+    {
+        if (ContainsE0Discriminator(node) || ContainsE0Property(node))
+        {
+            throw new SaveCompatibilityException(
+                $"Save schema 13 unexpectedly contains schema 14 character-family data in {description}.");
+        }
+    }
+
     private static bool ContainsD1Discriminator(JsonNode? node)
     {
         if (node is JsonObject value)
@@ -1683,6 +1699,43 @@ public sealed class SaveSchemaRegistry
         }
 
         return node is JsonArray array && array.Any(ContainsD3Property);
+    }
+
+    private static bool ContainsE0Discriminator(JsonNode? node)
+    {
+        if (node is JsonObject value)
+        {
+            if (value["$type"] is JsonValue discriminator
+                && discriminator.TryGetValue(out string? type)
+                && type is "character_family_action.v1"
+                    or "character_family_action_resolved.v1"
+                    or "establish_legal_adoptive_parent.v1"
+                    or "legal_adoptive_parent_established.v1")
+            {
+                return true;
+            }
+
+            return value.Any(property => ContainsE0Discriminator(property.Value));
+        }
+
+        return node is JsonArray array && array.Any(ContainsE0Discriminator);
+    }
+
+    private static bool ContainsE0Property(JsonNode? node)
+    {
+        if (node is JsonObject value)
+        {
+            if (value.ContainsKey("expectedCurrentParentLinks")
+                || value.ContainsKey("previousParentLinks")
+                || value.ContainsKey("currentParentLinks"))
+            {
+                return true;
+            }
+
+            return value.Any(property => ContainsE0Property(property.Value));
+        }
+
+        return node is JsonArray array && array.Any(ContainsE0Property);
     }
 
     private static bool ContainsPostD2RelationshipSourceKind(JsonNode? node)
@@ -2324,6 +2377,30 @@ public sealed class SaveMigrationV12ToV13 : ISaveMigration
         WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(
             SimulationJson.CreateOptions())
             ?? throw new SaveCompatibilityException("Migrated schema 13 snapshot is empty.");
+        source["checksum"] = SimulationChecksum.Compute(migratedSnapshot).Value;
+        source["schemaVersion"] = ToSchemaVersion;
+        return source;
+    }
+}
+
+public sealed class SaveMigrationV13ToV14 : ISaveMigration
+{
+    public int FromSchemaVersion => 13;
+
+    public int ToSchemaVersion => 14;
+
+    public JsonObject Migrate(JsonObject source)
+    {
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(source, FromSchemaVersion);
+        if (source["snapshot"] is not JsonObject snapshot)
+        {
+            throw new SaveCompatibilityException(
+                "Schema 13 save is missing authoritative snapshot data.");
+        }
+
+        WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(
+            SimulationJson.CreateOptions())
+            ?? throw new SaveCompatibilityException("Migrated schema 14 snapshot is empty.");
         source["checksum"] = SimulationChecksum.Compute(migratedSnapshot).Value;
         source["schemaVersion"] = ToSchemaVersion;
         return source;

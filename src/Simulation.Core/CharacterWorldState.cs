@@ -4,6 +4,11 @@ namespace Simulation.Core;
 
 public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
 {
+    private const int AdultAge = 18;
+    private const int LegalAdoptiveParentsPerCharacter = 2;
+    private const int TotalParentsPerCharacterForAdoption = 4;
+    private const int LegalAdoptiveChildrenPerCharacter = 64;
+
     private readonly SortedDictionary<EntityId, CharacterIdentityDefinition> identityDefinitions = [];
     private readonly SortedDictionary<EntityId, CharacterDefinition> characterDefinitions = [];
     private readonly SortedDictionary<EntityId, FamilyDefinition> familyDefinitions = [];
@@ -89,6 +94,147 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
         characterStates.Values.Select(Clone).ToArray(),
         familyStates.Values.Select(Clone).ToArray(),
         householdStates.Values.Select(Clone).ToArray());
+
+    internal CharacterFamilyMutationPlan PrepareFamilyAction(
+        ICharacterFamilyAction action,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (action is not EstablishLegalAdoptiveParentAction adoption)
+        {
+            throw new SimulationValidationException(
+                $"Unsupported character-family action '{action?.GetType().Name ?? "null"}'.");
+        }
+
+        if (!resolutionDate.IsValid
+            || resolutionDate.CompareTo(campaignDate) < 0
+            || authoritativeTurnIndex < 0)
+        {
+            throw new SimulationValidationException(
+                "Character-family resolution date or turn is invalid.");
+        }
+
+        if (!commandId.IsValid
+            || eventId != CharacterFamilyIds.DeriveActionEventId(resolutionDate, commandId))
+        {
+            throw new SimulationValidationException(
+                "Character-family command or event identity is invalid.");
+        }
+
+        if (adoption.AdoptiveParentCharacterId == adoption.AdoptedCharacterId)
+        {
+            throw new SimulationValidationException(
+                "A character cannot become their own legal-adoptive parent.");
+        }
+
+        AuthoritativeCharacterProfile adoptiveParent = RequireCurrentCharacter(
+            adoption.AdoptiveParentCharacterId,
+            resolutionDate,
+            "Legal-adoptive parent");
+        AuthoritativeCharacterProfile adoptedCharacter = RequireCurrentCharacter(
+            adoption.AdoptedCharacterId,
+            resolutionDate,
+            "Adopted character");
+        RequireLivingCapableFree(adoptiveParent, "Legal-adoptive parent");
+        if (CalculateAge(adoptiveParent.BirthDate, resolutionDate) < AdultAge)
+        {
+            throw new SimulationValidationException(
+                $"Legal-adoptive parent '{adoptiveParent.CharacterId}' must be at least 18 years old.");
+        }
+
+        if (adoptiveParent.BirthDate.CompareTo(adoptedCharacter.BirthDate) >= 0)
+        {
+            throw new SimulationValidationException(
+                $"Legal-adoptive parent '{adoptiveParent.CharacterId}' must be born before adopted character '{adoptedCharacter.CharacterId}'.");
+        }
+
+        if (adoptedCharacter.Condition.VitalStatus != CharacterVitalStatus.Alive
+            || adoptedCharacter.Condition.CustodyStatus != CharacterCustodyStatus.Free
+            || (CalculateAge(adoptedCharacter.BirthDate, resolutionDate) >= AdultAge
+                && adoptedCharacter.Condition.IsIncapacitated))
+        {
+            throw new SimulationValidationException(
+                $"Adopted character '{adoptedCharacter.CharacterId}' must be living and free, and an adult adoptee must have capacity.");
+        }
+
+        CharacterParentLink[] expected = ValidateAndCloneExpectedParentLinks(
+            adoption.ExpectedCurrentParentLinks);
+        CharacterParentLink[] previous = adoptedCharacter.ParentLinks
+            .Select(Clone)
+            .ToArray();
+        if (!previous.SequenceEqual(expected))
+        {
+            throw new SimulationValidationException(
+                $"Character-family expected-current parent links are stale for '{adoptedCharacter.CharacterId}'.");
+        }
+
+        if (previous.Any(link =>
+                link.ParentCharacterId == adoptiveParent.CharacterId))
+        {
+            throw new SimulationValidationException(
+                $"Character '{adoptiveParent.CharacterId}' is already a parent of '{adoptedCharacter.CharacterId}'.");
+        }
+
+        if (previous.Count(link => link.Kind == ParentChildLinkKind.LegalAdoptive)
+            >= LegalAdoptiveParentsPerCharacter)
+        {
+            throw new SimulationValidationException(
+                $"Character '{adoptedCharacter.CharacterId}' already has the maximum two legal-adoptive parents.");
+        }
+
+        if (previous.Length >= TotalParentsPerCharacterForAdoption)
+        {
+            throw new SimulationValidationException(
+                $"Character '{adoptedCharacter.CharacterId}' already has the maximum four total parents for a new adoption.");
+        }
+
+        if (adoptiveParent.ChildLinks.Count(link =>
+                link.Kind == ParentChildLinkKind.LegalAdoptive)
+            >= LegalAdoptiveChildrenPerCharacter)
+        {
+            throw new SimulationValidationException(
+                $"Character '{adoptiveParent.CharacterId}' already has the maximum 64 legal-adoptive children.");
+        }
+
+        CharacterParentLink[] current = previous
+            .Append(new CharacterParentLink(
+                adoptiveParent.CharacterId,
+                ParentChildLinkKind.LegalAdoptive))
+            .OrderBy(link => link.ParentCharacterId)
+            .ThenBy(link => link.Kind)
+            .Select(Clone)
+            .ToArray();
+        CharacterWorldSnapshot updated = CaptureSnapshot() with
+        {
+            CharacterStates = characterStates.Values.Select(state =>
+                state.CharacterId == adoptedCharacter.CharacterId
+                    ? state with
+                    {
+                        ParentIds = current.Select(link => link.ParentCharacterId).ToArray(),
+                        ParentLinks = current.Select(Clone).ToArray(),
+                    }
+                    : Clone(state)).ToArray(),
+        };
+        CampaignDate candidateDate = resolutionDate.CompareTo(campaignDate) > 0
+            ? resolutionDate
+            : campaignDate;
+        CharacterParentageChange change = new(
+            CharacterFamilyContractVersions.Change,
+            CharacterFamilyIds.DeriveParentageChangeId(
+                eventId,
+                adoptedCharacter.CharacterId),
+            adoptedCharacter.CharacterId,
+            previous.Select(Clone).ToArray(),
+            current.Select(Clone).ToArray(),
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId);
+        return new CharacterFamilyMutationPlan(
+            change,
+            new CharacterWorldUpdatePlan(new CharacterWorldState(updated, candidateDate)));
+    }
 
     internal CharacterConditionMutationPlan PrepareConditionAction(
         ICharacterConditionAction action,
@@ -1275,6 +1421,48 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
         }
     }
 
+    private static CharacterParentLink[] ValidateAndCloneExpectedParentLinks(
+        IReadOnlyList<CharacterParentLink>? links)
+    {
+        if (links is null)
+        {
+            throw new SimulationValidationException(
+                "Character-family expected-current parent links cannot be null.");
+        }
+
+        List<CharacterParentLink> canonical = new(links.Count);
+        EntityId? previousParentId = null;
+        foreach (CharacterParentLink? link in links)
+        {
+            if (link is null)
+            {
+                throw new SimulationValidationException(
+                    "Character-family expected-current parent links cannot contain null entries.");
+            }
+
+            ValidateId(
+                link.ParentCharacterId,
+                "Character-family expected-current parent ID");
+            if (!Enum.IsDefined(link.Kind))
+            {
+                throw new SimulationValidationException(
+                    "Character-family expected-current parent links contain an invalid kind.");
+            }
+
+            if (previousParentId is EntityId previous
+                && previous.CompareTo(link.ParentCharacterId) >= 0)
+            {
+                throw new SimulationValidationException(
+                    "Character-family expected-current parent links must contain unique parent IDs in ordinal canonical order.");
+            }
+
+            canonical.Add(Clone(link));
+            previousParentId = link.ParentCharacterId;
+        }
+
+        return canonical.ToArray();
+    }
+
     private static CharacterDefinition Clone(CharacterDefinition definition) => definition with
     {
         AbilityIds = definition.AbilityIds.ToArray(),
@@ -1393,6 +1581,10 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
 }
 
 internal sealed record CharacterWorldUpdatePlan(CharacterWorldState Candidate);
+
+internal sealed record CharacterFamilyMutationPlan(
+    CharacterParentageChange Change,
+    CharacterWorldUpdatePlan CharacterPlan);
 
 internal sealed record CharacterConditionMutationPlan(
     CharacterConditionChange Change,

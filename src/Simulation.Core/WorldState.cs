@@ -434,6 +434,9 @@ public sealed class WorldState : IWorldQuery
             case CharacterConditionActionResolvedEventPayload conditionAction:
                 ApplyCharacterConditionAction(campaignEvent, conditionAction);
                 break;
+            case CharacterFamilyActionResolvedEventPayload familyAction:
+                ApplyCharacterFamilyAction(campaignEvent, familyAction);
+                break;
             case HouseholdDecisionResolvedEventPayload householdDecision:
                 ApplyHouseholdDecision(campaignEvent, householdDecision);
                 break;
@@ -525,6 +528,48 @@ public sealed class WorldState : IWorldQuery
             character.CharacterPlan,
             marriage.MarriagePlan,
             relationship);
+    }
+
+    internal CharacterFamilyAggregatePlan PrepareCharacterFamilyAction(
+        EntityId actingActorId,
+        CharacterFamilyActionCommandPayload payload,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (actingActorId != CharacterFamilySystem.AuthoritativeActorId
+            || payload?.Action is null
+            || eventId != CharacterFamilyIds.DeriveActionEventId(
+                resolutionDate,
+                commandId))
+        {
+            throw new SimulationValidationException(
+                "Character-family actions require the reserved authoritative simulation actor and exact event identity.");
+        }
+
+        CharacterFamilyMutationPlan character = Characters.PrepareFamilyAction(
+            payload.Action,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+
+        // Every retained marriage record is revalidated against the candidate parent graph.
+        // Adoption is atomic: it is rejected rather than silently rewriting marriage history.
+        CampaignCalendar candidateCalendar = new(
+            resolutionDate.CompareTo(Calendar.Date) > 0 ? resolutionDate : Calendar.Date,
+            Math.Max(Calendar.TurnIndex, authoritativeTurnIndex));
+        _ = new CharacterMarriageWorldState(
+            CharacterMarriages.CaptureSnapshot(),
+            character.CharacterPlan.Candidate,
+            candidateCalendar);
+
+        CharacterFamilyActionResolvedEventPayload resolved = new(
+            actingActorId,
+            payload.Action,
+            new LegalAdoptiveParentEstablishedOutcome(character.Change));
+        return new CharacterFamilyAggregatePlan(resolved, character.CharacterPlan);
     }
 
     internal CharacterDeathPreviewAggregatePlan PrepareCharacterDeathPreview(
@@ -869,6 +914,46 @@ public sealed class WorldState : IWorldQuery
         }
     }
 
+    private void ApplyCharacterFamilyAction(
+        CampaignEvent campaignEvent,
+        CharacterFamilyActionResolvedEventPayload payload)
+    {
+        if (campaignEvent.Phase != ResolutionPhase.Commands
+            || campaignEvent.CausalId is not EntityId commandId
+            || !commandId.IsValid)
+        {
+            throw new SimulationValidationException(
+                "Character-family action events require the Commands phase and a valid causal command ID.");
+        }
+
+        EntityId expectedEventId = CharacterFamilyIds.DeriveActionEventId(
+            campaignEvent.ResolutionDate,
+            commandId);
+        if (campaignEvent.EventId != expectedEventId
+            || campaignEvent.AffectedIds is null
+            || !campaignEvent.AffectedIds.SequenceEqual(
+                GetCharacterFamilyActionAffectedIds(payload)))
+        {
+            throw new SimulationValidationException(
+                "Character-family action event identity or affected IDs do not match its exact deterministic outcome.");
+        }
+
+        CharacterFamilyAggregatePlan aggregate = PrepareCharacterFamilyAction(
+            payload.ActingActorId,
+            new CharacterFamilyActionCommandPayload(payload.Action),
+            campaignEvent.ResolutionDate,
+            Calendar.TurnIndex,
+            commandId,
+            campaignEvent.EventId);
+        if (!PayloadsEqual(aggregate.ResolvedPayload, payload))
+        {
+            throw new SimulationValidationException(
+                "Character-family action event payload does not match its exact deterministic plan.");
+        }
+
+        Characters.ApplyPrepared(aggregate.CharacterPlan);
+    }
+
     private void ApplyHouseholdDecision(
         CampaignEvent campaignEvent,
         HouseholdDecisionResolvedEventPayload payload)
@@ -1114,6 +1199,33 @@ public sealed class WorldState : IWorldQuery
         }
 
         return affected.Order().ToArray();
+    }
+
+    internal static EntityId[] GetCharacterFamilyActionAffectedIds(
+        CharacterFamilyActionResolvedEventPayload payload)
+    {
+        if (payload?.Action is not EstablishLegalAdoptiveParentAction action
+            || payload.Outcome is not LegalAdoptiveParentEstablishedOutcome outcome
+            || outcome.Change is null)
+        {
+            throw new SimulationValidationException(
+                "Character-family action event contains null or unsupported data.");
+        }
+
+        EntityId[] affected =
+        [
+            payload.ActingActorId,
+            outcome.Change.ChangeId,
+            action.AdoptiveParentCharacterId,
+            action.AdoptedCharacterId,
+        ];
+        if (affected.Any(id => !id.IsValid))
+        {
+            throw new SimulationValidationException(
+                "Character-family action event contains an invalid affected ID.");
+        }
+
+        return affected.Distinct().Order().ToArray();
     }
 
     internal static EntityId[] GetHouseholdDecisionAffectedIds(
@@ -1883,6 +1995,7 @@ public sealed class WorldState : IWorldQuery
                 or CharacterResourceActionCommandPayload
                 or CharacterMarriageActionCommandPayload
                 or CharacterConditionActionCommandPayload
+                or CharacterFamilyActionCommandPayload
                 or HouseholdDecisionCommandPayload))
         {
             try
@@ -1902,6 +2015,9 @@ public sealed class WorldState : IWorldQuery
                         command.IssuedDate,
                         command.CommandId),
                     CharacterConditionActionCommandPayload => CharacterConditionIds.DeriveActionEventId(
+                        command.IssuedDate,
+                        command.CommandId),
+                    CharacterFamilyActionCommandPayload => CharacterFamilyIds.DeriveActionEventId(
                         command.IssuedDate,
                         command.CommandId),
                     HouseholdDecisionCommandPayload => HouseholdDecisionIds.DeriveActionEventId(
@@ -1931,6 +2047,10 @@ internal sealed record CharacterConditionAggregatePlan(
     CharacterWorldUpdatePlan CharacterPlan,
     CharacterMarriageWorldUpdatePlan MarriagePlan,
     RelationshipWorldUpdatePlan? RelationshipPlan);
+
+internal sealed record CharacterFamilyAggregatePlan(
+    CharacterFamilyActionResolvedEventPayload ResolvedPayload,
+    CharacterWorldUpdatePlan CharacterPlan);
 
 internal sealed record CharacterDeathPreviewAggregatePlan(
     CharacterConditionChange Change,

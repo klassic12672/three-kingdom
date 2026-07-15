@@ -33,6 +33,7 @@ public sealed record CommandValidationResult(bool IsValid, IReadOnlyList<Validat
 [JsonDerivedType(typeof(CharacterMarriageActionCommandPayload), "character_marriage_action.v1")]
 [JsonDerivedType(typeof(CharacterConditionActionCommandPayload), "character_condition_action.v1")]
 [JsonDerivedType(typeof(HouseholdDecisionCommandPayload), "household_decision.v1")]
+[JsonDerivedType(typeof(CharacterFamilyActionCommandPayload), "character_family_action.v1")]
 public interface ICampaignCommandPayload;
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "$type", UnknownDerivedTypeHandling = JsonUnknownDerivedTypeHandling.FailSerialization)]
@@ -51,6 +52,7 @@ public interface ICampaignCommandPayload;
 [JsonDerivedType(typeof(CharacterMarriageActionResolvedEventPayload), "character_marriage_action_resolved.v1")]
 [JsonDerivedType(typeof(CharacterConditionActionResolvedEventPayload), "character_condition_action_resolved.v1")]
 [JsonDerivedType(typeof(HouseholdDecisionResolvedEventPayload), "household_decision_resolved.v1")]
+[JsonDerivedType(typeof(CharacterFamilyActionResolvedEventPayload), "character_family_action_resolved.v1")]
 public interface ICampaignEventPayload;
 
 public sealed record AdjustResourcesCommandPayload(EntityId Target, long PeopleDelta, long FoodDelta, long GoldDelta)
@@ -97,6 +99,7 @@ public sealed record CampaignCommand(
         CharacterMarriageActionCommandPayload => "character_marriage_action.v1",
         CharacterConditionActionCommandPayload => "character_condition_action.v1",
         HouseholdDecisionCommandPayload => "household_decision.v1",
+        CharacterFamilyActionCommandPayload => "character_family_action.v1",
         _ => "unregistered",
     };
 
@@ -144,6 +147,7 @@ public sealed record CampaignEvent(
         CharacterMarriageActionResolvedEventPayload => "character_marriage_action_resolved.v1",
         CharacterConditionActionResolvedEventPayload => "character_condition_action_resolved.v1",
         HouseholdDecisionResolvedEventPayload => "household_decision_resolved.v1",
+        CharacterFamilyActionResolvedEventPayload => "character_family_action_resolved.v1",
         _ => "unregistered",
     };
 }

@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2/SP-04C3/SP-04D0/SP-04D1/SP-04D2/SP-04D3 exact-SHA hosted verified; later packages pending |
+| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2/SP-04C3/SP-04D0/SP-04D1/SP-04D2/SP-04D3 exact-SHA hosted verified; SP-04E0 local candidate; later packages pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -485,6 +485,44 @@ Independent review found and remediated missing custody-memory application, sche
 The representative local Release fixture contains 1,000 characters, 200 coerced unions, 200 released captives, and 200 incapacitated characters. Workflow measured 12,802.979 ms; snapshot plus checksum measured 90.260 ms; snapshot JSON was 1,331,895 bytes; gzip was 81,218 bytes; checksum was `9d7bd98955e016f85aa6c0ea8dbeab5387efa97b584ee871603c3533e9a1d374`. The test asserts shape and correctness, not a wall-clock threshold. These working-tree measurements are not exact-SHA, hosted, cross-platform, physical-Windows, signing, Steam, release, or full-turn performance evidence. The full SP-04 three-second budget remains unmet, every full SP-04 acceptance criterion remains unchecked, and SP-05 remains blocked pending all later SP-04 packages.
 
 Accepted revision `93d38810a87707a7c4c98c7392e2a2f20dc030fb` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04D3-EXACT-SHA-93d3881.md). D314 and D318 therefore pass at that revision. Physical Windows remains an M4 gate, production signing and Steam remain SP-15 gates, and the full SP-04 three-second budget remains unmet. Every full SP-04 acceptance criterion remains unchecked, SP-05 remains blocked, and the next dependency-ordered SP-04E package may begin.
+
+## Active package: SP-04E0 legal-adoptive parent establishment
+
+SP-04E0 is the first bounded E package on accepted D3 revision `93d38810a87707a7c4c98c7392e2a2f20dc030fb`. It registers one Commands-phase, reserved-system `character_family_action.v1`: `EstablishLegalAdoptiveParentAction`. The action carries the exact canonical current parent links and may append one `LegalAdoptive` link. Its resolved event records a versioned parentage change with exact previous/current links, resolution date/turn, source command, and stable change identity. Successful application replaces the existing `CharacterWorldState` contents in place so all inward subsystem references continue to observe the same authoritative query object.
+
+Both characters must exist, be born, alive, and free. The adopter must be capable, at least 18 on the exact resolution date, and born before the adoptee. Adult adoptees must also be capable; adult adoption is allowed. Self-parentage, an existing link of any kind for the pair, cycles, noncanonical or stale expected links, more than two legal-adoptive parents, more than four total parents, and more than 64 legal-adoptive children for one adopter are rejected. The numeric limits apply only to new runtime actions: previously valid character-v2 snapshots are grandfathered and remain restorable.
+
+E0 establishes current legal parentage only. It does not replace biological or unspecified-legacy links, remove a parent, move family or household membership, establish guardianship, change custody or relationships, grant inheritance or claims, imply consent, or implement pregnancy, birth, education, coming of age, death, or succession. Character-v2 stores no effective-dated adoption record. The change/event source survives only while present in bounded diagnostics; after eviction, the durable fact is the typed current link. Future effective-date-sensitive law must treat links without records as `LegacyUnknown` rather than reconstructing a date.
+
+Before mutation, the complete unchanged marriage snapshot is reconstructed against the candidate parent graph. E0 conservatively rejects any adoption that would make any retained proposal, betrothal, union, invitation, or romance route—including terminal records—violate its practice's direct-line or sibling prohibition. It never rewrites or auto-invalidates marriage history. Apply-time replan, exact payload/affected-ID comparison, and the same full preflight make the operation atomic.
+
+Save schema 14 changes vocabulary only: character, relationship, career, resource, estate, and marriage snapshot/system versions remain unchanged. Schema 13 authenticates with its historical checksum, rejects every E0 outer/nested discriminator and E0-only parent-link property even when explicitly null, and migrates without changing the complete snapshot, diagnostics, manifests, or source bytes. The 52,467-byte schema-13 fixture was generated by a detached test harness compiled against exact accepted D3 production source `93d38810a87707a7c4c98c7392e2a2f20dc030fb`. It contains a pending D3 command, condition/household/coercion diagnostics, all three D3 relationship-memory source kinds, and a grandfathered history-free legal-adoptive link. Its stored checksum is `540dac5d9065bbb1b66a484c550eadf4e60de7be92acacb5c716bfcf7f4956c4`; file SHA-256 is `f54e0bb16eb827b2b739384a27325dd0a279cd43f18d612085c247fd3aa1fca5`.
+
+### SP-04E0 verification matrix
+
+| ID | Observable package criterion | Required evidence | Closeout classification |
+|---|---|---|---|
+| E001 | D3 is accepted; adoption-first is dependency-safe and needs no ADR under the establishment-only boundary | Source-of-truth and architecture review | Local pass |
+| E002 | Outer/nested action, outcome, change, event, and stable identities are explicit and registered | Contract, round-trip, and golden-ID tests | Local pass |
+| E003 | Reserved authority, exact phase/date/turn/event/change/source, and expected-current revalidation hold | Authority, birthday, stale-state, and tamper tests | Local pass |
+| E004 | Life/capacity/freedom, birth order, self/duplicate/cycle, and action-local 2/4/64 limits hold without invalidating grandfathered state | Domain and campaign tests | Local pass |
+| E005 | One legal-adoptive link and reciprocal child link are added in place without family, household, condition, descriptor, relationship, or marriage mutation | Snapshot/reference/defensive-copy tests | Local pass |
+| E006 | Every retained marriage category and terminal state is preflighted for direct-line and sibling restrictions; permissive practices remain valid | Complete marriage-category matrix | Local pass |
+| E007 | Apply-time replan, affected IDs, payload equality, rollback, and both hashed same-turn orderings are deterministic | Tamper, race, and checksum tests | Local pass |
+| E008 | Pending/current E0 vocabulary round-trips, save-loaded replay is exact, and checksum is order-invariant/mutation-sensitive | Save/replay/checksum tests | Local pass |
+| E009 | Exact-D3 schema 13 authenticates before vocabulary-only 13→14, preserves state/source bytes, and rejects E0 data/properties | Frozen fixture, migration, rejection, and corruption tests | Local pass |
+| E010 | No guardianship, pregnancy/birth, education, coming-of-age, inheritance, succession, content, UI, AI, battle, or platform surface enters E0 | Reflection and diff review | Local pass |
+| E011 | A 1,000-character/64-adoption fixture records raw workflow/checksum/serialization behavior without a brittle threshold | Local Apple Silicon measurement | Local macOS pass; full SP-04 budget unmet |
+| E012 | Repository validation, complete Release suites, diff, and LFS gates pass | Local repository gates | Local pass |
+| E013 | The same accepted revision passes hosted macOS arm64 and Windows x64 | Exact-SHA clean-checkout hosted evidence | Pending implementation commit |
+
+The final focused local Release run passes 48 family/schema-13 tests. Its fictional 1,000-character fixture resolves 64 bounded legal adoptions in 1,070.225 ms, captures and checksums in 7.789 ms, serializes to 881,800 JSON bytes and 23,579 gzip bytes, and produces checksum `fa8e08d551b8e3fe3e5b3d066b418aed6e2d68526c36320b2b8f0c5bf7d94e8f`. Timings are raw Apple Silicon observations without a threshold and do not establish the full SP-04 three-second campaign-turn budget.
+
+Final local repository verification on 2026-07-15 passes the zero-warning Release build and 539 Simulation.Core, 71 Game.Content, 6 Game.Application, and 18 repository tests. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. Touched-file formatting, `git diff --check`, and `git lfs fsck` pass. These results are local working-tree evidence until the implementation is committed and verified at one exact SHA on both hosted platforms.
+
+Independent review found that the first action contract retained the caller's mutable expected-parent list after submission. The final contract clones each link into an `Array.AsReadOnly` collection. Post-submit mutation/race/checksum coverage proves pending commands and resolved diagnostics no longer share caller-owned state; a final read-only re-review reports no remaining blocker.
+
+Every full SP-04 acceptance criterion remains unchecked. Pregnancy/birth, guardianship, education, coming of age, public death, inheritance, succession, content, presentation, and platform work remain later E/F/G/X packages; SP-05 remains blocked.
 
 ## Edge cases and failure handling
 
