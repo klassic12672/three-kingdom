@@ -79,7 +79,7 @@ SP-04E3's deterministic exact-birthday coming-of-age command/event, atomic `Ward
 
 SP-04E4's active-only, explicit-role, adult union-linked pregnancy registration and authenticated schema-17-to-18 migration have passing [exact-SHA hosted macOS arm64/Windows x64 evidence](evidence/SP-04E4-EXACT-SHA-177346b.md) at `177346b7358e84da358f3bfac8057b6ea70ed412`. The package adds no conception scheduler, birth, child creation, pregnancy loss, death integration, inheritance, education, reproductive descriptors, content, UI, or AI. The full SP-04 criteria and three-second turn budget remain unchecked.
 
-SP-04E5's deterministic due/overdue pregnancy resolution, generated-child insertion, biological parent links, parental placement/trait validation, and authenticated vocabulary-only schema-18-to-19 migration are implemented and locally verified. Exact-SHA hosted macOS arm64/Windows x64 evidence is still required before E5 acceptance. The package adds no automatic scheduling or naming, pregnancy loss, twins, education, public death, inheritance, content, UI, or AI. The full SP-04 criteria and three-second turn budget remain unchecked.
+SP-04E5's deterministic due/overdue pregnancy resolution, generated-child insertion, biological parent links, parental placement/trait validation, and authenticated vocabulary-only schema-18-to-19 migration have passing [exact-SHA hosted macOS arm64/Windows x64 evidence](evidence/SP-04E5-EXACT-SHA-4b28fb7.md) at `4b28fb74bed9181ce021e1c5e32ef9d039b4e2e1`. The package adds no automatic scheduling or naming, pregnancy loss, twins, education, public death, inheritance, content, UI, or AI. The full SP-04 criteria and three-second turn budget remain unchecked.
 
 ## Platform verification gates
 
@@ -111,9 +111,9 @@ Before M4, estimates are internal ranges only. After M4, record measured velocit
 15. Preserve SP-04E2's guardianship termination/replacement and schema-15-to-16 compatibility package with exact-SHA hosted evidence at `7491da89985fedb18e423082a2fd9187b8899e52`.
 16. Preserve SP-04E3's deterministic coming of age, atomic guardianship closure, schema-16-to-17 compatibility, independent-remediation record, and exact-SHA hosted evidence at `59588be9d277dc4c4cb7ec98ef99e33591b0eeda`.
 17. Preserve SP-04E4's active-only pregnancy registration, schema-17-to-18 compatibility, independent-remediation record, and exact-SHA hosted evidence at `177346b7358e84da358f3bfac8057b6ea70ed412`.
-18. Commit SP-04E5, push the authorized exact implementation SHA, and collect hosted macOS arm64/Windows x64 evidence before acceptance.
-19. After E5 acceptance, select the next dependency-ordered SP-04 package.
+18. Preserve SP-04E5's deterministic pregnancy birth resolution, generated-child insertion, schema-18-to-19 compatibility, independent-remediation record, and exact-SHA hosted evidence at `4b28fb74bed9181ce021e1c5e32ef9d039b4e2e1`.
+19. Select the next dependency-ordered SP-04 package.
 
-M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A through SP-04E4 have passing exact-SHA hosted macOS arm64/Windows x64 evidence at their accepted revisions, and SP-04E5 is a locally verified candidate awaiting exact-SHA hosted evidence. SP-05 remains blocked, and later SP-04 packages remain pending.
+M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A through SP-04E5 have passing exact-SHA hosted macOS arm64/Windows x64 evidence at their accepted revisions. SP-05 remains blocked, and later SP-04 packages remain pending.
 
 See the [subsystem plan index](plans/README.md) for dependency status.

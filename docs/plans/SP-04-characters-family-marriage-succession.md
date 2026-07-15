@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — through SP-04E4 exact-SHA hosted; SP-04E5 implemented locally, hosted evidence pending |
+| Status | Active — through SP-04E5 exact-SHA hosted; later packages pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -670,7 +670,7 @@ Independent review found and remediated incomplete both-submission-order race co
 
 E4 has no content-authoring boundary and changes no `Game.Content`, `Game.Application`, presentation, or platform project. Accepted revision `177346b7358e84da358f3bfac8057b6ea70ed412` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04E4-EXACT-SHA-177346b.md). E415 therefore passes at that revision. Full SP-04 acceptance, its three-second campaign-turn budget, and later birth/education/death/inheritance/succession packages remain open.
 
-## Implemented package: SP-04E5 deterministic pregnancy birth resolution
+## Accepted package: SP-04E5 deterministic pregnancy birth resolution
 
 SP-04E5 is the smallest dependency-safe package after accepted E4. Character-v2 already represents runtime-generated identity, fictional provenance, biological parent links, traits, and family/household membership, while E4 supplies an exact active pregnancy, two explicit biological parents, an active source union, and a due date. Education still needs mutable acquired-identity architecture, and public death must reconcile pregnancy, guardianship, career/retinue, resources, estates, and later succession. No locked decision is changed and no ADR is required.
 
@@ -706,7 +706,7 @@ E5 changes no authored content, published schema, localization catalog, applicat
 | E516 | Exact-E4 schema 18 authenticates, migrates unchanged, and rejects E5 vocabulary/property injection | Frozen fixture, isolated explicit-null probes, and source-byte tests | Local pass |
 | E517 | Existing schema-18 generated children remain compatible and overdue pregnancies remain resolvable | Legacy generated-child and overdue-birth tests | Local pass |
 | E518 | An 800-adult/200-birth workload records workflow/checksum/JSON/gzip measurements | Raw local measurement | Local pass; no threshold |
-| E519 | Repository gates, independent review, and exact-SHA hosted macOS arm64/Windows x64 evidence pass | Local gates, review, hosted CI/artifacts | Local gates/review pass; hosted evidence pending |
+| E519 | Repository gates, independent review, and exact-SHA hosted macOS arm64/Windows x64 evidence pass | Local gates, review, hosted CI/artifacts | Pass at `4b28fb74bed9181ce021e1c5e32ef9d039b4e2e1` |
 | E520 | No automatic naming/scheduling, education, public death, inheritance, content, UI, or AI enters E5 | Diff, content-boundary, and dependency review | Local pass |
 
 The representative local Release fixture contains 800 adults and resolves 200 births into one shared family and household. A raw Apple Silicon run measured 2,954.133 ms for submission and resolution plus 111.328 ms for snapshot checksum, serialized to 1,319,350 JSON bytes and 76,312 gzip bytes, and produced checksum `52d69a1db8cf1d373872aee9200945b157125a2d03393a73543e1ab1e61ae354`. The test asserts shape, completion, and determinism without a wall-clock threshold. This package observation does not establish the full SP-04 three-second campaign-turn budget.
@@ -715,7 +715,7 @@ Final local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and
 
 Independent review's first pass identified incomplete same-day stale-placement, causal/event-identity rollback, schema-18 corruption, migrated-overdue-resolution, and race cross-product evidence. The final tree adds an earlier-priority household expulsion that cancels stale placement without removing the pregnancy, forged causal/event rollback variants, schema-18 corruption/source-byte coverage, public-path resolution of a migrated overdue pregnancy, and the full two-payload-assignment by two-submission-order race matrix. The final reviewer slice passes 39/39 birth/schema-18 tests, the full 712-test Core suite passes independently, and no correctness, compatibility, documentation, or package-boundary blocker remains.
 
-E5 remains locally implemented rather than accepted until the committed exact SHA passes hosted macOS arm64 and Windows x64 evidence. Full SP-04 acceptance, education, public death, inheritance, succession, and the overall performance gate remain open.
+Accepted revision `4b28fb74bed9181ce021e1c5e32ef9d039b4e2e1` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04E5-EXACT-SHA-4b28fb7.md). E519 therefore passes at that revision. Full SP-04 acceptance, education, public death, inheritance, succession, and the overall performance gate remain open.
 
 ## Edge cases and failure handling
 
