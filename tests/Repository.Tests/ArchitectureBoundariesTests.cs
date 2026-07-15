@@ -40,6 +40,10 @@ public sealed class ArchitectureBoundariesTests
             "src/Game.Content/Game.Content.csproj");
         AssertReferences(
             root,
+            "tests/Game.Application.Tests/Game.Application.Tests.csproj",
+            "src/Game.Application/Game.Application.csproj");
+        AssertReferences(
+            root,
             "tests/Simulation.Core.Tests/Simulation.Core.Tests.csproj",
             "src/Simulation.Core/Simulation.Core.csproj");
     }

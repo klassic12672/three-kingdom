@@ -12,6 +12,8 @@ public interface IWorldQuery
 
     IAuthoritativeCharacterWorldQuery Characters { get; }
 
+    IAuthoritativeRelationshipWorldQuery Relationships { get; }
+
     bool TryGetEntity(EntityId id, [NotNullWhen(true)] out SyntheticEntitySnapshot? entity);
 }
 
@@ -24,6 +26,7 @@ public sealed class WorldState : IWorldQuery
         new("simulation.command_events", 1),
         new("simulation.geography", 1),
         new("simulation.characters", 1),
+        new("simulation.relationships", 1),
     ];
 
     private readonly SortedDictionary<EntityId, SyntheticEntitySnapshot> entities = [];
@@ -38,7 +41,8 @@ public sealed class WorldState : IWorldQuery
         ulong rootSeed,
         IEnumerable<RandomStreamState>? streams,
         GeographicWorldSnapshot geography,
-        CharacterWorldSnapshot characters)
+        CharacterWorldSnapshot characters,
+        RelationshipWorldSnapshot relationships)
     {
         if (!calendar.Date.IsValid || calendar.TurnIndex < 0)
         {
@@ -50,6 +54,7 @@ public sealed class WorldState : IWorldQuery
         Random = new DeterministicRandomStreams(rootSeed, streams);
         Geography = new GeographicWorldState(geography);
         Characters = new CharacterWorldState(characters, calendar.Date);
+        Relationships = new RelationshipWorldState(relationships, Characters, calendar);
     }
 
     public CampaignCalendar Calendar { get; private set; }
@@ -62,9 +67,13 @@ public sealed class WorldState : IWorldQuery
 
     public CharacterWorldState Characters { get; }
 
+    public RelationshipWorldState Relationships { get; }
+
     IGeographicWorldQuery IWorldQuery.Geography => Geography;
 
     IAuthoritativeCharacterWorldQuery IWorldQuery.Characters => Characters;
+
+    IAuthoritativeRelationshipWorldQuery IWorldQuery.Relationships => Relationships;
 
     public IReadOnlyList<SyntheticEntitySnapshot> Entities => entities.Values.Select(CloneEntity).ToArray();
 
@@ -77,21 +86,37 @@ public sealed class WorldState : IWorldQuery
             seed,
             initialEntities,
             geography ?? GeographicWorldSnapshot.Empty,
-            CharacterWorldSnapshot.Empty);
+            CharacterWorldSnapshot.Empty,
+            RelationshipWorldSnapshot.Empty);
 
     public static WorldState Create(
         CampaignDate startDate,
         ulong seed,
         IEnumerable<SyntheticEntitySnapshot> initialEntities,
         GeographicWorldSnapshot geography,
-        CharacterWorldSnapshot characters)
+        CharacterWorldSnapshot characters) => Create(
+            startDate,
+            seed,
+            initialEntities,
+            geography,
+            characters,
+            RelationshipWorldSnapshot.Empty);
+
+    public static WorldState Create(
+        CampaignDate startDate,
+        ulong seed,
+        IEnumerable<SyntheticEntitySnapshot> initialEntities,
+        GeographicWorldSnapshot geography,
+        CharacterWorldSnapshot characters,
+        RelationshipWorldSnapshot relationships)
     {
         WorldState world = new(
             new CampaignCalendar(startDate, 0),
             seed,
             null,
             geography,
-            characters);
+            characters,
+            relationships);
         foreach (SyntheticEntitySnapshot entity in initialEntities.OrderBy(item => item.Id))
         {
             SyntheticEntitySnapshot canonical = ValidateEntity(entity).Canonicalize();
@@ -113,6 +138,7 @@ public sealed class WorldState : IWorldQuery
             || snapshot.SystemVersions is null
             || snapshot.Geography is null
             || snapshot.Characters is null
+            || snapshot.Relationships is null
             || snapshot.Entities.Any(entity => entity is null)
             || snapshot.PendingCommands.Any(command => command is null))
         {
@@ -124,10 +150,16 @@ public sealed class WorldState : IWorldQuery
             throw new SaveCompatibilityException($"Unsupported world snapshot contract version {snapshot.ContractVersion}.");
         }
 
-        ValidateSystemVersions(snapshot.SystemVersions, snapshot.Characters);
+        ValidateSystemVersions(snapshot.SystemVersions, snapshot.Characters, snapshot.Relationships);
         ValidatePendingCommands(snapshot.PendingCommands);
 
-        WorldState world = new(snapshot.Calendar, snapshot.RootSeed, snapshot.RandomStreams, snapshot.Geography, snapshot.Characters)
+        WorldState world = new(
+            snapshot.Calendar,
+            snapshot.RootSeed,
+            snapshot.RandomStreams,
+            snapshot.Geography,
+            snapshot.Characters,
+            snapshot.Relationships)
         {
             lastEventDate = snapshot.LastEventDate,
             lastEventPhase = snapshot.LastEventPhase,
@@ -175,6 +207,7 @@ public sealed class WorldState : IWorldQuery
     {
         Geography = Geography.CaptureSnapshot(),
         Characters = Characters.CaptureSnapshot(),
+        Relationships = Relationships.CaptureSnapshot(),
     };
 
     internal void Enqueue(CampaignCommand command)
@@ -224,6 +257,9 @@ public sealed class WorldState : IWorldQuery
                 or SupplyProducedEventPayload
                 or ArmySupplyConsumedEventPayload:
                 Geography.Apply(campaignEvent.Payload, campaignEvent.ResolutionDate);
+                break;
+            case RelationshipActionResolvedEventPayload:
+                Relationships.Apply(campaignEvent, Calendar.TurnIndex);
                 break;
             default:
                 throw new SimulationValidationException($"Unregistered event payload '{campaignEvent.Payload.GetType().Name}'.");
@@ -348,7 +384,8 @@ public sealed class WorldState : IWorldQuery
 
     private static void ValidateSystemVersions(
         IReadOnlyList<SystemVersion> versions,
-        CharacterWorldSnapshot characters)
+        CharacterWorldSnapshot characters,
+        RelationshipWorldSnapshot relationships)
     {
         if (versions is null || versions.Any(version => version is null))
         {
@@ -360,6 +397,11 @@ public sealed class WorldState : IWorldQuery
             throw new SaveCompatibilityException("Snapshot character state is missing.");
         }
 
+        if (relationships is null)
+        {
+            throw new SaveCompatibilityException("Snapshot relationship state is missing.");
+        }
+
         string[] expected = CurrentSystemVersions
             .Select(version => $"{version.SystemId}@{version.Version}")
             .Order(StringComparer.Ordinal)
@@ -369,17 +411,52 @@ public sealed class WorldState : IWorldQuery
             .Order(StringComparer.Ordinal)
             .ToArray();
         string[] legacyExpected = expected
-            .Where(version => !StringComparer.Ordinal.Equals(version, "simulation.characters@1"))
+            .Where(version => !StringComparer.Ordinal.Equals(version, "simulation.relationships@1"))
             .ToArray();
         if (legacyExpected.SequenceEqual(actual, StringComparer.Ordinal))
         {
-            if (IsCompleteEmptyCharacterSnapshot(characters))
+            if (IsCompleteEmptyRelationshipSnapshot(relationships))
+            {
+                return;
+            }
+
+            throw new SaveCompatibilityException(
+                "A legacy snapshot without 'simulation.relationships@1' must contain a complete, valid, empty relationship snapshot.");
+        }
+
+        string[] characterLegacyExpected = expected
+            .Where(version => !StringComparer.Ordinal.Equals(version, "simulation.characters@1"))
+            .ToArray();
+        if (characterLegacyExpected.SequenceEqual(actual, StringComparer.Ordinal))
+        {
+            if (IsCompleteEmptyCharacterSnapshot(characters)
+                && IsCompleteEmptyRelationshipSnapshot(relationships))
             {
                 return;
             }
 
             throw new SaveCompatibilityException(
                 "A legacy snapshot without 'simulation.characters@1' must contain a complete, valid, empty character snapshot.");
+        }
+
+        string[] oldestExpected = legacyExpected
+            .Where(version => !StringComparer.Ordinal.Equals(version, "simulation.characters@1"))
+            .ToArray();
+        if (oldestExpected.SequenceEqual(actual, StringComparer.Ordinal))
+        {
+            if (!IsCompleteEmptyCharacterSnapshot(characters))
+            {
+                throw new SaveCompatibilityException(
+                    "A legacy snapshot without 'simulation.characters@1' must contain a complete, valid, empty character snapshot.");
+            }
+
+            if (!IsCompleteEmptyRelationshipSnapshot(relationships))
+            {
+                throw new SaveCompatibilityException(
+                    "A legacy snapshot without 'simulation.relationships@1' must contain a complete, valid, empty relationship snapshot.");
+            }
+
+            return;
         }
 
         if (!expected.SequenceEqual(actual, StringComparer.Ordinal))
@@ -399,6 +476,10 @@ public sealed class WorldState : IWorldQuery
         && characters.FamilyStates is { Count: 0 }
         && characters.HouseholdStates is { Count: 0 };
 
+    private static bool IsCompleteEmptyRelationshipSnapshot(RelationshipWorldSnapshot relationships) =>
+        relationships.ContractVersion == RelationshipContractVersions.Snapshot
+        && relationships.Subjects is { Count: 0 };
+
     private static void ValidatePendingCommands(IReadOnlyList<CampaignCommand> commands)
     {
         if (commands.Select(command => command.CommandId).Distinct().Count() != commands.Count)
@@ -410,9 +491,24 @@ public sealed class WorldState : IWorldQuery
             || !command.CommandId.IsValid
             || !command.IssuingActor.IsValid
             || !command.IssuedDate.IsValid
-            || !Enum.IsDefined(command.Phase)))
+            || !Enum.IsDefined(command.Phase)
+            || command.Payload is null))
         {
             throw new SimulationValidationException("Snapshot contains an invalid pending command.");
+        }
+
+        foreach (CampaignCommand command in commands.Where(
+            command => command.Payload is RelationshipActionCommandPayload))
+        {
+            try
+            {
+                _ = RelationshipWorldState.DeriveEventId(command.IssuedDate, command.CommandId);
+            }
+            catch (SimulationValidationException exception)
+            {
+                throw new SimulationValidationException(
+                    $"Snapshot contains a relationship command with invalid event identity: {exception.Message}");
+            }
         }
     }
 

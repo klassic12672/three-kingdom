@@ -11,6 +11,10 @@ public sealed class SaveStoreTests : IDisposable
 {
     private const string FrozenSchemaOneTwoChecksum = "852cbd1b26d70d7270ac7ffc6eb1f59992d82b46be31ecee5a6c5873460e6a8e";
     private const string FrozenSchemaThreeChecksum = "6fb3219946ab9328e0a2ace7e6f1c90cab8b46ff592e8cecde2e0b9b8f3e362c";
+    private const string FrozenSchemaFourChecksum = "48b94dad9d4dda78591243341afa16ece40e0ed157368f84c1189641684ecd3e";
+    // Reconstructed literally from the exact schema-4 serializer contract at eaa3aaf.
+    // Unlike the inferred schema-1/2 fixtures, this contains nonempty character history.
+    private const string FrozenSchemaFourFixture = """{"schemaVersion":4,"contractVersion":2,"gameVersion":"0.1.0","createdUtc":"2026-07-15T00:00:00+00:00","contentManifests":[{"packId":{"value":"base:synthetic"},"version":"1.0.0","checksum":"sha256:abc","requiredForSimulation":true}],"seed":99,"snapshot":{"contractVersion":1,"calendar":{"date":{"year":191,"month":7,"day":14},"turnIndex":0,"daysInCurrentTurn":3},"rootSeed":99,"randomStreams":[],"entities":[],"pendingCommands":[],"systemVersions":[{"systemId":"simulation.calendar","version":1},{"systemId":"simulation.synthetic_entities","version":1},{"systemId":"simulation.command_events","version":1},{"systemId":"simulation.geography","version":1},{"systemId":"simulation.characters","version":1}],"lastEventDate":null,"lastEventPhase":null,"lastEventPriority":null,"lastEventId":null,"geography":{"graph":{"regions":[],"districts":[],"localities":[],"stops":[],"routes":[]},"season":0,"weather":0,"locations":[],"routes":[],"armies":[]},"characters":{"contractVersion":1,"identityDefinitions":[{"contractVersion":1,"id":{"value":"ability:synthetic/command"},"kind":0,"nameKey":{"value":"loc:ability/synthetic_command"}}],"characterDefinitions":[{"contractVersion":1,"id":{"value":"character:synthetic/adult"},"nameKey":{"value":"loc:character/synthetic_adult"},"birthDate":{"year":160,"month":1,"day":1},"abilityIds":[{"value":"ability:synthetic/command"}],"aptitudeIds":[],"traitIds":[],"ambitionIds":[],"reputationIds":[]}],"familyDefinitions":[],"householdDefinitions":[],"characterStates":[{"contractVersion":1,"characterId":{"value":"character:synthetic/adult"},"parentIds":[]}],"familyStates":[],"householdStates":[]}},"diagnosticCommands":[],"diagnosticEvents":[],"checksum":"48b94dad9d4dda78591243341afa16ece40e0ed157368f84c1189641684ecd3e"}""";
     private readonly string directory = Path.Combine(Path.GetTempPath(), $"three-kingdom-tests-{Guid.NewGuid():N}");
 
     public SaveStoreTests()
@@ -36,7 +40,7 @@ public sealed class SaveStoreTests : IDisposable
     }
 
     [Fact]
-    public void SchemaFour_SaveLoad_RoundTripsCharacterState()
+    public void SchemaFive_SaveLoad_RoundTripsCharacterAndRelationshipState()
     {
         SaveEnvelope expected = CreateEnvelope(CreateCharacterSimulation());
         string path = Path.Combine(directory, "characters.save.gz");
@@ -44,11 +48,12 @@ public sealed class SaveStoreTests : IDisposable
         new SaveStore().SaveAtomic(path, expected);
         SaveEnvelope actual = new SaveStore().Load(path, expected.ContentManifests);
 
-        Assert.Equal(4, actual.SchemaVersion);
+        Assert.Equal(5, actual.SchemaVersion);
         Assert.Equal(
             JsonSerializer.Serialize(expected.Snapshot.Characters, CanonicalJson.Options),
             JsonSerializer.Serialize(actual.Snapshot.Characters, CanonicalJson.Options));
         Assert.Equal(expected.Checksum, actual.Checksum);
+        Assert.Empty(actual.Snapshot.Relationships.Subjects);
         Assert.True(WorldState.Restore(actual.Snapshot).Characters.TryGetCharacterProfile(
             new EntityId("character:synthetic/child"),
             out AuthoritativeCharacterProfile? profile));
@@ -60,8 +65,13 @@ public sealed class SaveStoreTests : IDisposable
     [InlineData("null-characters")]
     [InlineData("partial-characters")]
     [InlineData("null-character-state")]
-    [InlineData("missing-system-version")]
-    public void SchemaFour_RequiresCompleteCharacterDataWithoutChangingSource(string mutation)
+    [InlineData("missing-character-system-version")]
+    [InlineData("missing-relationships")]
+    [InlineData("null-relationships")]
+    [InlineData("partial-relationships")]
+    [InlineData("null-relationship-subject")]
+    [InlineData("missing-relationship-system-version")]
+    public void SchemaFive_RequiresCompleteCharacterAndRelationshipDataWithoutChangingSource(string mutation)
     {
         JsonObject current = JsonSerializer.SerializeToNode(
             CreateEnvelope(CreateSimulation()),
@@ -81,15 +91,65 @@ public sealed class SaveStoreTests : IDisposable
             case "null-character-state":
                 snapshot["characters"]!["characterStates"]!.AsArray().Add(null);
                 break;
-            case "missing-system-version":
+            case "missing-character-system-version":
                 RemoveSystemVersion(snapshot, "simulation.characters");
+                break;
+            case "missing-relationships":
+                snapshot.Remove("relationships");
+                break;
+            case "null-relationships":
+                snapshot["relationships"] = null;
+                break;
+            case "partial-relationships":
+                snapshot["relationships"]!.AsObject().Remove("subjects");
+                break;
+            case "null-relationship-subject":
+                snapshot["relationships"]!["subjects"]!.AsArray().Add(null);
+                break;
+            case "missing-relationship-system-version":
+                RemoveSystemVersion(snapshot, "simulation.relationships");
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(mutation));
         }
 
-        string path = Path.Combine(directory, $"schema-four-{mutation}.save.gz");
+        string path = Path.Combine(directory, $"schema-five-{mutation}.save.gz");
         WriteJsonGzip(path, current);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        Assert.Throws<SaveCompatibilityException>(() => new SaveStore().Load(path));
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void SchemaFive_RejectsImpossibleRelationshipImpactWithoutChangingSource()
+    {
+        CampaignSimulation simulation = CreateCharacterSimulation();
+        CampaignCommand command = CampaignCommand.Create(
+            new EntityId("command:test/impossible-persisted-impact"),
+            new EntityId("character:synthetic/child"),
+            simulation.World.Calendar.Date,
+            new RelationshipActionCommandPayload(
+                new EntityId("character:synthetic/parent"),
+                new RelationshipImpact(1, 0, 0, 0, 0, 0, 0, 0, 0),
+                new EntityId("memory_meaning:test/persisted-impact"),
+                10,
+                MemoryPublicity.Private,
+                0,
+                []));
+        Assert.True(simulation.Submit(command).IsValid);
+        Assert.Single(simulation.ResolveTurn());
+
+        JsonObject invalid = JsonSerializer.SerializeToNode(
+            CreateEnvelope(simulation),
+            CanonicalJson.Options)!.AsObject();
+        JsonObject persistedMemory = invalid["snapshot"]!["relationships"]!["subjects"]![0]!
+            ["detailedRelationships"]![0]!["memories"]![0]!.AsObject();
+        persistedMemory["appliedImpact"]!["affection"] = int.MaxValue;
+        WorldSnapshot invalidSnapshot = invalid["snapshot"]!.Deserialize<WorldSnapshot>(CanonicalJson.Options)!;
+        invalid["checksum"] = SimulationChecksum.Compute(invalidSnapshot).Value;
+        string path = Path.Combine(directory, "schema-five-impossible-relationship-impact.save.gz");
+        WriteJsonGzip(path, invalid);
         byte[] sourceBytes = File.ReadAllBytes(path);
 
         Assert.Throws<SaveCompatibilityException>(() => new SaveStore().Load(path));
@@ -165,6 +225,30 @@ public sealed class SaveStoreTests : IDisposable
             CanonicalJson.Options)!.AsObject();
         JsonArray states = malformed["snapshot"]!["characters"]!["characterStates"]!.AsArray();
         states.Add(states[0]!.DeepClone());
+        WriteJsonGzip(path, malformed);
+        byte[] malformedBytes = File.ReadAllBytes(path);
+
+        SaveLoadResult recovered = store.LoadWithRecovery(path);
+
+        Assert.Equal(validGeneration.Checksum, recovered.Envelope.Checksum);
+        Assert.Equal(path + ".1", recovered.SourcePath);
+        Assert.Contains("simulation validation", recovered.RecoveryDiagnostic, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(malformedBytes, File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void MalformedRelationshipPrimary_RemainsUntouchedAndRecoversNewestValidGeneration()
+    {
+        SaveStore store = new();
+        string path = Path.Combine(directory, "malformed-relationship-autosave.save.gz");
+        SaveEnvelope validGeneration = CreateEnvelope(CreateSimulation());
+        store.SaveAutosave(path, validGeneration);
+        store.SaveAutosave(path, CreateEnvelope(CreateSimulation()));
+
+        JsonObject malformed = JsonSerializer.SerializeToNode(
+            CreateEnvelope(CreateSimulation()),
+            CanonicalJson.Options)!.AsObject();
+        malformed["snapshot"]!["relationships"]!["subjects"]!.AsArray().Add(null);
         WriteJsonGzip(path, malformed);
         byte[] malformedBytes = File.ReadAllBytes(path);
 
@@ -275,6 +359,7 @@ public sealed class SaveStoreTests : IDisposable
         Assert.Empty(migrated.DiagnosticEvents);
         Assert.Empty(migrated.Snapshot.Geography.Graph.Routes);
         Assert.Empty(migrated.Snapshot.Characters.CharacterDefinitions);
+        Assert.Empty(migrated.Snapshot.Relationships.Subjects);
         Assert.Equal(sourceBytes, File.ReadAllBytes(path));
     }
 
@@ -290,11 +375,12 @@ public sealed class SaveStoreTests : IDisposable
         Assert.Equal(SaveEnvelope.CurrentSchemaVersion, migrated.SchemaVersion);
         Assert.Empty(migrated.Snapshot.Geography.Graph.Routes);
         Assert.Empty(migrated.Snapshot.Characters.CharacterDefinitions);
+        Assert.Empty(migrated.Snapshot.Relationships.Subjects);
         Assert.Equal(sourceBytes, File.ReadAllBytes(path));
     }
 
     [Fact]
-    public void SchemaThree_MigratesEmptyCharactersAndRecomputesChecksumWithoutOverwritingSource()
+    public void SchemaThree_MigratesEmptyCharactersAndRelationshipsWithoutOverwritingSource()
     {
         string path = Path.Combine(directory, "schema-three.save.gz");
         WriteFrozenHistoricalFixture(path, 3);
@@ -306,7 +392,64 @@ public sealed class SaveStoreTests : IDisposable
         Assert.Empty(migrated.Snapshot.Characters.CharacterDefinitions);
         Assert.Contains(migrated.Snapshot.SystemVersions, version =>
             version == new SystemVersion("simulation.characters", 1));
+        Assert.Empty(migrated.Snapshot.Relationships.Subjects);
+        Assert.Contains(migrated.Snapshot.SystemVersions, version =>
+            version == new SystemVersion("simulation.relationships", 1));
         Assert.Equal(SimulationChecksum.Compute(migrated.Snapshot).Value, migrated.Checksum);
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void SchemaFour_AuthenticatesNonemptyCharactersAndMigratesEmptyRelationshipsWithoutChangingSource()
+    {
+        string path = Path.Combine(directory, "schema-four.save.gz");
+        WriteFrozenHistoricalFixture(path, 4);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        SaveEnvelope migrated = new SaveStore().Load(path);
+
+        Assert.Equal(SaveEnvelope.CurrentSchemaVersion, migrated.SchemaVersion);
+        CharacterDefinition character = Assert.Single(migrated.Snapshot.Characters.CharacterDefinitions);
+        Assert.Equal(new EntityId("character:synthetic/adult"), character.Id);
+        Assert.Empty(migrated.Snapshot.Relationships.Subjects);
+        Assert.Contains(migrated.Snapshot.SystemVersions, version =>
+            version == new SystemVersion("simulation.relationships", 1));
+        Assert.Equal(SimulationChecksum.Compute(migrated.Snapshot).Value, migrated.Checksum);
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void SchemaFourMigrationPreservesNonemptyGeographyAndCharacterData()
+    {
+        CharacterWorldSnapshot characters = CreateCharacterSimulation().World.CaptureSnapshot().Characters;
+        WorldState world = WorldState.Create(
+            new CampaignDate(191, 7, 14),
+            99,
+            [new SyntheticEntitySnapshot(GeographyFixture.Actor, SimulationTier.Full, 1, 1, 1, [])],
+            GeographyFixture.Snapshot(),
+            characters);
+        JsonObject schemaFour = JsonSerializer.SerializeToNode(
+            CreateEnvelope(new CampaignSimulation(world)),
+            CanonicalJson.Options)!.AsObject();
+        JsonObject snapshot = schemaFour["snapshot"]!.AsObject();
+        snapshot.Remove("relationships");
+        RemoveSystemVersion(snapshot, "simulation.relationships");
+        schemaFour["schemaVersion"] = 4;
+        WorldSnapshot historical = snapshot.Deserialize<WorldSnapshot>(CanonicalJson.Options)!;
+        schemaFour["checksum"] = SimulationChecksum.ComputeForSaveSchema(historical, 4).Value;
+        string path = Path.Combine(directory, "schema-four-nonempty-geography-characters.save.gz");
+        WriteJsonGzip(path, schemaFour);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        SaveEnvelope migrated = new SaveStore().Load(path);
+
+        Assert.Equal(
+            JsonSerializer.Serialize(historical.Geography, CanonicalJson.Options),
+            JsonSerializer.Serialize(migrated.Snapshot.Geography, CanonicalJson.Options));
+        Assert.Equal(
+            JsonSerializer.Serialize(historical.Characters, CanonicalJson.Options),
+            JsonSerializer.Serialize(migrated.Snapshot.Characters, CanonicalJson.Options));
+        Assert.Empty(migrated.Snapshot.Relationships.Subjects);
         Assert.Equal(sourceBytes, File.ReadAllBytes(path));
     }
 
@@ -314,6 +457,7 @@ public sealed class SaveStoreTests : IDisposable
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
+    [InlineData(4)]
     public void CorruptedHistoricalSnapshotFailsAuthenticationWithoutOverwritingSource(int schemaVersion)
     {
         JsonObject historical = CreateHistoricalFixture(schemaVersion);
@@ -333,6 +477,7 @@ public sealed class SaveStoreTests : IDisposable
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
+    [InlineData(4)]
     public void FrozenLegacyFixturesRetainEraSpecificChecksums(int schemaVersion)
     {
         JsonObject historical = CreateHistoricalFixture(schemaVersion);
@@ -351,7 +496,12 @@ public sealed class SaveStoreTests : IDisposable
             Characters = snapshot.Characters.Canonicalize(),
         };
         JsonObject historicalShape = JsonSerializer.SerializeToNode(canonical, CanonicalJson.Options)!.AsObject();
-        historicalShape.Remove("characters");
+        historicalShape.Remove("relationships");
+        if (schemaVersion < 4)
+        {
+            historicalShape.Remove("characters");
+        }
+
         if (schemaVersion < 3)
         {
             historicalShape.Remove("geography");
@@ -360,7 +510,14 @@ public sealed class SaveStoreTests : IDisposable
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(historicalShape, CanonicalJson.Options);
         string independentlyComputed = Convert.ToHexStringLower(SHA256.HashData(bytes));
 
-        Assert.Equal(schemaVersion < 3 ? FrozenSchemaOneTwoChecksum : FrozenSchemaThreeChecksum, stored);
+        string frozen = schemaVersion switch
+        {
+            < 3 => FrozenSchemaOneTwoChecksum,
+            3 => FrozenSchemaThreeChecksum,
+            4 => FrozenSchemaFourChecksum,
+            _ => throw new ArgumentOutOfRangeException(nameof(schemaVersion)),
+        };
+        Assert.Equal(frozen, stored);
         Assert.Equal(stored, independentlyComputed);
     }
 
@@ -368,6 +525,7 @@ public sealed class SaveStoreTests : IDisposable
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
+    [InlineData(4)]
     public void LegacyExplicitNullRequiredData_FailsDeliberatelyAndRecoversWithoutChangingCandidates(
         int schemaVersion)
     {
@@ -391,6 +549,9 @@ public sealed class SaveStoreTests : IDisposable
                 break;
             case 3:
                 malformed["snapshot"]!["geography"]!["graph"] = null;
+                break;
+            case 4:
+                malformed["snapshot"]!["characters"] = null;
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(schemaVersion));
@@ -448,6 +609,40 @@ public sealed class SaveStoreTests : IDisposable
             () => new SaveStore().Load(path));
 
         Assert.Equal("Schema 3 unexpectedly contains schema 4 character data.", exception.Message);
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Theory]
+    [InlineData("snapshot")]
+    [InlineData("system-version")]
+    [InlineData("system-version-wrong-version")]
+    public void SchemaFour_RejectsUnexpectedRelationshipDataWithoutOverwritingSource(string mutation)
+    {
+        JsonObject invalid = CreateHistoricalFixture(4);
+        JsonObject snapshot = invalid["snapshot"]!.AsObject();
+        if (mutation == "snapshot")
+        {
+            snapshot["relationships"] = JsonSerializer.SerializeToNode(
+                RelationshipWorldSnapshot.Empty,
+                CanonicalJson.Options);
+        }
+        else
+        {
+            snapshot["systemVersions"]!.AsArray().Add(new JsonObject
+            {
+                ["systemId"] = "simulation.relationships",
+                ["version"] = mutation == "system-version" ? 1 : 999,
+            });
+        }
+
+        string path = Path.Combine(directory, $"schema-four-unexpected-relationships-{mutation}.save.gz");
+        WriteJsonGzip(path, invalid);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        SaveCompatibilityException exception = Assert.Throws<SaveCompatibilityException>(
+            () => new SaveStore().Load(path));
+
+        Assert.Equal("Schema 4 unexpectedly contains schema 5 relationship data.", exception.Message);
         Assert.Equal(sourceBytes, File.ReadAllBytes(path));
     }
 
@@ -526,6 +721,41 @@ public sealed class SaveStoreTests : IDisposable
             () => WorldState.Restore(invalid));
 
         Assert.Contains("complete, valid, empty character snapshot", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LegacyStandaloneSnapshotOmittingRelationships_RestoresAsEmpty()
+    {
+        WorldSnapshot current = SyntheticSimulation.CreateWorld(1, 99).CaptureSnapshot();
+        JsonObject legacyJson = JsonSerializer.SerializeToNode(current, CanonicalJson.Options)!.AsObject();
+        legacyJson.Remove("relationships");
+        JsonArray versions = legacyJson["systemVersions"]!.AsArray();
+        JsonNode relationshipVersion = versions.Single(
+            node => node!["systemId"]!.GetValue<string>() == "simulation.relationships")!;
+        versions.Remove(relationshipVersion);
+        WorldSnapshot legacy = legacyJson.Deserialize<WorldSnapshot>(CanonicalJson.Options)
+            ?? throw new InvalidDataException("Legacy standalone snapshot did not deserialize.");
+
+        WorldState restored = WorldState.Restore(legacy);
+
+        Assert.Empty(restored.Relationships.Subjects);
+        Assert.Contains(restored.CaptureSnapshot().SystemVersions, version =>
+            version == new SystemVersion("simulation.relationships", 1));
+    }
+
+    [Fact]
+    public void LegacyStandaloneSnapshotWithPartialNullRelationships_FailsDeliberately()
+    {
+        WorldSnapshot current = SyntheticSimulation.CreateWorld(1, 99).CaptureSnapshot();
+        WorldSnapshot invalid = WithoutRelationshipSystemVersion(current) with
+        {
+            Relationships = RelationshipWorldSnapshot.Empty with { Subjects = null! },
+        };
+
+        SaveCompatibilityException exception = Assert.Throws<SaveCompatibilityException>(
+            () => WorldState.Restore(invalid));
+
+        Assert.Contains("complete, valid, empty relationship snapshot", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -694,6 +924,13 @@ public sealed class SaveStoreTests : IDisposable
             .ToArray(),
     };
 
+    private static WorldSnapshot WithoutRelationshipSystemVersion(WorldSnapshot snapshot) => snapshot with
+    {
+        SystemVersions = snapshot.SystemVersions
+            .Where(version => version.SystemId != "simulation.relationships")
+            .ToArray(),
+    };
+
     private static void WriteJsonGzip(string path, JsonObject json)
     {
         using FileStream file = File.Create(path);
@@ -712,15 +949,19 @@ public sealed class SaveStoreTests : IDisposable
     private static string ReadFrozenHistoricalFixture(int schemaVersion)
     {
         // Schema 3 is reconstructed from the exact schema-3 contract at 4e6e83c.
+        // Schema 4 is reconstructed from the exact schema-4 contract at eaa3aaf.
         // Schema 1/2 are synthetic fixtures inferred from the registered migration contracts.
         string fileName = schemaVersion switch
         {
             1 => "save-schema-1-inferred.json",
             2 => "save-schema-2-inferred.json",
             3 => "save-schema-3-history-backed.json",
+            4 => string.Empty,
             _ => throw new ArgumentOutOfRangeException(nameof(schemaVersion)),
         };
-        return File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", fileName));
+        return schemaVersion == 4
+            ? FrozenSchemaFourFixture
+            : File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", fileName));
     }
 
     private sealed class SimulatedInterruptionException : Exception;

@@ -133,7 +133,7 @@ public sealed class CampaignSimulation
             issues.Add(new("unregistered_phase", $"Resolution phase '{command.Phase}' is not registered."));
         }
 
-        if (!World.TryGetEntity(command.IssuingActor, out _))
+        if (!IsActorAvailable(command))
         {
             issues.Add(new("unknown_actor", $"Issuing actor '{command.IssuingActor}' does not exist."));
         }
@@ -166,6 +166,27 @@ public sealed class CampaignSimulation
                 break;
             case ChangeControlCommandPayload control:
                 AddIssues(World.Geography.ValidateControlChange(control), issues);
+                break;
+            case RelationshipActionCommandPayload relationship:
+                AddIssues(
+                    World.Relationships.ValidateAction(
+                        command.IssuingActor,
+                        relationship,
+                        command.IssuedDate,
+                        World.Calendar.TurnIndex),
+                    issues);
+                if (command.CommandId.IsValid && command.IssuedDate.IsValid)
+                {
+                    try
+                    {
+                        _ = RelationshipWorldState.DeriveEventId(command.IssuedDate, command.CommandId);
+                    }
+                    catch (SimulationValidationException exception)
+                    {
+                        issues.Add(new("invalid_event_id", exception.Message));
+                    }
+                }
+
                 break;
             default:
                 issues.Add(new("unregistered_payload", $"Command payload '{command.Payload?.GetType().Name ?? "null"}' is not registered."));
@@ -203,7 +224,7 @@ public sealed class CampaignSimulation
         ICampaignEventPayload payload;
         EntityId[] affected;
 
-        if (!World.TryGetEntity(command.IssuingActor, out _))
+        if (!IsActorAvailable(command))
         {
             payload = new CommandCancelledEventPayload("actor_unavailable", $"Actor '{command.IssuingActor}' is unavailable at resolution.");
             affected = [];
@@ -269,6 +290,38 @@ public sealed class CampaignSimulation
                     payload = World.Geography.PlanControlChange(control);
                     affected = [control.StopId];
                     break;
+                case RelationshipActionCommandPayload relationship:
+                    CommandValidationResult relationshipValidation = World.Relationships.ValidateAction(
+                        command.IssuingActor,
+                        relationship,
+                        date,
+                        World.Calendar.TurnIndex);
+                    if (!relationshipValidation.IsValid)
+                    {
+                        payload = new CommandCancelledEventPayload(
+                            "command_invalidated",
+                            string.Join("; ", relationshipValidation.Issues.Select(issue => issue.Message)));
+                        affected = [];
+                        break;
+                    }
+
+                    EntityId eventId = GetEventId(command);
+                    RelationshipActionResolvedEventPayload resolvedRelationship = World.Relationships.PlanAction(
+                        command.IssuingActor,
+                        relationship,
+                        date,
+                        World.Calendar.TurnIndex,
+                        command.CommandId,
+                        eventId);
+                    payload = resolvedRelationship;
+                    affected =
+                    [
+                        resolvedRelationship.SubjectCharacterId,
+                        resolvedRelationship.TargetCharacterId,
+                        resolvedRelationship.RelationshipId,
+                        resolvedRelationship.Memory.MemoryId,
+                    ];
+                    break;
                 default:
                     throw new SimulationValidationException($"Unregistered command payload '{command.Payload.GetType().Name}'.");
             }
@@ -303,8 +356,17 @@ public sealed class CampaignSimulation
         }
     }
 
+    private bool IsActorAvailable(CampaignCommand command) => command.Payload is RelationshipActionCommandPayload
+        ? World.Characters.TryGetCharacterProfile(command.IssuingActor, out _)
+        : World.TryGetEntity(command.IssuingActor, out _);
+
     private static EntityId GetEventId(CampaignCommand command)
     {
+        if (command.Payload is RelationshipActionCommandPayload)
+        {
+            return RelationshipWorldState.DeriveEventId(command.IssuedDate, command.CommandId);
+        }
+
         string eventPath = command.CommandId.Value.Replace(':', '/');
         return new EntityId($"event:{eventPath}");
     }

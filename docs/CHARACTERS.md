@@ -1,6 +1,6 @@
 # Character, Family, and Household Foundation
 
-SP-04A establishes the first deterministic character-world slice. It is locally verified in an uncommitted working tree inside the active M2 milestone; it is not completion of SP-04.
+SP-04A establishes the first deterministic character-world slice and has accepted exact-SHA hosted macOS arm64/Windows x64 evidence at `eaa3aaf3a0687a231d2a3441e5be4954e905e9ea`. SP-04 remains Active and is not complete.
 
 ## Package boundary
 
@@ -91,4 +91,16 @@ The pre-remediation candidate remains disqualified because `GeographyTests.Pathf
 - `git diff --check`; and
 - `git lfs fsck`.
 
-These are local macOS results from an uncommitted tree, not clean-checkout, same-revision hosted, or cross-platform evidence. Nothing was staged or committed. Hosted exact-SHA macOS/Windows verification remains pending; physical Windows packaged-save evidence remains an M4 gate, and production signing remains an SP-15 gate. No push or hosted action was authorized.
+These are local macOS results from an uncommitted tree, not clean-checkout, same-revision hosted, or cross-platform evidence. Nothing was staged or committed. Subsequent exact-SHA hosted macOS arm64/Windows x64 verification passed at `eaa3aaf3a0687a231d2a3441e5be4954e905e9ea`; that later evidence does not relabel the historical working-tree results. Physical Windows packaged-save evidence remains an M4 gate, and production signing remains an SP-15 gate. No push or hosted action was authorized.
+
+## SP-04B-L relationship and memory kernel
+
+SP-04B-L adds independent directional affection, trust, respect, attraction, obligation, fear, resentment, rivalry, and compatibility state without a universal loyalty score. `RelationshipActionCommandPayload` uses the issuing character as the subject and names one different target; `RelationshipActionResolvedEventPayload` is the only persistent mutation path. Nonzero attraction changes require both participants to be at least 18 on the exact resolution date. Reciprocal changes require a separate command.
+
+Every accepted action creates one deterministic consequential memory containing subject, target, canonical witnesses, authoritative date/turn, opaque meaning ID, initial severity, publicity, derived decay, applied impact, and source event. Private, Participants, Witnessed, and Public visibility is enforced by `RelationshipSummaryQuery` in `Game.Application`. Subjects receive exact detailed dimensions and their active retained memories; other existing observers receive only visible active memories and no exact dimensions. Archived and distant summaries are subject-only.
+
+History is bounded to 64 detailed links and 128 archived summaries per subject, 16 detailed memories per link, and one fixed-size distant aggregate. Retention uses effective severity/recorded turn/ID for memories and recorded importance/last-change turn/ID for links; evicted state folds into checked fixed-size summaries. Relationship IDs hash the ordered subject/target sequence, and memory IDs hash the resolution date/command ID using exact versioned UTF-8 framing. Relationship source-event IDs frame both the authoritative date and command identity, so reusing a command ID on a later date cannot alias the earlier causal event.
+
+`RelationshipWorldSnapshot` version 1 is a separate default-empty `WorldSnapshot` subsystem registered as `simulation.relationships@1`. Save schema 5 includes it in canonical checksums. Schema 4 is authenticated before the explicit 4→5 migration injects empty relationship state and recomputes the checksum; geography, character data, source files, and autosave candidates remain unchanged.
+
+SP-04B local verification passed; exact-SHA hosted macOS/Windows evidence is not yet recorded. The package-specific matrix, focused commands, raw local performance measurements, checksums, and limitations are recorded in the [SP-04 plan](plans/SP-04-characters-family-marriage-succession.md). Marriage, romance, household expansion, birth, death, inheritance, succession, content, UI, battle integration, and platform behavior remain deferred.

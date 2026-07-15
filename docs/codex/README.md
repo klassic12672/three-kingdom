@@ -26,10 +26,10 @@ This directory contains reusable prompts and agent routing for executing the app
 
 ## Current order
 
-M0, M1, and SP-03 are complete. SP-04A is locally verified, and exact revision `eaa3aaf3a0687a231d2a3441e5be4954e905e9ea` has passing [hosted macOS arm64/Windows x64 evidence](../evidence/SP-04A-EXACT-SHA-eaa3aaf.md). Full SP-04 remains Active. The current safe order is:
+M0, M1, and SP-03 are complete. SP-04A exact revision `eaa3aaf3a0687a231d2a3441e5be4954e905e9ea` has passing [hosted macOS arm64/Windows x64 evidence](../evidence/SP-04A-EXACT-SHA-eaa3aaf.md). SP-04B local verification passed; exact-SHA hosted macOS/Windows evidence is not yet recorded. Full SP-04 remains Active. The current safe order is:
 
 1. Preserve the accepted SP-04A character/family/household foundation boundary, its local working-tree evidence, and its exact-SHA hosted evidence.
-2. Select the next independently verifiable SP-04 package only under separate authorization; do not infer full SP-04 completion from SP-04A.
+2. Preserve the SP-04B-L relationship/memory kernel and collect exact-SHA hosted acceptance only through the separately authorized SP-04B-H package; do not infer full SP-04 completion.
 3. Preserve the completed SP-03 baseline and its deferred pre–Early Access refinement boundary.
 4. Continue later M2 work according to the active roadmap and dependency gates.
 5. Before M4/public demo, collect physical Windows evidence.

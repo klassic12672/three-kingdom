@@ -12,7 +12,7 @@ A character-driven historical grand-strategy RPG spanning late Han China, Manchu
 - Launch languages: Korean and English
 - Networking: single-player only
 
-SP-00/M0, SP-01/SP-02, and SP-03 are complete with their required evidence. M2 remains active, and SP-04A character/family/household foundations are locally verified with passing exact-SHA hosted macOS arm64 and Windows x64 evidence for `eaa3aaf3a0687a231d2a3441e5be4954e905e9ea`; see the [SP-04A hosted report](docs/evidence/SP-04A-EXACT-SHA-eaa3aaf.md). Physical Windows and production signing remain M4/SP-15 gates under ADR-0001.
+SP-00/M0, SP-01/SP-02, and SP-03 are complete with their required evidence. M2 and SP-04 remain active. SP-04A character/family/household foundations have passing exact-SHA hosted macOS arm64 and Windows x64 evidence for `eaa3aaf3a0687a231d2a3441e5be4954e905e9ea`; see the [SP-04A hosted report](docs/evidence/SP-04A-EXACT-SHA-eaa3aaf.md). SP-04B local verification passed; exact-SHA hosted macOS/Windows evidence is not yet recorded. Physical Windows and production signing remain M4/SP-15 gates under ADR-0001.
 
 ## Quick start
 

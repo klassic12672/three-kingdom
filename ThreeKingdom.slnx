@@ -9,6 +9,7 @@
     <Project Path="src/Simulation.Core/Simulation.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Game.Application.Tests/Game.Application.Tests.csproj" />
     <Project Path="tests/Game.Content.Tests/Game.Content.Tests.csproj" />
     <Project Path="tests/Repository.Tests/Repository.Tests.csproj" />
     <Project Path="tests/Simulation.Core.Tests/Simulation.Core.Tests.csproj" />

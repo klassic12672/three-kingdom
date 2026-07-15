@@ -18,14 +18,20 @@ public readonly record struct SimulationChecksum(string Value)
 
     internal static SimulationChecksum ComputeForSaveSchema(WorldSnapshot snapshot, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 3)
+        if (schemaVersion is < 1 or > 4)
         {
             throw new ArgumentOutOfRangeException(nameof(schemaVersion));
         }
 
         JsonObject canonical = JsonSerializer.SerializeToNode(Canonicalize(snapshot), CanonicalJson.Options)!.AsObject();
-        // Schema 1/2 predate geography; schema 1/2/3 predate characters.
-        canonical.Remove("characters");
+        // Schemas 1-4 predate relationships; schemas 1-3 predate characters;
+        // schemas 1-2 predate geography.
+        canonical.Remove("relationships");
+        if (schemaVersion < 4)
+        {
+            canonical.Remove("characters");
+        }
+
         if (schemaVersion < 3)
         {
             canonical.Remove("geography");
@@ -46,7 +52,44 @@ public readonly record struct SimulationChecksum(string Value)
         SystemVersions = snapshot.SystemVersions.OrderBy(item => item.SystemId, StringComparer.Ordinal).ToArray(),
         Geography = snapshot.Geography.Canonicalize(),
         Characters = snapshot.Characters.Canonicalize(),
+        Relationships = CanonicalizeRelationships(snapshot.Relationships),
     };
+
+    private static RelationshipWorldSnapshot CanonicalizeRelationships(RelationshipWorldSnapshot snapshot) =>
+        snapshot with
+        {
+            Subjects = snapshot.Subjects
+                .OrderBy(subject => subject.SubjectCharacterId)
+                .Select(subject => subject with
+                {
+                    DetailedRelationships = subject.DetailedRelationships
+                        .OrderBy(relationship => relationship.RelationshipId)
+                        .Select(relationship => relationship with
+                        {
+                            Memories = relationship.Memories
+                                .OrderBy(memory => memory.MemoryId)
+                                .Select(memory => memory with
+                                {
+                                    WitnessIds = memory.WitnessIds.Order().ToArray(),
+                                    AppliedImpact = memory.AppliedImpact with { },
+                                })
+                                .ToArray(),
+                            Dimensions = relationship.Dimensions with { },
+                            FoldedMemories = relationship.FoldedMemories with { },
+                        })
+                        .ToArray(),
+                    ArchivedRelationships = subject.ArchivedRelationships
+                        .OrderBy(relationship => relationship.RelationshipId)
+                        .Select(relationship => relationship with
+                        {
+                            Dimensions = relationship.Dimensions with { },
+                            FoldedMemories = relationship.FoldedMemories with { },
+                        })
+                        .ToArray(),
+                    DistantHistory = subject.DistantHistory with { },
+                })
+                .ToArray(),
+        };
 
     private static SimulationChecksum FromBytes(byte[] serialized) =>
         new(Convert.ToHexStringLower(SHA256.HashData(serialized)));

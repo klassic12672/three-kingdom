@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — SP-04A locally and exact-SHA hosted verified; later packages pending |
+| Status | Active — SP-04A exact-SHA hosted verified; SP-04B-L locally verified; hosted SP-04B-H and later packages pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -97,7 +97,48 @@ This matrix reconstructs the observable requirements of the authorized SP-04A im
 | A13 | The same accepted revision passes deterministic validation on hosted macOS and Windows | Exact-SHA clean-checkout hosted evidence | Hosted macOS arm64/Windows x64 pass at `eaa3aaf3a0687a231d2a3441e5be4954e905e9ea` |
 | A14 | Relationships, memories, marriage, succession, bounded history, battle integration, and player-knowledge-filtered queries | Later independently verifiable packages | Deferred |
 
-The next independently verifiable package is bounded relationship dimensions and consequential memories, including meaningful-link limits, canonical persistence, and knowledge-filtered read-only summaries. It must not begin until its own mutation commands/events and bounded-history contract are approved.
+The approved next package was SP-04B-L: bounded relationship dimensions and consequential memories, including meaningful-link limits, canonical persistence, and knowledge-filtered read-only summaries. Its local implementation and verification are recorded below; hosted acceptance remains a separate package.
+
+## Active package: SP-04B-L directional relationships and memories
+
+SP-04B-L adds a deterministic directional `subject → target` relationship kernel with eight independent `0..100` dimensions, compatibility from `-100..100`, adult-only nonzero attraction changes, one registered `relationship_action.v1` command, and one registered `relationship_action_resolved.v1` event. Every accepted event applies one subject-only impact and creates one causally linked consequential memory. It adds no loyalty aggregate, reciprocal implicit mutation, romance, marriage, succession, content, UI, battle integration, or general character authority over geography/resources.
+
+Memory publicity is observer-filtered in `Game.Application`: the subject receives exact detailed dimensions and active memories, while other existing characters receive only active memories allowed by Private/Participants/Witnessed/Public visibility and never receive exact dimensions. Archived records and the distant aggregate are subject-only. State remains bounded per subject to 64 detailed relationships, 16 detailed memories per relationship, 128 archived summaries, and one fixed-size distant aggregate.
+
+`RelationshipWorldSnapshot` is an independent version-1 subsystem added to `WorldSnapshot` as default-empty state and registered as `simulation.relationships@1`. Save schema 5 requires the complete relationship snapshot. The authenticated 4→5 migration rejects unexpected schema-4 relationship data, injects the empty subsystem, preserves geography/character state, and recomputes the schema-5 checksum. The complete 1→2→3→4→5 chain remains forward-only. The literal schema-4 fixture contains nonempty character history reconstructed from the exact schema-4 contract at `eaa3aaf`; schema-1/2 field compatibility remains unverified as disclosed in the SP-04A record.
+
+SP-04B local verification passed; exact-SHA hosted macOS/Windows evidence is not yet recorded. SP-04 and M2 remain Active; SP-05 remains blocked.
+
+### SP-04B-L verification matrix
+
+| ID | Observable package criterion | Required evidence | Closeout classification |
+|---|---|---|---|
+| B01 | M2/SP-04 are Active; SP-01/SP-02 are complete; no ADR or extra path is required | Source-of-truth and project-architect review | Local pass |
+| B02 | Directional dimensions, separate impacts, exact bounds, adult-only attraction, and no universal loyalty score | Contract review and focused tests | Local pass |
+| B03 | One registered command/event path revalidates at resolution, cancels invalidated commands, mutates only the subject, and creates one memory | Integration tests and event-causality review | Local pass |
+| B04 | Character actors gain relationship authority only; synthetic/geographic/resource actor semantics remain unchanged | Actor-authority integration tests | Local pass |
+| B05 | Memories retain canonical participants/witnesses, date/turn, meaning, severity, publicity, decay, impact, and source event | Focused Core/Application tests | Local pass |
+| B06 | Relationship and memory IDs use exact invariant SHA-256 framing and reject identity/collision mismatches | Golden-ID and malformed-snapshot tests | Local pass |
+| B07 | Exact 64/16/128 limits, deterministic eviction, folded summaries, distant aggregation, checked counters, and defensive copies hold | Bounded-history, overflow, shuffled-input, and copy tests | Local pass |
+| B08 | Observer summaries expose exact dimensions/archives only to the subject and visible active memories only to allowed existing observers | Complete publicity matrix and decay tests | Local pass |
+| B09 | Relationship state is canonical, checksum-covered, input-order invariant, mutation-sensitive, restorable, and save/load compatible | Checksum, serialization, restore, and save tests | Local pass |
+| B10 | Schema 5 and authenticated 4→5 plus complete 1→5 migrations preserve data/source bytes and recover from malformed candidates | Literal fixture, migration, corruption, recovery, and byte-preservation tests | Local pass; schema-1/2 field compatibility unverified |
+| B11 | Registered pending/diagnostic payloads round-trip and malformed/null/unsupported/mistyped state fails deliberately | JSON and validation tests | Local pass |
+| B12 | 1,000-character/16,000-link/64,000-memory fixture plus 1,000 actions, one query, checksum, save, and load meet local budgets | Raw Apple Silicon macOS measurements | Local macOS pass |
+| B13 | Focused suites and repository validation/test/diff/LFS gates pass | Local commands listed below | Local pass |
+| B14 | Historical SP-04A evidence, limitations, and disqualified geography result remain unchanged | Documentation and diff audit | Local pass |
+| B15 | Same accepted revision passes hosted macOS arm64 and Windows x64 | Exact-SHA hosted verification in SP-04B-H | Not recorded |
+| B16 | Marriage, household expansion, birth/death/succession, battle, content, UI, platform, and release behavior | Later packages | Deferred |
+
+Local performance was measured on 2026-07-15 using macOS 26.5.1 build 25F80 on arm64 and .NET SDK 10.0.301 with:
+
+```bash
+dotnet test tests/Game.Application.Tests/Game.Application.Tests.csproj -c Release --filter FullyQualifiedName~ThousandCharacterRelationshipFixtureRecordsRawLocalPerformance --logger "console;verbosity=detailed" --no-restore
+```
+
+The repeatable fictional fixture contained 1,000 characters, 16,000 detailed directional relationships, four initial memories per relationship (64,000 initial memories), and 1,000 relationship actions resolved in one turn. Raw timings were 134.266 ms for turn processing, 0.790 ms for one subject summary, 406.157 ms for snapshot/checksum, 2,501.901 ms for save, and 1,116.485 ms for load. Its post-action checksum was `253e77b8f6b88e95185ff806871ad9f16065c504e75c7329308545dd20fe35a2`. The test asserts fixture shape and correctness but does not add hosted wall-clock assertions.
+
+Focused local results were 54 relationship-filtered Simulation.Core tests, 57 save-filtered Simulation.Core tests, 6 Game.Application tests, and 1 architecture-filtered repository test. `./scripts/validate.sh` retained 1,295 records, 2,820 translations, and registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` passed 158 Simulation.Core, 66 Game.Content, 6 Game.Application, and 18 repository tests. The authoritative ten-year/1,000-entity soak checksum is now `8430e2054d15fdb9a6e0c54a88b20de3b34dbca7ba80030b30676041773e7155` because newly captured worlds include the authoritative relationship subsystem. `git diff --check` and `git lfs fsck` also passed locally.
 
 ## Edge cases and failure handling
 

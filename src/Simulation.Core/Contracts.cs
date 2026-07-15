@@ -27,6 +27,7 @@ public sealed record CommandValidationResult(bool IsValid, IReadOnlyList<Validat
 [JsonDerivedType(typeof(RetreatOrderPayload), "retreat_order.v1")]
 [JsonDerivedType(typeof(SupplyOrderPayload), "supply_order.v1")]
 [JsonDerivedType(typeof(ChangeControlCommandPayload), "change_control.v1")]
+[JsonDerivedType(typeof(RelationshipActionCommandPayload), "relationship_action.v1")]
 public interface ICampaignCommandPayload;
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "$type", UnknownDerivedTypeHandling = JsonUnknownDerivedTypeHandling.FailSerialization)]
@@ -39,6 +40,7 @@ public interface ICampaignCommandPayload;
 [JsonDerivedType(typeof(SupplyTransferredEventPayload), "supply_transferred.v1")]
 [JsonDerivedType(typeof(SupplyProducedEventPayload), "supply_produced.v1")]
 [JsonDerivedType(typeof(ArmySupplyConsumedEventPayload), "army_supply_consumed.v1")]
+[JsonDerivedType(typeof(RelationshipActionResolvedEventPayload), "relationship_action_resolved.v1")]
 public interface ICampaignEventPayload;
 
 public sealed record AdjustResourcesCommandPayload(EntityId Target, long PeopleDelta, long FoodDelta, long GoldDelta)
@@ -79,6 +81,7 @@ public sealed record CampaignCommand(
         RetreatOrderPayload => "retreat_order.v1",
         SupplyOrderPayload => "supply_order.v1",
         ChangeControlCommandPayload => "change_control.v1",
+        RelationshipActionCommandPayload => "relationship_action.v1",
         _ => "unregistered",
     };
 
@@ -120,6 +123,7 @@ public sealed record CampaignEvent(
         SupplyTransferredEventPayload => "supply_transferred.v1",
         SupplyProducedEventPayload => "supply_produced.v1",
         ArmySupplyConsumedEventPayload => "army_supply_consumed.v1",
+        RelationshipActionResolvedEventPayload => "relationship_action_resolved.v1",
         _ => "unregistered",
     };
 }
@@ -176,4 +180,6 @@ public sealed record WorldSnapshot(
     public GeographicWorldSnapshot Geography { get; init; } = GeographicWorldSnapshot.Empty;
 
     public CharacterWorldSnapshot Characters { get; init; } = CharacterWorldSnapshot.Empty;
+
+    public RelationshipWorldSnapshot Relationships { get; init; } = RelationshipWorldSnapshot.Empty;
 }
