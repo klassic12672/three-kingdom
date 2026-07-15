@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1 exact-SHA hosted verified; SP-04C2 local pass/hosted pending; later packages pending |
+| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2 exact-SHA hosted verified; later packages pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -250,7 +250,7 @@ Save schema 8 requires the complete resource-v1 snapshot and `simulation.charact
 | C211 | Repository validation, complete tests, diff/LFS checks, and C2-touched-file format verification pass | Local repository gates | Local pass |
 | C212 | No estates, household/family/faction/court treasuries, debt/currency/commodities, income/economy/land, relationship effect, marriage/lifecycle/succession, content, UI, battle, AI, platform, or release behavior enters C2 | Diff and architecture review | Local pass |
 | C213 | Independent architecture and verification review finds no unresolved issue after remediation | Review record and focused regressions | Local pass |
-| C214 | The same accepted revision passes deterministic validation on hosted macOS arm64 and Windows x64 | Exact-SHA clean-checkout hosted evidence | Pending |
+| C214 | The same accepted revision passes deterministic validation on hosted macOS arm64 and Windows x64 | Exact-SHA clean-checkout hosted evidence | Hosted macOS arm64/Windows x64 pass at `e2d9590afc409da30aef86226a8d90a0023fbda3` |
 
 The final local fixture contains 1,000 characters and plans/applies 1,000 direct transfers, resulting in 1,000 accounts and 2,000 detailed ledger entries. On Apple Silicon macOS, transfer processing measured 8,077.354 ms, query/snapshot JSON 9.857 ms, full-world checksum 91.771 ms, save 196.321 ms, and load 95.900 ms. The snapshot JSON contained 1,462,065 characters; the save was 259,434 bytes with checksum `989c242311a374c57ea4c306219d08aac12f2b0111f44d1d4df659c1cc657bf0`. These are raw correctness-fixture measurements without wall-clock assertions. They do not satisfy or waive the full SP-04 three-second campaign-turn budget.
 
@@ -258,7 +258,9 @@ Independent review found one campaign integration defect and one coverage gap. L
 
 Local integrated verification on 2026-07-15 used macOS 26.5.1 build 25F80 on arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retained 1,295 records and 2,820 translations with registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` built with zero warnings and passed 280 Simulation.Core, 71 Game.Content, 6 Game.Application, and 18 repository tests. The current ten-year/1,000-entity golden checksum is `07507a7058b13603e3ecc377870f9e13551ce5bde237012ba90c377cd5e2f79c`; the headless soak completed in 830 ms on the same local machine. Touched-file formatter verification, `git diff --check`, and `git lfs fsck` passed.
 
-The implementation remains uncommitted at this documentation point. These results prove only the local integrated working tree; exact-SHA clean-checkout hosted macOS arm64/Windows x64 validation, physical Windows, signing, Steam, and release evidence remain pending or out of scope. C2 is not accepted until C214 passes.
+The implementation remained uncommitted at this local documentation point. Those results proved only the integrated working tree and did not establish exact-SHA, hosted, or cross-platform evidence.
+
+Subsequent exact-SHA evidence does not relabel the historical local measurements. Accepted revision `e2d9590afc409da30aef86226a8d90a0023fbda3` passed hosted macOS arm64 and Windows x64 validation, two complete 280/71/6/18 suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and static artifact verification. See the [SP-04C2 exact-SHA report](../evidence/SP-04C2-EXACT-SHA-e2d9590.md). Physical Windows remains an M4 gate, signing/Steam remain SP-15 gates, and the full SP-04 three-second budget remains unmet.
 
 Opaque character-owned estate holdings are reserved for SP-04C3 so SP-04 can establish inheritance and succession inputs without circularly importing SP-06. SP-06 will later own geography, production, taxation, land grants, and estate economic value. Household/family/faction/court treasuries, debt, currency, commodities, income, spending, prices, relationship effects, marriage/romance, lifecycle, inheritance/succession, content, UI, battle, and AI remain outside C2. Every full SP-04 acceptance criterion below therefore remains unchecked, and SP-05 remains blocked.
 

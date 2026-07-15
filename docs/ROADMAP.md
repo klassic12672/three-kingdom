@@ -57,7 +57,7 @@ SP-04C0 descriptor, agency, typed-kinship, authored v1/v2 normalization, and sch
 
 SP-04C1's bounded retinue, patronage, recommendation, employment-history, registered character-action, generic-memory, and schema-7 package has passing [exact-SHA hosted macOS arm64/Windows x64 evidence](evidence/SP-04C1-EXACT-SHA-d5d2705.md) at `d5d2705d3516c67a06e127dcfa867a854b37a21f`. Personal resources and every later marriage, lifecycle, succession, faction, battle, content, AI, and presentation package were still pending at C1 acceptance; the full SP-04 three-second turn budget remains unmet.
 
-SP-04C2's abstract personal-wealth accounts, atomic registered transfers, bounded ledger/history, and authenticated schema-7-to-8 migration are implemented, independently reviewed, and repository-gate verified in a local working tree. Exact-SHA hosted macOS arm64/Windows x64 evidence remains pending, so C2 is not accepted yet. Opaque estate holdings are reserved for C3; economy, land, household/faction treasuries, and later character packages remain outside C2. The full SP-04 three-second turn budget remains unmet.
+SP-04C2's abstract personal-wealth accounts, atomic registered transfers, bounded ledger/history, and authenticated schema-7-to-8 migration have passing [exact-SHA hosted macOS arm64/Windows x64 evidence](evidence/SP-04C2-EXACT-SHA-e2d9590.md) at `e2d9590afc409da30aef86226a8d90a0023fbda3`. Opaque estate holdings are reserved for C3; economy, land, household/faction treasuries, and later character packages remain outside C2. The full SP-04 three-second turn budget remains unmet.
 
 ## Platform verification gates
 
@@ -78,9 +78,9 @@ Before M4, estimates are internal ranges only. After M4, record measured velocit
 4. Preserve the locally verified SP-04B-L bounded directional relationship/memory kernel, schema-5 migration chain, observer-filtered summaries, bounded-history evidence, local performance results, and accepted exact-SHA SP-04B-H hosted evidence at `ff7420fbefb5dcb7d42dcff82746d61c39d02b7a`.
 5. Preserve the SP-04C0 character-v2 descriptor/condition/typed-kinship contracts, owning-pack override lineage, strict authored v1/v2 normalization, authenticated schema-5-to-6 migration, and exact-SHA hosted evidence at `7d4612d21784ceebbcd574ea00231785b9408036`.
 6. Preserve SP-04C1's bounded career/social-action kernel, atomic generic-memory consequences, authenticated schema-6-to-7 migration, independent-remediation record, and exact-SHA hosted evidence at `d5d2705d3516c67a06e127dcfa867a854b37a21f`.
-7. Obtain exact-SHA hosted evidence for the locally repository-gate-verified SP-04C2 personal-wealth package; accept it only if the same revision passes macOS arm64 and Windows x64.
-8. After C2 acceptance, implement opaque estate holdings as the independently verifiable SP-04C3 package without importing SP-06 geography, land-grant, taxation, price, or wider economy ownership.
+7. Preserve SP-04C2's sparse personal-wealth accounts, registered atomic transfers, bounded ledger/history, authenticated schema-7-to-8 migration, independent-remediation record, and exact-SHA hosted evidence at `e2d9590afc409da30aef86226a8d90a0023fbda3`.
+8. Implement opaque estate holdings as the independently verifiable SP-04C3 package without importing SP-06 geography, land-grant, taxation, price, or wider economy ownership.
 
-M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A, SP-04B-L, SP-04C0, and SP-04C1 have passing exact-SHA hosted macOS arm64/Windows x64 evidence at their accepted revisions; SP-04C2 is locally implemented, reviewed, and repository-gate verified but awaits exact-SHA hosted evidence. SP-05 remains blocked, and later SP-04 packages remain pending.
+M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A, SP-04B-L, SP-04C0, SP-04C1, and SP-04C2 have passing exact-SHA hosted macOS arm64/Windows x64 evidence at their accepted revisions. SP-05 remains blocked, and later SP-04 packages remain pending.
 
 See the [subsystem plan index](plans/README.md) for dependency status.
