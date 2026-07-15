@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — through SP-04E5 exact-SHA hosted; later packages pending |
+| Status | Active — through SP-04E6 exact-SHA hosted; later packages pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -717,7 +717,7 @@ Independent review's first pass identified incomplete same-day stale-placement, 
 
 Accepted revision `4b28fb74bed9181ce021e1c5e32ef9d039b4e2e1` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04E5-EXACT-SHA-4b28fb7.md). E519 therefore passes at that revision. Full SP-04 acceptance, education, public death, inheritance, succession, and the overall performance gate remain open.
 
-## Local candidate: SP-04E6 primary-guardian education attainment
+## Accepted package: SP-04E6 primary-guardian education attainment
 
 SP-04E6 is the smallest dependency-safe education package after accepted E5. It adds one source-backed ability attainment under an exact active primary guardianship. The reserved-system Commands-phase `complete_primary_guardian_education.v1` action names the ward, exact primary-guardianship record, and one ability; the active guardian is derived as the teacher. Success emits `primary_guardian_education_completed.v1` and appends one immutable version-1 `CharacterEducationAttainment` to the ward. The record retains stable attainment, ward, teacher, guardianship, ability, date/turn, source-command, and source-event identities.
 
@@ -757,12 +757,14 @@ E6 adds no enrollment, curriculum, time progress, scheduler, RNG, ability levels
 | E616 | Every unrelated subsystem and random stream remains unchanged | Complete subsystem comparisons | Local pass |
 | E617 | A representative 1,000-character fixture records workflow/query/checksum/JSON/gzip measurements without a brittle threshold | Raw local Apple Silicon measurement | Local pass; no threshold |
 | E618 | Focused suites, repository gates, diff/LFS checks, and independent review find no blocker | Local gates and read-only review | Local pass |
-| E619 | The accepted exact SHA passes hosted macOS arm64 and Windows x64 | Clean-checkout hosted CI and artifact evidence | Pending |
+| E619 | The accepted exact SHA passes hosted macOS arm64 and Windows x64 | Clean-checkout hosted CI and artifact evidence | Hosted pass at `0928e44` |
 | E620 | E6 introduces none of its enumerated non-goals | Diff, dependency, content, and architecture review | Local pass |
 
 The representative local Release fixture contains 1,000 characters and resolves one exact education attainment. A raw Apple Silicon run measured 120.422 ms for submission/resolution, 2.603 ms for the complete profile query, and 118.541 ms for snapshot/checksum; snapshot JSON was 928,858 bytes, gzip was 17,995 bytes, and checksum was `2630b10d6dd1c7c2f058e8829769d8ae4cb5b15c89219dcfaed7cdfc632c8708`. The test asserts shape and correctness, not a wall-clock threshold. This component observation does not establish the full SP-04 three-second campaign-turn budget.
 
-Local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 758 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. `git diff --check` and `git lfs fsck` pass. The final independent review reran the 43-test CharacterEducation/schema-19 slice and the full 758-test Core suite, and found no remaining correctness, compatibility, documentation, or package-boundary blocker. These are working-tree results, not exact-SHA or hosted evidence. E619, full SP-04 acceptance, public death, inheritance, succession, and the overall performance gate remain open.
+Local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 758 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. `git diff --check` and `git lfs fsck` pass. The final independent review reran the 43-test CharacterEducation/schema-19 slice and the full 758-test Core suite, and found no remaining correctness, compatibility, documentation, or package-boundary blocker.
+
+Accepted revision `0928e4484ef41da5ac31f5683af5347800a92dec` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04E6-EXACT-SHA-0928e44.md). E619 therefore passes at that revision. Full SP-04 acceptance, public death, inheritance, succession, and the overall performance gate remain open.
 
 ## Edge cases and failure handling
 
