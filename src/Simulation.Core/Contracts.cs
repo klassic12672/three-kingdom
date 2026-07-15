@@ -198,4 +198,7 @@ public sealed record WorldSnapshot(
 
     public CharacterEstateHoldingWorldSnapshot CharacterEstateHoldings { get; init; } =
         CharacterEstateHoldingWorldSnapshot.Empty;
+
+    public CharacterMarriageWorldSnapshot CharacterMarriages { get; init; } =
+        CharacterMarriageWorldSnapshot.Empty;
 }

@@ -28,6 +28,7 @@ public sealed class SaveSchemaRegistry
             new SaveMigrationV6ToV7(),
             new SaveMigrationV7ToV8(),
             new SaveMigrationV8ToV9(),
+            new SaveMigrationV9ToV10(),
         ]).ToArray();
         if (registered.Any(item => item.ToSchemaVersion != item.FromSchemaVersion + 1))
         {
@@ -97,7 +98,7 @@ public sealed class SaveSchemaRegistry
 
     internal static void ValidateHistoricalSourceChecksum(JsonObject source, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 8)
+        if (schemaVersion is < 1 or > 9)
         {
             throw new SaveCompatibilityException($"Save schema {schemaVersion} has no historical checksum contract.");
         }
@@ -162,13 +163,42 @@ public sealed class SaveSchemaRegistry
             schemaVersion,
             "snapshot.systemVersions");
 
-        if (snapshot.ContainsKey("characterEstateHoldings")
+        if (snapshot.ContainsKey("characterMarriages")
             || systemVersions.Any(version => IsSystemId(
                 version,
-                CharacterEstateHoldingSystem.SystemId)))
+                CharacterMarriageSystem.SystemId)))
+        {
+            throw new SaveCompatibilityException(
+                $"Schema {schemaVersion} unexpectedly contains schema 10 character-marriage data.");
+        }
+
+        if (schemaVersion < 9
+            && (snapshot.ContainsKey("characterEstateHoldings")
+            || systemVersions.Any(version => IsSystemId(
+                    version,
+                    CharacterEstateHoldingSystem.SystemId))))
         {
             throw new SaveCompatibilityException(
                 $"Schema {schemaVersion} unexpectedly contains schema 9 character-estate-holding data.");
+        }
+
+        if (schemaVersion == 9)
+        {
+            ValidateCharacterEstateHoldingSnapshotShape(
+                RequireHistoricalObject(
+                    snapshot,
+                    "characterEstateHoldings",
+                    schemaVersion,
+                    "snapshot.characterEstateHoldings"),
+                "Save schema 9");
+            if (!systemVersions.Any(version => IsSystemVersion(
+                    version,
+                    CharacterEstateHoldingSystem.SystemId,
+                    CharacterEstateHoldingSystem.Version)))
+            {
+                throw new SaveCompatibilityException(
+                    $"Save schema 9 is missing required '{CharacterEstateHoldingSystem.SystemId}@{CharacterEstateHoldingSystem.Version}' system-version data.");
+            }
         }
 
         if (schemaVersion < 8
@@ -181,7 +211,7 @@ public sealed class SaveSchemaRegistry
                 $"Schema {schemaVersion} unexpectedly contains schema 8 character-resource data.");
         }
 
-        if (schemaVersion == 8)
+        if (schemaVersion >= 8)
         {
             ValidateCharacterResourceSnapshotShape(
                 RequireHistoricalObject(
@@ -196,7 +226,7 @@ public sealed class SaveSchemaRegistry
                     CharacterResourceSystem.Version)))
             {
                 throw new SaveCompatibilityException(
-                    $"Save schema 8 is missing required '{CharacterResourceSystem.SystemId}@{CharacterResourceSystem.Version}' system-version data.");
+                    $"Save schema {schemaVersion} is missing required '{CharacterResourceSystem.SystemId}@{CharacterResourceSystem.Version}' system-version data.");
             }
         }
 
@@ -463,10 +493,11 @@ public sealed class SaveSchemaRegistry
             || snapshot["relationships"] is not JsonObject relationships
             || snapshot["careers"] is not JsonObject careers
             || snapshot["characterResources"] is not JsonObject characterResources
-            || snapshot["characterEstateHoldings"] is not JsonObject characterEstateHoldings)
+            || snapshot["characterEstateHoldings"] is not JsonObject characterEstateHoldings
+            || snapshot["characterMarriages"] is not JsonObject characterMarriages)
         {
             throw new SaveCompatibilityException(
-                "Current save schema is missing required character, relationship, career, character-resource, or character-estate-holding snapshot data.");
+                "Current save schema is missing required character, relationship, career, character-resource, character-estate-holding, or character-marriage snapshot data.");
         }
 
         string[] requiredSnapshotArrays =
@@ -499,6 +530,7 @@ public sealed class SaveSchemaRegistry
         ValidateCharacterEstateHoldingSnapshotShape(
             characterEstateHoldings,
             "Current save schema");
+        ValidateCharacterMarriageSnapshotShape(characterMarriages, "Current save schema");
 
         if (snapshot["systemVersions"] is not JsonArray systemVersions
             || !systemVersions.Any(IsCurrentCharacterSystemVersion))
@@ -529,6 +561,12 @@ public sealed class SaveSchemaRegistry
         {
             throw new SaveCompatibilityException(
                 $"Current save schema is missing required '{CharacterEstateHoldingSystem.SystemId}@{CharacterEstateHoldingSystem.Version}' system-version data.");
+        }
+
+        if (!systemVersions.Any(IsCurrentCharacterMarriageSystemVersion))
+        {
+            throw new SaveCompatibilityException(
+                $"Current save schema is missing required '{CharacterMarriageSystem.SystemId}@{CharacterMarriageSystem.Version}' system-version data.");
         }
     }
 
@@ -1004,6 +1042,155 @@ public sealed class SaveSchemaRegistry
         }
     }
 
+    private static void ValidateCharacterMarriageSnapshotShape(
+        JsonObject characterMarriages,
+        string context)
+    {
+        string[] requiredArrays =
+        [
+            "practices",
+            "proposals",
+            "betrothals",
+            "unions",
+            "romanceRoutes",
+            "history",
+        ];
+        if (characterMarriages["contractVersion"]?.GetValue<int>()
+                != CharacterMarriageContractVersions.Snapshot
+            || requiredArrays.Any(property => characterMarriages[property] is not JsonArray))
+        {
+            throw MalformedCharacterMarriageData(context, "snapshot fields");
+        }
+
+        foreach (JsonNode? node in characterMarriages["practices"]!.AsArray())
+        {
+            if (node is not JsonObject practice
+                || !HasVersion(practice, CharacterMarriageContractVersions.Practice)
+                || !HasObject(practice, "practiceId")
+                || !HasInt(practice, "minimumLegalUnionAge")
+                || !HasInt(practice, "minimumRomanceAge")
+                || !HasInt(practice, "maximumActivePrincipalSpousesPerCharacter")
+                || !HasInt(practice, "maximumActiveConcubinageUnionsPerPrincipal")
+                || !HasInt(practice, "maximumActiveConcubinageUnionsPerPartner")
+                || !HasBoolean(practice, "allowsPoliticalBetrothalBeforeLegalAge")
+                || !HasBoolean(practice, "allowsWidowRemarriage")
+                || !HasInt(practice, "prohibitedKinship"))
+            {
+                throw MalformedCharacterMarriageData(context, "practice");
+            }
+        }
+
+        foreach (JsonNode? node in characterMarriages["proposals"]!.AsArray())
+        {
+            if (node is not JsonObject proposal
+                || !HasVersion(proposal, CharacterMarriageContractVersions.State)
+                || !HasObject(proposal, "proposalId")
+                || !HasInt(proposal, "kind")
+                || !HasInt(proposal, "basis")
+                || !HasInt(proposal, "proposedForm")
+                || !HasInt(proposal, "consentKind")
+                || !HasObject(proposal, "proposerCharacterId")
+                || !HasObject(proposal, "recipientCharacterId")
+                || !HasNullableObject(proposal, "concubinagePrincipalCharacterId")
+                || !HasObject(proposal, "practiceId")
+                || !HasObject(proposal, "createdDate")
+                || !HasLong(proposal, "createdTurnIndex")
+                || !HasObject(proposal, "sourceCommandId")
+                || !HasInt(proposal, "status")
+                || !HasNullableObject(proposal, "resolutionDate")
+                || !HasNullableLong(proposal, "resolutionTurnIndex")
+                || !HasNullableObject(proposal, "resolutionCommandId"))
+            {
+                throw MalformedCharacterMarriageData(context, "proposal");
+            }
+        }
+
+        foreach (JsonNode? node in characterMarriages["betrothals"]!.AsArray())
+        {
+            if (node is not JsonObject betrothal
+                || !HasVersion(betrothal, CharacterMarriageContractVersions.State)
+                || !HasObject(betrothal, "betrothalId")
+                || !HasObject(betrothal, "firstCharacterId")
+                || !HasObject(betrothal, "secondCharacterId")
+                || !HasInt(betrothal, "intendedForm")
+                || !HasNullableObject(betrothal, "concubinagePrincipalCharacterId")
+                || !HasObject(betrothal, "practiceId")
+                || !HasObject(betrothal, "sourceProposalId")
+                || !HasObject(betrothal, "startDate")
+                || !HasLong(betrothal, "startTurnIndex")
+                || !HasInt(betrothal, "status")
+                || !HasNullableObject(betrothal, "fulfillmentUnionId")
+                || !HasNullableObject(betrothal, "resolutionDate")
+                || !HasNullableLong(betrothal, "resolutionTurnIndex")
+                || !HasNullableObject(betrothal, "resolutionCommandId"))
+            {
+                throw MalformedCharacterMarriageData(context, "political-betrothal record");
+            }
+        }
+
+        foreach (JsonNode? node in characterMarriages["unions"]!.AsArray())
+        {
+            if (node is not JsonObject union
+                || !HasVersion(union, CharacterMarriageContractVersions.State)
+                || !HasObject(union, "unionId")
+                || !HasObject(union, "firstCharacterId")
+                || !HasObject(union, "secondCharacterId")
+                || !HasInt(union, "form")
+                || !HasNullableObject(union, "concubinagePrincipalCharacterId")
+                || !HasInt(union, "basis")
+                || !HasInt(union, "consentKind")
+                || !HasObject(union, "practiceId")
+                || !HasObject(union, "sourceProposalId")
+                || !HasObject(union, "startDate")
+                || !HasLong(union, "startTurnIndex")
+                || !HasInt(union, "status")
+                || !HasNullableObject(union, "endDate")
+                || !HasNullableLong(union, "endTurnIndex")
+                || !HasNullableObject(union, "endCommandId")
+                || !HasNullableInt(union, "endReason"))
+            {
+                throw MalformedCharacterMarriageData(context, "legal-union record");
+            }
+        }
+
+        foreach (JsonNode? node in characterMarriages["romanceRoutes"]!.AsArray())
+        {
+            if (node is not JsonObject route
+                || !HasVersion(route, CharacterMarriageContractVersions.State)
+                || !HasObject(route, "routeId")
+                || !HasObject(route, "firstCharacterId")
+                || !HasObject(route, "secondCharacterId")
+                || !HasObject(route, "practiceId")
+                || !HasInt(route, "progressLevel")
+                || !HasObject(route, "startDate")
+                || !HasLong(route, "startTurnIndex")
+                || !HasObject(route, "sourceCommandId")
+                || !HasInt(route, "status")
+                || !HasNullableObject(route, "resolutionDate")
+                || !HasNullableLong(route, "resolutionTurnIndex")
+                || !HasNullableObject(route, "resolutionCommandId"))
+            {
+                throw MalformedCharacterMarriageData(context, "romance-route record");
+            }
+        }
+
+        foreach (JsonNode? node in characterMarriages["history"]!.AsArray())
+        {
+            if (node is not JsonObject history
+                || !HasVersion(history, CharacterMarriageContractVersions.State)
+                || !HasObject(history, "characterId")
+                || !HasLong(history, "foldedProposalCount")
+                || !HasLong(history, "foldedBetrothalCount")
+                || !HasLong(history, "foldedUnionCount")
+                || !HasLong(history, "foldedRomanceRouteCount")
+                || !HasNullableObject(history, "earliestDate")
+                || !HasNullableObject(history, "latestDate"))
+            {
+                throw MalformedCharacterMarriageData(context, "history aggregate");
+            }
+        }
+    }
+
     private static bool HasVersion(JsonObject value, int expected) =>
         value["contractVersion"] is JsonValue version
         && version.TryGetValue(out int actual)
@@ -1012,14 +1199,38 @@ public sealed class SaveSchemaRegistry
     private static bool HasLong(JsonObject value, string property) =>
         value[property] is JsonValue number && number.TryGetValue(out long _);
 
+    private static bool HasInt(JsonObject value, string property) =>
+        value[property] is JsonValue number && number.TryGetValue(out int _);
+
+    private static bool HasBoolean(JsonObject value, string property) =>
+        value[property] is JsonValue boolean && boolean.TryGetValue(out bool _);
+
+    private static bool HasObject(JsonObject value, string property) =>
+        value[property] is JsonObject;
+
     private static bool HasNullableObject(JsonObject value, string property) =>
         value.ContainsKey(property)
         && (value[property] is null || value[property] is JsonObject);
+
+    private static bool HasNullableLong(JsonObject value, string property) =>
+        value.ContainsKey(property)
+        && (value[property] is null
+            || value[property] is JsonValue number && number.TryGetValue(out long _));
+
+    private static bool HasNullableInt(JsonObject value, string property) =>
+        value.ContainsKey(property)
+        && (value[property] is null
+            || value[property] is JsonValue number && number.TryGetValue(out int _));
 
     private static SaveCompatibilityException MalformedCharacterResourceData(
         string context,
         string description) =>
         new($"{context} contains missing, null, or malformed required {description} data.");
+
+    private static SaveCompatibilityException MalformedCharacterMarriageData(
+        string context,
+        string description) =>
+        new($"{context} contains missing, null, or malformed required character-marriage {description} data.");
 
     internal static void UpgradeLegacyRelationshipSnapshot(JsonObject relationships)
     {
@@ -1188,6 +1399,13 @@ public sealed class SaveSchemaRegistry
             systemVersion,
             CharacterEstateHoldingSystem.SystemId,
             CharacterEstateHoldingSystem.Version);
+
+    private static bool IsCurrentCharacterMarriageSystemVersion(JsonNode? node) =>
+        node is JsonObject systemVersion
+        && IsSystemVersion(
+            systemVersion,
+            CharacterMarriageSystem.SystemId,
+            CharacterMarriageSystem.Version);
 
     private static bool IsSystemVersion(JsonObject systemVersion, string systemId, int expectedVersion) =>
         IsSystemId(systemVersion, systemId)
@@ -1639,6 +1857,51 @@ public sealed class SaveMigrationV8ToV9 : ISaveMigration
         WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(
             SimulationJson.CreateOptions())
             ?? throw new SaveCompatibilityException("Migrated schema 9 snapshot is empty.");
+        source["checksum"] = SimulationChecksum.ComputeForSaveSchema(
+            migratedSnapshot,
+            ToSchemaVersion).Value;
+        source["schemaVersion"] = ToSchemaVersion;
+        return source;
+    }
+}
+
+public sealed class SaveMigrationV9ToV10 : ISaveMigration
+{
+    public int FromSchemaVersion => 9;
+
+    public int ToSchemaVersion => 10;
+
+    public JsonObject Migrate(JsonObject source)
+    {
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(source, FromSchemaVersion);
+        if (source["snapshot"] is not JsonObject snapshot
+            || snapshot["systemVersions"] is not JsonArray systemVersions)
+        {
+            throw new SaveCompatibilityException(
+                "Schema 9 save is missing snapshot or system-version data.");
+        }
+
+        if (snapshot.ContainsKey("characterMarriages")
+            || systemVersions.Any(node =>
+                node?["systemId"]?.GetValue<string>()
+                    == CharacterMarriageSystem.SystemId))
+        {
+            throw new SaveCompatibilityException(
+                "Schema 9 unexpectedly contains schema 10 character-marriage data.");
+        }
+
+        snapshot["characterMarriages"] = JsonSerializer.SerializeToNode(
+            CharacterMarriageWorldSnapshot.Empty,
+            SimulationJson.CreateOptions());
+        systemVersions.Add(new JsonObject
+        {
+            ["systemId"] = CharacterMarriageSystem.SystemId,
+            ["version"] = CharacterMarriageSystem.Version,
+        });
+
+        WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(
+            SimulationJson.CreateOptions())
+            ?? throw new SaveCompatibilityException("Migrated schema 10 snapshot is empty.");
         source["checksum"] = SimulationChecksum.Compute(migratedSnapshot).Value;
         source["schemaVersion"] = ToSchemaVersion;
         return source;

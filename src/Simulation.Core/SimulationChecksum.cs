@@ -18,7 +18,7 @@ public readonly record struct SimulationChecksum(string Value)
 
     internal static SimulationChecksum ComputeForSaveSchema(WorldSnapshot snapshot, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 8)
+        if (schemaVersion is < 1 or > 9)
         {
             throw new ArgumentOutOfRangeException(nameof(schemaVersion));
         }
@@ -28,9 +28,15 @@ public readonly record struct SimulationChecksum(string Value)
         // schemas 1-2 predate geography. Schemas 4-5 used character contract v1,
         // schemas 5-6 used relationship contract v1, and all historical schemas
         // schemas 1-6 predate the separate career world, schemas 1-7 predate
-        // character resources, and all historical schemas predate the separate
-        // character-estate-holding world.
-        canonical.Remove("characterEstateHoldings");
+        // character resources, schemas 1-8 predate the separate
+        // character-estate-holding world, and all historical schemas predate
+        // the separate character-marriage world.
+        canonical.Remove("characterMarriages");
+        if (schemaVersion < 9)
+        {
+            canonical.Remove("characterEstateHoldings");
+        }
+
         if (schemaVersion < 8)
         {
             canonical.Remove("characterResources");
@@ -174,9 +180,16 @@ public readonly record struct SimulationChecksum(string Value)
             {
                 versions.RemoveAt(index);
             }
-            else if (StringComparer.Ordinal.Equals(
+            else if (schemaVersion < 9
+                && StringComparer.Ordinal.Equals(
                 systemId,
                 CharacterEstateHoldingSystem.SystemId))
+            {
+                versions.RemoveAt(index);
+            }
+            else if (StringComparer.Ordinal.Equals(
+                systemId,
+                CharacterMarriageSystem.SystemId))
             {
                 versions.RemoveAt(index);
             }
@@ -203,6 +216,7 @@ public readonly record struct SimulationChecksum(string Value)
         Careers = snapshot.Careers.Canonicalize(),
         CharacterResources = snapshot.CharacterResources.Canonicalize(),
         CharacterEstateHoldings = snapshot.CharacterEstateHoldings.Canonicalize(),
+        CharacterMarriages = snapshot.CharacterMarriages.Canonicalize(),
     };
 
     private static RelationshipWorldSnapshot CanonicalizeRelationships(RelationshipWorldSnapshot snapshot) =>

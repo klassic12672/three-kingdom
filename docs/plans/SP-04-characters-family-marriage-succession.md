@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2/SP-04C3 exact-SHA hosted verified; later packages pending |
+| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2/SP-04C3 exact-SHA hosted verified; SP-04D0 locally verified/hosted pending; later packages pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -302,6 +302,51 @@ Local integrated verification on 2026-07-15 used Darwin arm64, .NET SDK 10.0.301
 Accepted revision `7b9f795320e5f4c14aa7e14185e7ba035fdf6847` subsequently passed hosted macOS arm64 and Windows x64 validation, two complete 312/71/6/18 suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and static artifact verification. See the [SP-04C3 exact-SHA report](../evidence/SP-04C3-EXACT-SHA-7b9f795.md). Physical Windows remains an M4 gate, signing/Steam remain SP-15 gates, and the full SP-04 three-second budget remains unmet.
 
 Physical/economic estate records, geography, production, taxation, grants, marriage/romance, lifecycle mutation, inheritance/succession resolution, content, UI, battle, and AI remain deferred. Every full SP-04 acceptance criterion below remains unchecked, the full three-second budget remains unmet, and SP-05 remains blocked.
+
+## Active package: SP-04D0 immutable marriage foundation
+
+SP-04D0 is the state/query/persistence foundation for workstream 4. Dependencies through accepted SP-04C3 revision `7b9f795320e5f4c14aa7e14185e7ba035fdf6847` are satisfied. The boundary preserves pure deterministic .NET, stable namespaced identity, inward dependencies, forward-only persistence, the existing non-explicit-content rule, and `CharacterWorldSnapshot.HouseholdStates` as the sole household residence authority; no ADR is required.
+
+`CharacterMarriageWorldState` is a version-1, default-empty subsystem registered as `simulation.character_marriages@1`. Versioned state covers explicit practices, proposals, political betrothals, legal unions, adult non-explicit romance routes, and checked folded history. Practices explicitly configure legal/romance minimum ages, principal-spouse and concubinage limits, political betrothal before legal age, widow remarriage, and prohibited direct-line/sibling kinship. No rule is inferred from culture, family, or household identity.
+
+Legal unions and romance routes are adult-only. Configured minimum ages are bounded from 18 through 100, and exact birthday-day age calculation is authoritative. Minors may enter only political betrothal state when the selected practice explicitly permits it; betrothal is always political arrangement and never romance. Voluntary paths require life, capacity, and freedom from custody. Coercive classification remains political, never romantic, and produces no D0 relationship effect or scene. Active established unions remain valid across later incapacity/custody until an explicit later-package end.
+
+Persisted IDs, versions, enums, pairs, dates, turns, terminal data, participant/practice references, kinship, roles, and source links are validated before exposure. Every accepted proposal owns exactly one correctly typed outcome; nonaccepted proposals own none. Proposal and romance-route creation commands are unique. Fulfilled betrothals identify one unique exact political-arrangement union and agree with its proposal resolution command/date/turn. All retained turn coordinates are bounded by the authoritative `CampaignCalendar`, and folded history cannot predate its owner.
+
+Eligibility and construction share duplicate-pair, configured form, and global active-legal-relationship constraints. Bounds are 8 active proposals per recipient, 64 active unions plus political betrothals per character, and 64 retained records per category and involved character. Practice caps are themselves bounded to 8 principal spouses and 64 concubinage relationships. Canonical global and per-character queries and captured snapshots are defensive.
+
+D0 registers no command, event, runtime mutator, household membership, household movement, guardianship or authority inference, proposal progression, romance progression, relationship consequence, lifecycle behavior, succession behavior, faction/court/diplomacy integration, content, localization, scene, UI, AI, or platform code. SP-04D1 owns political marriage workflow; D2 owns adult non-explicit romance progression; D3 owns household decisions, conflict, and coercion effects.
+
+Save schema 10 requires complete marriage state and `simulation.character_marriages@1`. The 320,019-byte literal schema-9 fixture retains the complete pre-D0 world, one nonempty estate holding, and 65 command/event diagnostics. Its stored historical checksum is `1ef0f8728311ab217e84d9e6ff432342a7bac85b74aae6eee2cf92159d541684`, and its file SHA-256 is `ab0df6f7740af51bc4eed7d73d97fd5dba38ea273db738c511a289e6bea084ce`. A detached test against the exact accepted C3 binary independently reproduced that checksum. The authenticated 9→10 migration rejects injected future marriage state/system data, adds only the empty marriage snapshot and system registration, computes the current checksum, and preserves the complete source and source bytes. Current raw-shape and semantic-corruption tests cover source-byte preservation; the complete 1→10 chain remains forward-only, with the existing schema-1/2 field-compatibility limitation unchanged.
+
+### SP-04D0 verification matrix
+
+| ID | Observable package criterion | Required evidence | Closeout classification |
+|---|---|---|---|
+| D001 | M2/SP-04 are Active; dependencies through accepted C3 are satisfied; D0 remains an immutable foundation and requires no ADR | Source-of-truth and architecture review | Local pass |
+| D002 | Version-1 practice/proposal/betrothal/union/romance/history/snapshot/query contracts are explicit, default-empty, canonical, and defensive | Contract/API and focused tests | Local pass |
+| D003 | Legal unions and romance are adult-only on exact birthday boundaries; minors enter only explicitly enabled political betrothal state | Age-boundary, minor-state, and practice-policy tests | Local pass |
+| D004 | Voluntary eligibility observes life/capacity/custody; coercion remains political and never creates positive romance classification | Condition matrix, coercion, and reflection tests | Local pass; effects deferred to D3 |
+| D005 | Accepted proposals own exactly one typed outcome, other statuses own none, and proposal/romance creation commands cannot be reused | Cross-record causal and duplicate-source tests | Local pass |
+| D006 | A fulfilled betrothal identifies one unique exact political-arrangement union and common fulfillment resolution | Fulfillment-link, mismatch, missing, and wrong-command tests | Local pass |
+| D007 | All retained dates/turns are coherent and bounded by the authoritative calendar; folded history cannot predate the character | Future-coordinate, ordering, birth, and terminal-state tests | Local pass |
+| D008 | Eligibility applies the same duplicate, global legal-relationship, and configured union-form limits that state construction enforces | 64-bound, form-limit, duplicate-pair, and category tests | Local pass |
+| D009 | Exact active/detail bounds, canonical pairs/order, stable IDs, checksum sensitivity, and defensive query/snapshot copies hold | Boundary, shuffle, checksum, invalid-ID, and copy tests | Local pass |
+| D010 | Existing character household state remains the sole residence authority; no duplicate household state or inferred practice enters D0 | API/reflection and architecture review | Local pass |
+| D011 | D0 exposes no command/event/public mutator or runtime workflow and imports no later lifecycle/succession/faction/content/UI/platform behavior | Complete diff, dependency, and reflection review | Local pass |
+| D012 | Schema 10 requires complete marriage state and exact system registration; nonempty save/load/restore/checksum and semantic corruption are covered | Current raw-shape, round-trip, corruption, and source-byte tests | Local pass |
+| D013 | Literal nonempty exact-C3 schema 9 authenticates before migration; 9→10 and 1→10 preserve prior state/diagnostics/source bytes and reject future data | Frozen fixture, exact-C3 binary check, migration, injection, and recovery tests | Local pass; schema-1/2 field compatibility remains unverified |
+| D014 | Every marriage record category and consent affects the checksum; shuffled input is invariant; the ten-year golden is updated | Field-sensitivity, canonicalization, and soak tests | Local pass |
+| D015 | A 1,000-character fixture records bounded construction/query/snapshot/checksum behavior without a brittle threshold | Raw local Apple Silicon macOS measurement | Local macOS pass; full three-second SP-04 budget remains unmet/unproven |
+| D016 | Repository validation, complete Release tests, touched-file formatting, diff, and LFS gates pass | Local repository gates | Local pass |
+| D017 | Independent adversarial re-review finds no remaining correctness or boundary blocker | Read-only review and focused rerun | Local pass after remediation |
+| D018 | The same accepted revision passes deterministic validation and complete suites on hosted macOS arm64 and Windows x64 | Exact-SHA clean-checkout hosted evidence | Pending |
+
+Local integrated verification on 2026-07-15 used Darwin 25.5.0 arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retained 1,295 records and 2,820 translations with registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` built with zero warnings and passed 374 Simulation.Core, 71 Game.Content, 6 Game.Application, and 18 repository tests. The focused marriage/save slice passed 200 tests. The ten-year/1,000-entity checksum is `0a92aa6dec435a9b33a399898ed7985210d7142dc10027b23a0bc4e392666b36`. Touched-file formatting, `git diff --check`, and `git lfs fsck` passed.
+
+Independent adversarial verification initially found missing proposal/outcome bijection and betrothal fulfillment identity, unbounded future turns, eligibility/state limit mismatches, pre-birth history, and incomplete semantic-save/fixture/checksum evidence. The corrected tree adds the exact causal links and calendar bounds, aligns all legal-relationship eligibility categories, rejects impossible history, authenticates nonempty C3 estate state, and expands current-save and checksum coverage. Final review then corrected the practice-minimum age for coercive unions and prohibited coercive command reuse only for positive romance creation/completion while allowing the same command to end or invalidate a route. Release-focused re-review passed 38/38 marriage tests and found no remaining D0 correctness or boundary blocker.
+
+The final local Release performance fixture contains 1,000 characters, 250 active proposals, and 250 active adult romance routes. Construction measured 38.405 ms, 1,000 aggregate record queries measured 67.561 ms, and snapshot plus full-world checksum measured 191.298 ms; checksum `6542e48b7ccdceee890fc757fd9104c6b4f73164ef4263b7b451947766777e06`. The test asserts shape and correctness, not a wall-clock threshold. These working-tree results are not exact-SHA, hosted, cross-platform, physical-Windows, signing, Steam, release, or full-turn performance evidence. D018 remains pending; every full SP-04 acceptance criterion remains unchecked and SP-05 remains blocked.
 
 ## Edge cases and failure handling
 

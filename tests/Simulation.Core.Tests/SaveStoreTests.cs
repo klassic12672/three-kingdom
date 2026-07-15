@@ -16,6 +16,7 @@ public sealed class SaveStoreTests : IDisposable
     private const string FrozenSchemaSixChecksum = "90c27f2dd9954e0d3d2a304e9b661bf1ef25f2e4f620743d78bc60382d780bd4";
     private const string FrozenSchemaSevenChecksum = "0c9033c2a0e145a73218aa234f3725878fc7b781b9e6a8e83adad74b10b79d72";
     private const string FrozenSchemaEightChecksum = "ba485b0efc67e7cff38cf6de4b4536dbda2191ee87f5577ff1ee2d1d0031424f";
+    private const string FrozenSchemaNineChecksum = "1ef0f8728311ab217e84d9e6ff432342a7bac85b74aae6eee2cf92159d541684";
     // Reconstructed literally from the exact schema-4 serializer contract at eaa3aaf.
     // Unlike the inferred schema-1/2 fixtures, this contains nonempty character history.
     private const string FrozenSchemaFourFixture = """{"schemaVersion":4,"contractVersion":2,"gameVersion":"0.1.0","createdUtc":"2026-07-15T00:00:00+00:00","contentManifests":[{"packId":{"value":"base:synthetic"},"version":"1.0.0","checksum":"sha256:abc","requiredForSimulation":true}],"seed":99,"snapshot":{"contractVersion":1,"calendar":{"date":{"year":191,"month":7,"day":14},"turnIndex":0,"daysInCurrentTurn":3},"rootSeed":99,"randomStreams":[],"entities":[],"pendingCommands":[],"systemVersions":[{"systemId":"simulation.calendar","version":1},{"systemId":"simulation.synthetic_entities","version":1},{"systemId":"simulation.command_events","version":1},{"systemId":"simulation.geography","version":1},{"systemId":"simulation.characters","version":1}],"lastEventDate":null,"lastEventPhase":null,"lastEventPriority":null,"lastEventId":null,"geography":{"graph":{"regions":[],"districts":[],"localities":[],"stops":[],"routes":[]},"season":0,"weather":0,"locations":[],"routes":[],"armies":[]},"characters":{"contractVersion":1,"identityDefinitions":[{"contractVersion":1,"id":{"value":"ability:synthetic/command"},"kind":0,"nameKey":{"value":"loc:ability/synthetic_command"}}],"characterDefinitions":[{"contractVersion":1,"id":{"value":"character:synthetic/adult"},"nameKey":{"value":"loc:character/synthetic_adult"},"birthDate":{"year":160,"month":1,"day":1},"abilityIds":[{"value":"ability:synthetic/command"}],"aptitudeIds":[],"traitIds":[],"ambitionIds":[],"reputationIds":[]}],"familyDefinitions":[],"householdDefinitions":[],"characterStates":[{"contractVersion":1,"characterId":{"value":"character:synthetic/adult"},"parentIds":[]}],"familyStates":[],"householdStates":[]}},"diagnosticCommands":[],"diagnosticEvents":[],"checksum":"48b94dad9d4dda78591243341afa16ece40e0ed157368f84c1189641684ecd3e"}""";
@@ -44,7 +45,7 @@ public sealed class SaveStoreTests : IDisposable
     }
 
     [Fact]
-    public void SchemaNine_RoundTripsNonemptyCharacterResourcesAndDiagnostics()
+    public void SchemaTen_RoundTripsNonemptyCharacterResourcesAndDiagnostics()
     {
         CampaignSimulation simulation = CreateCharacterResourceSimulation();
         EntityId child = new("character:synthetic/child");
@@ -77,7 +78,7 @@ public sealed class SaveStoreTests : IDisposable
     }
 
     [Fact]
-    public void SchemaNine_SaveLoad_RoundTripsCharacterRelationshipCareerAndResourceState()
+    public void SchemaTen_SaveLoad_RoundTripsCharacterRelationshipCareerAndResourceState()
     {
         SaveEnvelope expected = CreateEnvelope(CreateCharacterSimulation());
         string path = Path.Combine(directory, "characters.save.gz");
@@ -94,6 +95,7 @@ public sealed class SaveStoreTests : IDisposable
         Assert.Empty(actual.Snapshot.Careers.Proposals);
         Assert.Empty(actual.Snapshot.CharacterResources.Accounts);
         Assert.Empty(actual.Snapshot.CharacterEstateHoldings.Holdings);
+        Assert.Empty(actual.Snapshot.CharacterMarriages.Unions);
         Assert.True(WorldState.Restore(actual.Snapshot).Characters.TryGetCharacterProfile(
             new EntityId("character:synthetic/child"),
             out AuthoritativeCharacterProfile? profile));
@@ -101,7 +103,7 @@ public sealed class SaveStoreTests : IDisposable
     }
 
     [Fact]
-    public void SchemaNine_SaveLoad_RoundTripsEstateHeldByDeadCharacter()
+    public void SchemaTen_SaveLoad_RoundTripsEstateHeldByDeadCharacter()
     {
         CampaignSimulation simulation = CreateCharacterEstateHoldingSimulation();
         EntityId parent = new("character:synthetic/parent");
@@ -122,6 +124,30 @@ public sealed class SaveStoreTests : IDisposable
         WorldState restored = WorldState.Restore(actual.Snapshot);
         Assert.True(restored.CharacterEstateHoldings.TryGetHolding(estate, out CharacterEstateHoldingState? restoredHolding));
         Assert.Equal(parent, restoredHolding.OwnerCharacterId);
+        Assert.Equal(expected.Checksum, actual.Checksum);
+    }
+
+    [Fact]
+    public void SchemaTen_SaveLoad_RoundTripsNonemptyCharacterMarriageFoundation()
+    {
+        CampaignSimulation simulation = CreateCharacterMarriageSimulation();
+        SaveEnvelope expected = CreateEnvelope(simulation);
+        string path = Path.Combine(directory, "character-marriages.save.gz");
+
+        new SaveStore().SaveAtomic(path, expected);
+        SaveEnvelope actual = new SaveStore().Load(path, expected.ContentManifests);
+
+        MarriagePracticeState practice = Assert.Single(actual.Snapshot.CharacterMarriages.Practices);
+        MarriageProposalState proposal = Assert.Single(actual.Snapshot.CharacterMarriages.Proposals);
+        MarriageUnionState union = Assert.Single(actual.Snapshot.CharacterMarriages.Unions);
+        Assert.Equal(new EntityId("marriage_practice:synthetic/default"), practice.PracticeId);
+        Assert.Equal(MarriageProposalStatus.Accepted, proposal.Status);
+        Assert.Equal(MarriageUnionStatus.Active, union.Status);
+        Assert.Equal(MarriageBasis.Political, union.Basis);
+        Assert.Empty(actual.Snapshot.CharacterMarriages.RomanceRoutes);
+        WorldState restored = WorldState.Restore(actual.Snapshot);
+        Assert.True(restored.CharacterMarriages.TryGetUnion(union.UnionId, out MarriageUnionState? restoredUnion));
+        Assert.Equal(union, restoredUnion);
         Assert.Equal(expected.Checksum, actual.Checksum);
     }
 
@@ -165,7 +191,13 @@ public sealed class SaveStoreTests : IDisposable
     [InlineData("missing-character-estate-holding-system-version")]
     [InlineData("duplicate-character-estate-holding-system-version")]
     [InlineData("unsupported-character-estate-holding-system-version")]
-    public void SchemaNine_RequiresCompleteCharacterRelationshipCareerResourceAndEstateDataWithoutChangingSource(string mutation)
+    [InlineData("missing-character-marriages")]
+    [InlineData("null-character-marriages")]
+    [InlineData("partial-character-marriages")]
+    [InlineData("missing-character-marriage-system-version")]
+    [InlineData("duplicate-character-marriage-system-version")]
+    [InlineData("unsupported-character-marriage-system-version")]
+    public void SchemaTen_RequiresCompleteCharacterSubsystemDataWithoutChangingSource(string mutation)
     {
         JsonObject current = JsonSerializer.SerializeToNode(
             CreateEnvelope(CreateCharacterSimulation()),
@@ -309,11 +341,37 @@ public sealed class SaveStoreTests : IDisposable
                         == CharacterEstateHoldingSystem.SystemId);
                 estateSystemVersion["version"] = 999;
                 break;
+            case "missing-character-marriages":
+                snapshot.Remove("characterMarriages");
+                break;
+            case "null-character-marriages":
+                snapshot["characterMarriages"] = null;
+                break;
+            case "partial-character-marriages":
+                snapshot["characterMarriages"]!.AsObject().Remove("unions");
+                break;
+            case "missing-character-marriage-system-version":
+                RemoveSystemVersion(snapshot, CharacterMarriageSystem.SystemId);
+                break;
+            case "duplicate-character-marriage-system-version":
+                snapshot["systemVersions"]!.AsArray().Add(new JsonObject
+                {
+                    ["systemId"] = CharacterMarriageSystem.SystemId,
+                    ["version"] = CharacterMarriageSystem.Version,
+                });
+                break;
+            case "unsupported-character-marriage-system-version":
+                JsonObject marriageSystemVersion = snapshot["systemVersions"]!.AsArray()
+                    .OfType<JsonObject>()
+                    .Single(version => version["systemId"]!.GetValue<string>()
+                        == CharacterMarriageSystem.SystemId);
+                marriageSystemVersion["version"] = 999;
+                break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(mutation));
         }
 
-        string path = Path.Combine(directory, $"schema-nine-{mutation}.save.gz");
+        string path = Path.Combine(directory, $"schema-ten-{mutation}.save.gz");
         WriteJsonGzip(path, current);
         byte[] sourceBytes = File.ReadAllBytes(path);
 
@@ -325,7 +383,7 @@ public sealed class SaveStoreTests : IDisposable
     [InlineData("missing-estate-id")]
     [InlineData("missing-owner-character-id")]
     [InlineData("unsupported-contract")]
-    public void SchemaNine_RequiresCompleteEstateEntryShapeWithoutChangingSource(string mutation)
+    public void SchemaTen_RequiresCompleteEstateEntryShapeWithoutChangingSource(string mutation)
     {
         JsonObject current = JsonSerializer.SerializeToNode(
             CreateEnvelope(CreateCharacterEstateHoldingSimulation()),
@@ -346,8 +404,194 @@ public sealed class SaveStoreTests : IDisposable
                 throw new ArgumentOutOfRangeException(nameof(mutation));
         }
 
-        string path = Path.Combine(directory, $"schema-nine-estate-{mutation}.save.gz");
+        string path = Path.Combine(directory, $"schema-ten-estate-{mutation}.save.gz");
         WriteJsonGzip(path, current);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        Assert.Throws<SaveCompatibilityException>(() => new SaveStore().Load(path));
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Theory]
+    [InlineData("practice-null")]
+    [InlineData("practice-missing-id")]
+    [InlineData("proposal-missing-resolution")]
+    [InlineData("betrothal-missing-source")]
+    [InlineData("betrothal-missing-fulfillment-union")]
+    [InlineData("union-missing-consent")]
+    [InlineData("route-missing-practice")]
+    [InlineData("history-missing-count")]
+    public void SchemaTen_RequiresCompleteCharacterMarriageEntryShapesWithoutChangingSource(
+        string mutation)
+    {
+        JsonObject current = JsonSerializer.SerializeToNode(
+            CreateEnvelope(CreateCharacterSimulation()),
+            CanonicalJson.Options)!.AsObject();
+        JsonObject marriages = current["snapshot"]!["characterMarriages"]!.AsObject();
+        CampaignDate date = new(191, 1, 1);
+        EntityId first = new("character:synthetic/child");
+        EntityId second = new("character:synthetic/parent");
+        EntityId practiceId = new("marriage_practice:test/default");
+        JsonObject entry;
+        switch (mutation)
+        {
+            case "practice-null":
+                marriages["practices"]!.AsArray().Add(null);
+                break;
+            case "practice-missing-id":
+                entry = JsonSerializer.SerializeToNode(new MarriagePracticeState(
+                    CharacterMarriageContractVersions.Practice,
+                    practiceId,
+                    18,
+                    18,
+                    1,
+                    8,
+                    1,
+                    true,
+                    true,
+                    MarriageProhibitedKinship.DirectLine | MarriageProhibitedKinship.Siblings),
+                    CanonicalJson.Options)!.AsObject();
+                entry.Remove("practiceId");
+                marriages["practices"]!.AsArray().Add(entry);
+                break;
+            case "proposal-missing-resolution":
+                entry = JsonSerializer.SerializeToNode(new MarriageProposalState(
+                    CharacterMarriageContractVersions.State,
+                    new EntityId("marriage_proposal:test/value"),
+                    MarriageProposalKind.LegalUnion,
+                    MarriageBasis.Political,
+                    MarriageUnionForm.PrincipalSpouse,
+                    MarriageConsentKind.Voluntary,
+                    first,
+                    second,
+                    null,
+                    practiceId,
+                    date,
+                    0,
+                    new EntityId("command:test/proposal"),
+                    MarriageProposalStatus.Active,
+                    null,
+                    null,
+                    null), CanonicalJson.Options)!.AsObject();
+                entry.Remove("resolutionDate");
+                marriages["proposals"]!.AsArray().Add(entry);
+                break;
+            case "betrothal-missing-source":
+            case "betrothal-missing-fulfillment-union":
+                entry = JsonSerializer.SerializeToNode(new PoliticalBetrothalState(
+                    CharacterMarriageContractVersions.State,
+                    new EntityId("political_betrothal:test/value"),
+                    first,
+                    second,
+                    MarriageUnionForm.PrincipalSpouse,
+                    null,
+                    practiceId,
+                    new EntityId("marriage_proposal:test/value"),
+                    date,
+                    0,
+                    PoliticalBetrothalStatus.Active,
+                    null,
+                    null,
+                    null,
+                    null), CanonicalJson.Options)!.AsObject();
+                entry.Remove(mutation == "betrothal-missing-source"
+                    ? "sourceProposalId"
+                    : "fulfillmentUnionId");
+                marriages["betrothals"]!.AsArray().Add(entry);
+                break;
+            case "union-missing-consent":
+                entry = JsonSerializer.SerializeToNode(new MarriageUnionState(
+                    CharacterMarriageContractVersions.State,
+                    new EntityId("marriage_union:test/value"),
+                    first,
+                    second,
+                    MarriageUnionForm.PrincipalSpouse,
+                    null,
+                    MarriageBasis.Political,
+                    MarriageConsentKind.Voluntary,
+                    practiceId,
+                    new EntityId("marriage_proposal:test/value"),
+                    date,
+                    0,
+                    MarriageUnionStatus.Active,
+                    null,
+                    null,
+                    null,
+                    null), CanonicalJson.Options)!.AsObject();
+                entry.Remove("consentKind");
+                marriages["unions"]!.AsArray().Add(entry);
+                break;
+            case "route-missing-practice":
+                entry = JsonSerializer.SerializeToNode(new RomanceRouteState(
+                    CharacterMarriageContractVersions.State,
+                    new EntityId("romance_route:test/value"),
+                    first,
+                    second,
+                    practiceId,
+                    0,
+                    date,
+                    0,
+                    new EntityId("command:test/romance"),
+                    RomanceRouteStatus.Active,
+                    null,
+                    null,
+                    null), CanonicalJson.Options)!.AsObject();
+                entry.Remove("practiceId");
+                marriages["romanceRoutes"]!.AsArray().Add(entry);
+                break;
+            case "history-missing-count":
+                entry = JsonSerializer.SerializeToNode(
+                    CharacterMarriageHistoryAggregate.Empty(first),
+                    CanonicalJson.Options)!.AsObject();
+                entry.Remove("foldedUnionCount");
+                marriages["history"]!.AsArray().Add(entry);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(mutation));
+        }
+
+        string path = Path.Combine(directory, $"schema-ten-marriage-{mutation}.save.gz");
+        WriteJsonGzip(path, current);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        Assert.Throws<SaveCompatibilityException>(() => new SaveStore().Load(path));
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Theory]
+    [InlineData("future-turn")]
+    [InlineData("orphan-accepted-proposal")]
+    [InlineData("duplicate-proposal-outcome")]
+    public void SchemaTen_RejectsSemanticallyInvalidMarriageStateWithoutChangingSource(
+        string mutation)
+    {
+        JsonObject invalid = JsonSerializer.SerializeToNode(
+            CreateEnvelope(CreateCharacterMarriageSimulation()),
+            CanonicalJson.Options)!.AsObject();
+        JsonObject snapshot = invalid["snapshot"]!.AsObject();
+        JsonObject marriages = snapshot["characterMarriages"]!.AsObject();
+        switch (mutation)
+        {
+            case "future-turn":
+                marriages["proposals"]![0]!["createdTurnIndex"] =
+                    snapshot["calendar"]!["turnIndex"]!.GetValue<long>() + 1;
+                break;
+            case "orphan-accepted-proposal":
+                marriages["unions"] = new JsonArray();
+                break;
+            case "duplicate-proposal-outcome":
+                JsonObject duplicate = marriages["unions"]![0]!.DeepClone().AsObject();
+                duplicate["unionId"]!["value"] = "marriage_union:synthetic/duplicate";
+                marriages["unions"]!.AsArray().Add(duplicate);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(mutation));
+        }
+
+        WorldSnapshot invalidSnapshot = snapshot.Deserialize<WorldSnapshot>(CanonicalJson.Options)!;
+        invalid["checksum"] = SimulationChecksum.Compute(invalidSnapshot).Value;
+        string path = Path.Combine(directory, $"schema-ten-marriage-semantic-{mutation}.save.gz");
+        WriteJsonGzip(path, invalid);
         byte[] sourceBytes = File.ReadAllBytes(path);
 
         Assert.Throws<SaveCompatibilityException>(() => new SaveStore().Load(path));
@@ -358,7 +602,7 @@ public sealed class SaveStoreTests : IDisposable
     [InlineData("duplicate-estate")]
     [InlineData("dangling-owner")]
     [InlineData("wrong-estate-namespace")]
-    public void SchemaNine_RejectsSemanticallyInvalidEstateStateWithoutChangingSource(string mutation)
+    public void SchemaTen_RejectsSemanticallyInvalidEstateStateWithoutChangingSource(string mutation)
     {
         JsonObject current = JsonSerializer.SerializeToNode(
             CreateEnvelope(CreateCharacterEstateHoldingSimulation()),
@@ -380,7 +624,7 @@ public sealed class SaveStoreTests : IDisposable
                 throw new ArgumentOutOfRangeException(nameof(mutation));
         }
 
-        string path = Path.Combine(directory, $"schema-nine-estate-semantic-{mutation}.save.gz");
+        string path = Path.Combine(directory, $"schema-ten-estate-semantic-{mutation}.save.gz");
         WriteJsonGzip(path, current);
         byte[] sourceBytes = File.ReadAllBytes(path);
 
@@ -389,7 +633,7 @@ public sealed class SaveStoreTests : IDisposable
     }
 
     [Fact]
-    public void SchemaNine_RejectsImpossibleRelationshipImpactWithoutChangingSource()
+    public void SchemaTen_RejectsImpossibleRelationshipImpactWithoutChangingSource()
     {
         CampaignSimulation simulation = CreateCharacterSimulation();
         CampaignCommand command = CampaignCommand.Create(
@@ -430,7 +674,7 @@ public sealed class SaveStoreTests : IDisposable
     [InlineData("missing-consequence-index")]
     [InlineData("legacy-source-field")]
     [InlineData("unsupported-memory-contract")]
-    public void SchemaNine_RequiresCompleteRelationshipMemoryV2ShapeWithoutChangingSource(
+    public void SchemaTen_RequiresCompleteRelationshipMemoryV2ShapeWithoutChangingSource(
         string mutation)
     {
         CampaignSimulation simulation = CreateCharacterSimulation();
@@ -486,7 +730,7 @@ public sealed class SaveStoreTests : IDisposable
     }
 
     [Fact]
-    public void SchemaNine_RejectsUnsupportedCareerStateWithoutChangingSource()
+    public void SchemaTen_RejectsUnsupportedCareerStateWithoutChangingSource()
     {
         CampaignSimulation simulation = CreateCharacterSimulation();
         CampaignCommand command = CampaignCommand.Create(
@@ -514,7 +758,7 @@ public sealed class SaveStoreTests : IDisposable
     [InlineData("null-account-wealth")]
     [InlineData("missing-ledger-source-event")]
     [InlineData("unsupported-ledger-contract")]
-    public void SchemaNine_RequiresCompleteCharacterResourceEntryShapeWithoutChangingSource(
+    public void SchemaTen_RequiresCompleteCharacterResourceEntryShapeWithoutChangingSource(
         string mutation)
     {
         CampaignSimulation simulation = CreateCharacterResourceSimulation();
@@ -975,9 +1219,11 @@ public sealed class SaveStoreTests : IDisposable
         WorldSnapshot normalizedPreC3 = migrated.Snapshot with
         {
             SystemVersions = migrated.Snapshot.SystemVersions
-                .Where(version => version.SystemId != CharacterEstateHoldingSystem.SystemId)
+                .Where(version => version.SystemId != CharacterEstateHoldingSystem.SystemId
+                    && version.SystemId != CharacterMarriageSystem.SystemId)
                 .ToArray(),
             CharacterEstateHoldings = CharacterEstateHoldingWorldSnapshot.Empty,
+            CharacterMarriages = CharacterMarriageWorldSnapshot.Empty,
         };
 
         Assert.Equal(SaveEnvelope.CurrentSchemaVersion, migrated.SchemaVersion);
@@ -1026,6 +1272,109 @@ public sealed class SaveStoreTests : IDisposable
         Assert.All(migrated.DiagnosticEvents, campaignEvent =>
             Assert.IsType<CharacterResourceActionResolvedEventPayload>(campaignEvent.Payload));
         _ = WorldState.Restore(migrated.Snapshot);
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void SchemaNine_AuthenticatesAndMigratesExactC3StateWithoutChangingSource()
+    {
+        JsonObject frozen = CreateHistoricalFixture(9);
+        Assert.Equal(FrozenSchemaNineChecksum, frozen["checksum"]!.GetValue<string>());
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(frozen, 9);
+        WorldSnapshot historical = frozen["snapshot"]!.Deserialize<WorldSnapshot>(CanonicalJson.Options)!;
+        string historicalCommands = JsonSerializer.Serialize(
+            frozen["diagnosticCommands"],
+            CanonicalJson.Options);
+        string historicalEvents = JsonSerializer.Serialize(
+            frozen["diagnosticEvents"],
+            CanonicalJson.Options);
+        string path = Path.Combine(directory, "schema-nine-history-backed.save.gz");
+        WriteFrozenHistoricalFixture(path, 9);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        SaveEnvelope migrated = new SaveStore().Load(path);
+        WorldSnapshot normalizedPreD0 = migrated.Snapshot with
+        {
+            SystemVersions = migrated.Snapshot.SystemVersions
+                .Where(version => version.SystemId != CharacterMarriageSystem.SystemId)
+                .ToArray(),
+            CharacterMarriages = CharacterMarriageWorldSnapshot.Empty,
+        };
+
+        Assert.Equal(SaveEnvelope.CurrentSchemaVersion, migrated.SchemaVersion);
+        Assert.Equal(frozen["contractVersion"]!.GetValue<int>(), migrated.ContractVersion);
+        Assert.Equal(frozen["gameVersion"]!.GetValue<string>(), migrated.GameVersion);
+        Assert.Equal(
+            DateTimeOffset.Parse(
+                frozen["createdUtc"]!.GetValue<string>(),
+                System.Globalization.CultureInfo.InvariantCulture),
+            migrated.CreatedUtc);
+        Assert.Equal(frozen["seed"]!.GetValue<ulong>(), migrated.Seed);
+        Assert.Equal(
+            JsonSerializer.Serialize(frozen["contentManifests"], CanonicalJson.Options),
+            JsonSerializer.Serialize(migrated.ContentManifests, CanonicalJson.Options));
+        Assert.Equal(
+            JsonSerializer.Serialize(historical, CanonicalJson.Options),
+            JsonSerializer.Serialize(normalizedPreD0, CanonicalJson.Options));
+        Assert.Equal(SimulationChecksum.Compute(migrated.Snapshot).Value, migrated.Checksum);
+        Assert.Contains(migrated.Snapshot.SystemVersions, version =>
+            version == new SystemVersion(
+                CharacterMarriageSystem.SystemId,
+                CharacterMarriageSystem.Version));
+        Assert.Empty(migrated.Snapshot.CharacterMarriages.Practices);
+        Assert.Empty(migrated.Snapshot.CharacterMarriages.Proposals);
+        Assert.Empty(migrated.Snapshot.CharacterMarriages.Betrothals);
+        Assert.Empty(migrated.Snapshot.CharacterMarriages.Unions);
+        Assert.Empty(migrated.Snapshot.CharacterMarriages.RomanceRoutes);
+        Assert.Empty(migrated.Snapshot.CharacterMarriages.History);
+        Assert.Equal(
+            JsonSerializer.Serialize(historical.CharacterEstateHoldings, CanonicalJson.Options),
+            JsonSerializer.Serialize(
+                migrated.Snapshot.CharacterEstateHoldings,
+                CanonicalJson.Options));
+        CharacterEstateHoldingState preservedHolding = Assert.Single(
+            migrated.Snapshot.CharacterEstateHoldings.Holdings);
+        Assert.Equal(new EntityId("estate:fixture/leader_manor"), preservedHolding.EstateId);
+        Assert.Equal(new EntityId("character:fixture/leader"), preservedHolding.OwnerCharacterId);
+        Assert.Equal(
+            historicalCommands,
+            JsonSerializer.Serialize(migrated.DiagnosticCommands, CanonicalJson.Options));
+        Assert.Equal(
+            historicalEvents,
+            JsonSerializer.Serialize(migrated.DiagnosticEvents, CanonicalJson.Options));
+        Assert.Equal(65, migrated.DiagnosticCommands.Count);
+        Assert.Equal(65, migrated.DiagnosticEvents.Count);
+        _ = WorldState.Restore(migrated.Snapshot);
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Theory]
+    [InlineData("marriage-snapshot")]
+    [InlineData("marriage-system-version")]
+    public void SchemaNine_RejectsInjectedSchemaTenDataWithoutChangingSource(string mutation)
+    {
+        JsonObject invalid = CreateHistoricalFixture(9);
+        JsonObject snapshot = invalid["snapshot"]!.AsObject();
+        if (mutation == "marriage-snapshot")
+        {
+            snapshot["characterMarriages"] = JsonSerializer.SerializeToNode(
+                CharacterMarriageWorldSnapshot.Empty,
+                CanonicalJson.Options);
+        }
+        else
+        {
+            snapshot["systemVersions"]!.AsArray().Add(new JsonObject
+            {
+                ["systemId"] = CharacterMarriageSystem.SystemId,
+                ["version"] = CharacterMarriageSystem.Version,
+            });
+        }
+
+        string path = Path.Combine(directory, $"schema-nine-injected-{mutation}.save.gz");
+        WriteJsonGzip(path, invalid);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        Assert.Throws<SaveCompatibilityException>(() => new SaveStore().Load(path));
         Assert.Equal(sourceBytes, File.ReadAllBytes(path));
     }
 
@@ -1215,6 +1564,8 @@ public sealed class SaveStoreTests : IDisposable
         RemoveSystemVersion(snapshot, CharacterResourceSystem.SystemId);
         snapshot.Remove("characterEstateHoldings");
         RemoveSystemVersion(snapshot, CharacterEstateHoldingSystem.SystemId);
+        snapshot.Remove("characterMarriages");
+        RemoveSystemVersion(snapshot, CharacterMarriageSystem.SystemId);
         DowngradeCharactersToLegacy(snapshot);
         schemaFour["schemaVersion"] = 4;
         WorldSnapshot historical = snapshot.Deserialize<WorldSnapshot>(CanonicalJson.Options)!;
@@ -1246,6 +1597,7 @@ public sealed class SaveStoreTests : IDisposable
     [InlineData(6)]
     [InlineData(7)]
     [InlineData(8)]
+    [InlineData(9)]
     public void CorruptedHistoricalSnapshotFailsAuthenticationWithoutOverwritingSource(int schemaVersion)
     {
         JsonObject historical = CreateHistoricalFixture(schemaVersion);
@@ -1285,6 +1637,7 @@ public sealed class SaveStoreTests : IDisposable
             Characters = snapshot.Characters.Canonicalize(),
         };
         JsonObject historicalShape = JsonSerializer.SerializeToNode(canonical, CanonicalJson.Options)!.AsObject();
+        historicalShape.Remove("characterMarriages");
         historicalShape.Remove("characterEstateHoldings");
         historicalShape.Remove("characterResources");
         historicalShape.Remove("careers");
@@ -1750,6 +2103,49 @@ public sealed class SaveStoreTests : IDisposable
     }
 
     [Fact]
+    public void LegacyStandaloneSnapshotOmittingCharacterMarriages_RestoresAsEmpty()
+    {
+        WorldSnapshot current = SyntheticSimulation.CreateWorld(1, 99).CaptureSnapshot();
+        JsonObject legacyJson = JsonSerializer.SerializeToNode(current, CanonicalJson.Options)!.AsObject();
+        legacyJson.Remove("characterMarriages");
+        JsonArray versions = legacyJson["systemVersions"]!.AsArray();
+        JsonNode marriageVersion = versions.Single(
+            node => node!["systemId"]!.GetValue<string>() == CharacterMarriageSystem.SystemId)!;
+        versions.Remove(marriageVersion);
+        WorldSnapshot legacy = legacyJson.Deserialize<WorldSnapshot>(CanonicalJson.Options)
+            ?? throw new InvalidDataException("Legacy standalone snapshot did not deserialize.");
+
+        WorldState restored = WorldState.Restore(legacy);
+
+        Assert.Empty(restored.CharacterMarriages.Unions);
+        Assert.Contains(restored.CaptureSnapshot().SystemVersions, version =>
+            version == new SystemVersion(
+                CharacterMarriageSystem.SystemId,
+                CharacterMarriageSystem.Version));
+    }
+
+    [Fact]
+    public void LegacyStandaloneSnapshotWithPartialNullCharacterMarriages_FailsDeliberately()
+    {
+        WorldSnapshot current = SyntheticSimulation.CreateWorld(1, 99).CaptureSnapshot();
+        WorldSnapshot invalid = WithoutCharacterMarriageSystemVersion(current) with
+        {
+            CharacterMarriages = CharacterMarriageWorldSnapshot.Empty with
+            {
+                Unions = null!,
+            },
+        };
+
+        SaveCompatibilityException exception = Assert.Throws<SaveCompatibilityException>(
+            () => WorldState.Restore(invalid));
+
+        Assert.Contains(
+            "complete, valid, empty character-marriage snapshot",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MissingRequiredManifest_BlocksLoadWithPreciseList()
     {
         SaveEnvelope envelope = CreateEnvelope(CreateSimulation());
@@ -1951,6 +2347,106 @@ public sealed class SaveStoreTests : IDisposable
         return new CampaignSimulation(world);
     }
 
+    private static CampaignSimulation CreateCharacterMarriageSimulation()
+    {
+        WorldSnapshot characterSnapshot = CreateCharacterSimulation().World.CaptureSnapshot();
+        EntityId first = new("character:synthetic/child");
+        EntityId second = new("character:synthetic/peer");
+        EntityId practiceId = new("marriage_practice:synthetic/default");
+        EntityId proposalId = new("marriage_proposal:synthetic/political");
+        CampaignDate date = characterSnapshot.Calendar.Date;
+        CharacterWorldSnapshot characters = characterSnapshot.Characters with
+        {
+            CharacterDefinitions =
+            [
+                .. characterSnapshot.Characters.CharacterDefinitions,
+                Definition(
+                    second.Value,
+                    "loc:character/synthetic_peer",
+                    new CampaignDate(165, 2, 3)),
+            ],
+            CharacterStates =
+            [
+                .. characterSnapshot.Characters.CharacterStates,
+                new CharacterState(
+                    CharacterContractVersions.State,
+                    second,
+                    [],
+                    [],
+                    CharacterConditionState.Default),
+            ],
+        };
+        MarriageProposalState proposal = new(
+            CharacterMarriageContractVersions.State,
+            proposalId,
+            MarriageProposalKind.LegalUnion,
+            MarriageBasis.Political,
+            MarriageUnionForm.PrincipalSpouse,
+            MarriageConsentKind.Voluntary,
+            first,
+            second,
+            null,
+            practiceId,
+            date,
+            0,
+            new EntityId("command:synthetic/marriage_proposal"),
+            MarriageProposalStatus.Accepted,
+            date,
+            0,
+            new EntityId("command:synthetic/marriage_response"));
+        CharacterMarriageWorldSnapshot marriages = new(
+            CharacterMarriageContractVersions.Snapshot,
+            [
+                new MarriagePracticeState(
+                    CharacterMarriageContractVersions.Practice,
+                    practiceId,
+                    18,
+                    18,
+                    1,
+                    8,
+                    1,
+                    true,
+                    true,
+                    MarriageProhibitedKinship.DirectLine | MarriageProhibitedKinship.Siblings),
+            ],
+            [proposal],
+            [],
+            [
+                new MarriageUnionState(
+                    CharacterMarriageContractVersions.State,
+                    new EntityId("marriage_union:synthetic/political"),
+                    first,
+                    second,
+                    MarriageUnionForm.PrincipalSpouse,
+                    null,
+                    MarriageBasis.Political,
+                    MarriageConsentKind.Voluntary,
+                    practiceId,
+                    proposalId,
+                    date,
+                    0,
+                    MarriageUnionStatus.Active,
+                    null,
+                    null,
+                    null,
+                    null),
+            ],
+            [],
+            []);
+        WorldState world = WorldState.Create(
+            date,
+            99,
+            [],
+            GeographicWorldSnapshot.Empty,
+            characters,
+            RelationshipWorldSnapshot.Empty,
+            CareerWorldSnapshot.Empty,
+            CharacterResourceWorldSnapshot.Empty,
+            CharacterEstateHoldingWorldSnapshot.Empty,
+            marriages);
+        return new CampaignSimulation(world);
+    }
+
     private static CharacterIdentityDefinition Identity(string id, CharacterIdentityKind kind) => new(
         CharacterContractVersions.Definition,
         new EntityId(id),
@@ -2022,6 +2518,14 @@ public sealed class SaveStoreTests : IDisposable
                 .ToArray(),
         };
 
+    private static WorldSnapshot WithoutCharacterMarriageSystemVersion(WorldSnapshot snapshot) =>
+        snapshot with
+        {
+            SystemVersions = snapshot.SystemVersions
+                .Where(version => version.SystemId != CharacterMarriageSystem.SystemId)
+                .ToArray(),
+        };
+
     private static void WriteJsonGzip(string path, JsonObject json)
     {
         using FileStream file = File.Create(path);
@@ -2045,6 +2549,7 @@ public sealed class SaveStoreTests : IDisposable
         // Schema 6 is generated from the exact SP-04C0 contract at 7d4612d.
         // Schema 7 is generated from the exact SP-04C1 contract at d5d2705.
         // Schema 8 is generated from the exact accepted SP-04C2 contract at e2d9590.
+        // Schema 9 is generated from the exact accepted SP-04C3 contract at 7b9f795.
         // Schema 1/2 are synthetic fixtures inferred from the registered migration contracts.
         string fileName = schemaVersion switch
         {
@@ -2056,6 +2561,7 @@ public sealed class SaveStoreTests : IDisposable
             6 => "save-schema-6-history-backed.json",
             7 => "save-schema-7-history-backed.json",
             8 => "save-schema-8-history-backed.json",
+            9 => "save-schema-9-history-backed.json",
             _ => throw new ArgumentOutOfRangeException(nameof(schemaVersion)),
         };
         return schemaVersion == 4
