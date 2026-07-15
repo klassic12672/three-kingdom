@@ -59,7 +59,7 @@ SP-04C1's bounded retinue, patronage, recommendation, employment-history, regist
 
 SP-04C2's abstract personal-wealth accounts, atomic registered transfers, bounded ledger/history, and authenticated schema-7-to-8 migration have passing [exact-SHA hosted macOS arm64/Windows x64 evidence](evidence/SP-04C2-EXACT-SHA-e2d9590.md) at `e2d9590afc409da30aef86226a8d90a0023fbda3`. Opaque estate holdings are reserved for C3; economy, land, household/faction treasuries, and later character packages remain outside C2. The full SP-04 three-second turn budget remains unmet.
 
-SP-04C3's opaque owner-independent estate identities, defensive character-ownership queries, dead-owner preservation seam, accepted 64-holding bound, and authenticated schema-8-to-9 migration are implemented and locally verified. Independent architecture and verification review approve the separate state-only subsystem without an ADR. Exact-SHA hosted macOS arm64/Windows x64 evidence remains pending, so C3 is not yet accepted and later SP-04 packages remain pending.
+SP-04C3's opaque owner-independent estate identities, defensive character-ownership queries, dead-owner preservation seam, accepted 64-holding bound, and authenticated schema-8-to-9 migration have passing [exact-SHA hosted macOS arm64/Windows x64 evidence](evidence/SP-04C3-EXACT-SHA-7b9f795.md) at `7b9f795320e5f4c14aa7e14185e7ba035fdf6847`. Physical/economic estates and inheritance behavior remain outside C3. The full SP-04 three-second turn budget remains unmet.
 
 ## Platform verification gates
 
@@ -81,8 +81,9 @@ Before M4, estimates are internal ranges only. After M4, record measured velocit
 5. Preserve the SP-04C0 character-v2 descriptor/condition/typed-kinship contracts, owning-pack override lineage, strict authored v1/v2 normalization, authenticated schema-5-to-6 migration, and exact-SHA hosted evidence at `7d4612d21784ceebbcd574ea00231785b9408036`.
 6. Preserve SP-04C1's bounded career/social-action kernel, atomic generic-memory consequences, authenticated schema-6-to-7 migration, independent-remediation record, and exact-SHA hosted evidence at `d5d2705d3516c67a06e127dcfa867a854b37a21f`.
 7. Preserve SP-04C2's sparse personal-wealth accounts, registered atomic transfers, bounded ledger/history, authenticated schema-7-to-8 migration, independent-remediation record, and exact-SHA hosted evidence at `e2d9590afc409da30aef86226a8d90a0023fbda3`.
-8. Obtain exact-SHA hosted macOS arm64/Windows x64 evidence for the locally verified SP-04C3 opaque-estate package before beginning SP-04D.
+8. Preserve SP-04C3's opaque owner-independent estate identities, dead-owner persistence seam, accepted 64-holding bound, authenticated schema-8-to-9 migration, and exact-SHA hosted evidence at `7b9f795320e5f4c14aa7e14185e7ba035fdf6847`.
+9. Implement household, marriage, consent, and eligibility foundations as the independently verifiable SP-04D package without importing later lifecycle or succession behavior.
 
-M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A, SP-04B-L, SP-04C0, SP-04C1, and SP-04C2 have passing exact-SHA hosted macOS arm64/Windows x64 evidence at their accepted revisions; SP-04C3 is locally verified with hosted evidence pending. SP-05 remains blocked, and later SP-04 packages remain pending.
+M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A, SP-04B-L, SP-04C0, SP-04C1, SP-04C2, and SP-04C3 have passing exact-SHA hosted macOS arm64/Windows x64 evidence at their accepted revisions. SP-05 remains blocked, and later SP-04 packages remain pending.
 
 See the [subsystem plan index](plans/README.md) for dependency status.

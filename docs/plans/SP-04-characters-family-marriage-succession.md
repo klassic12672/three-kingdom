@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2 exact-SHA hosted verified; SP-04C3 local pass/hosted pending; later packages pending |
+| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2/SP-04C3 exact-SHA hosted verified; later packages pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -291,13 +291,15 @@ Save schema 9 requires the complete estate snapshot and system registration. The
 | C313 | No geography, acreage, control, grants, claims, value, yield, rent, tax, production, treasury, household/family/faction/court ownership, content, UI, battle, or AI enters C3 | Complete diff and dependency review | Local pass |
 | C314 | A 1,000-character/8,000-holding fixture records construction, owner queries, snapshot, checksum, save, and load without a brittle threshold | Raw local Apple Silicon macOS measurement | Local macOS pass; full three-second SP-04 budget remains unmet/unproven |
 | C315 | Repository validation, complete tests, touched-file formatting, diff, and LFS gates pass | Local repository gates | Local pass |
-| C316 | The same accepted revision passes deterministic validation and complete suites on hosted macOS arm64 and Windows x64 | Exact-SHA clean-checkout hosted evidence | Pending |
+| C316 | The same accepted revision passes deterministic validation and complete suites on hosted macOS arm64 and Windows x64 | Exact-SHA clean-checkout hosted evidence | Hosted macOS arm64/Windows x64 pass at `7b9f795320e5f4c14aa7e14185e7ba035fdf6847` |
 
 The final focused 154-test slice passed. On Apple Silicon macOS, the 1,000-character/8,000-holding fixture measured 68.607 ms construction, 751.881 ms for 1,000 owner queries plus snapshot JSON serialization, 21.056 ms checksum, 325.787 ms save, and 210.018 ms load. The estate JSON contained 1,016,034 characters; the compressed save was 37,677 bytes with checksum `c033184371cf80b022a174acc5fa799345fa5eca9a89feec90f75b8a4c5bc83a`. These raw measurements carry correctness assertions but no wall-clock threshold and do not satisfy or waive the full SP-04 three-second budget.
 
 Adversarial verification identified a read-only owner-query eligibility coupling and missing complete checksum/migration assertions. The final tree applies birth eligibility only while validating persisted owners, proves shuffled and changed owner/identity checksum behavior, rejects semantic save corruption without changing source bytes, and compares the complete normalized pre-C3 world during migration. Architecture and verification re-review report no open code finding.
 
-Local integrated verification on 2026-07-15 used Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retained 1,295 records and 2,820 translations with registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` built with zero warnings and passed 312 Simulation.Core, 71 Game.Content, 6 Game.Application, and 18 repository tests. The ten-year/1,000-entity headless soak completed with checksum `798a96c57375fb3012c55175195430604a66a658fdf786d7fd0f0ba4e96cce9b`. Touched-file formatting, `git diff --check`, and `git lfs fsck` passed. These results remain local package evidence until the immutable accepted revision passes hosted macOS arm64 and Windows x64.
+Local integrated verification on 2026-07-15 used Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retained 1,295 records and 2,820 translations with registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` built with zero warnings and passed 312 Simulation.Core, 71 Game.Content, 6 Game.Application, and 18 repository tests. The ten-year/1,000-entity headless soak completed with checksum `798a96c57375fb3012c55175195430604a66a658fdf786d7fd0f0ba4e96cce9b`. Touched-file formatting, `git diff --check`, and `git lfs fsck` passed. Those results establish the local package tree only and are not relabeled as hosted evidence.
+
+Accepted revision `7b9f795320e5f4c14aa7e14185e7ba035fdf6847` subsequently passed hosted macOS arm64 and Windows x64 validation, two complete 312/71/6/18 suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and static artifact verification. See the [SP-04C3 exact-SHA report](../evidence/SP-04C3-EXACT-SHA-7b9f795.md). Physical Windows remains an M4 gate, signing/Steam remain SP-15 gates, and the full SP-04 three-second budget remains unmet.
 
 Physical/economic estate records, geography, production, taxation, grants, marriage/romance, lifecycle mutation, inheritance/succession resolution, content, UI, battle, and AI remain deferred. Every full SP-04 acceptance criterion below remains unchecked, the full three-second budget remains unmet, and SP-05 remains blocked.
 
