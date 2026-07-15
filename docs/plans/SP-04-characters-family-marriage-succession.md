@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2/SP-04C3/SP-04D0/SP-04D1 exact-SHA hosted verified; SP-04D2 locally verified candidate awaiting exact-SHA hosted evidence; later packages pending |
+| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2/SP-04C3/SP-04D0/SP-04D1/SP-04D2 exact-SHA hosted verified; SP-04D3 and later packages pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -402,7 +402,7 @@ The final representative local Release performance run contains 1,000 characters
 
 Accepted revision `653ce71d24bd81435ded9e65022dc29afd8f4810` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04D1-EXACT-SHA-653ce71.md). D117 and D121 therefore pass at that revision. Physical Windows remains an M4 gate, production signing and Steam remain SP-15 gates, and the full SP-04 three-second budget remains unmet. Every full SP-04 acceptance criterion remains unchecked, SP-05 remains blocked, and the D2 local candidate follows.
 
-## Local candidate package: SP-04D2 mutual-consent romance workflow
+## Accepted package: SP-04D2 mutual-consent romance workflow
 
 SP-04D2 is implemented on accepted D1 revision `653ce71d24bd81435ded9e65022dc29afd8f4810`. The dependency is satisfied, M2/SP-04 remain Active, SP-05 remains blocked, and no ADR is required. The package remains deterministic pure .NET and preserves the unchanged outer `character_marriage_action.v1` command plus `character_marriage_action_resolved.v1` event. Five nested actions cover offer, recipient accept/refuse, initiator withdrawal, expected-level advance, and either-participant ending.
 
@@ -431,13 +431,15 @@ D2 does not add romantic marriage proposals or unions, attraction/affinity/memor
 | D211 | Exact-D1 schema 11 authenticates, migrates legacy routes without rewriting them, rejects D2 data, and preserves source bytes | Frozen fixture and migration/recovery tests | Local pass |
 | D212 | Ten-year/1,000-entity deterministic golden is exact | Complete Core suite | Local pass; checksum `ba4eccd512e7bf699c3360032f2a5f007b362cc16ff718a487a6d082357e65b2` |
 | D213 | Independent architecture and adversarial review find no remaining correctness or package-boundary blocker | Read-only post-remediation review | Local pass after remediation |
-| D214 | Same revision passes repository gates and hosted macOS arm64/Windows x64 evidence | Local gates plus exact-SHA hosted clean-checkout run | Local pass; hosted pending |
+| D214 | Same revision passes repository gates and hosted macOS arm64/Windows x64 evidence | Local gates plus exact-SHA hosted clean-checkout run | Pass at `62a50075ca86b3466cca9c05825d4374e6cac366` |
 
-Local candidate verification on 2026-07-15 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 469 Simulation.Core, 71 Game.Content, 6 Game.Application, and 18 repository tests. The focused marriage/save/ten-year-soak slice passes 296 tests. Touched-project format verification, `git diff --check`, and `git lfs fsck` pass.
+Final local verification on 2026-07-15 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 469 Simulation.Core, 71 Game.Content, 6 Game.Application, and 18 repository tests. The focused marriage/save/ten-year-soak slice passes 296 tests. Touched-project format verification, `git diff --check`, and `git lfs fsck` pass.
 
 Independent review found and remediated coercive command reuse on legacy nonterminal advances, incomplete v2 last-positive-progress causality, uncontrolled duplicate historical system registration, and race tests that did not force both hashed-event orderings. Final architecture and adversarial re-review report no remaining correctness or package-boundary blocker under the locked decision that D3, not D2, owns atomic route invalidation with condition/lifecycle mutation.
 
-The current raw Release fixture contains 1,000 characters and 200 completed routes. Workflow measured 7,238.257 ms; snapshot plus checksum measured 113.094 ms; snapshot JSON was 1,009,019 bytes; gzip was 48,844 bytes; checksum was `6035ff878b94f261a676af83bb2d293b3585e9eb40f650721399c39f96539af0`. The test asserts shape and correctness, not a wall-clock threshold. These working-tree measurements are not exact-SHA, hosted, cross-platform, physical-Windows, signing, Steam, release, or full-turn performance evidence. Exact-SHA hosted macOS arm64/Windows x64 evidence is still required before D2 acceptance; the full SP-04 three-second budget remains unmet.
+The current raw Release fixture contains 1,000 characters and 200 completed routes. Workflow measured 7,238.257 ms; snapshot plus checksum measured 113.094 ms; snapshot JSON was 1,009,019 bytes; gzip was 48,844 bytes; checksum was `6035ff878b94f261a676af83bb2d293b3585e9eb40f650721399c39f96539af0`. The test asserts shape and correctness, not a wall-clock threshold. These working-tree measurements are not exact-SHA, hosted, cross-platform, physical-Windows, signing, Steam, release, or full-turn performance evidence. The full SP-04 three-second budget remains unmet.
+
+Accepted revision `62a50075ca86b3466cca9c05825d4374e6cac366` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04D2-EXACT-SHA-62a5007.md). D212 and D214 therefore pass at that revision. Physical Windows remains an M4 gate, production signing and Steam remain SP-15 gates, and the full SP-04 three-second budget remains unmet. Every full SP-04 acceptance criterion remains unchecked, SP-05 remains blocked, and D3 is the next package.
 
 ## Edge cases and failure handling
 
