@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2/SP-04C3/SP-04D0/SP-04D1/SP-04D2 exact-SHA hosted verified; SP-04D3 locally verified candidate awaiting exact-SHA hosted evidence; later packages pending |
+| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2/SP-04C3/SP-04D0/SP-04D1/SP-04D2/SP-04D3 exact-SHA hosted verified; later packages pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -441,7 +441,7 @@ The current raw Release fixture contains 1,000 characters and 200 completed rout
 
 Accepted revision `62a50075ca86b3466cca9c05825d4374e6cac366` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04D2-EXACT-SHA-62a5007.md). D212 and D214 therefore pass at that revision. Physical Windows remains an M4 gate, production signing and Steam remain SP-15 gates, and the full SP-04 three-second budget remains unmet. Every full SP-04 acceptance criterion remains unchecked, SP-05 remains blocked, and D3 is the next package.
 
-## Locally verified candidate: SP-04D3 household decisions and lifecycle integration
+## Accepted package: SP-04D3 household decisions and lifecycle integration
 
 SP-04D3 is implemented on accepted D2 revision `62a50075ca86b3466cca9c05825d4374e6cac366`. The dependency is satisfied, M2/SP-04 remain Active, SP-05 remains blocked, and no ADR is required. The package remains deterministic pure .NET, uses registered commands and events for persistent mutation, preserves character household state as the sole residence authority, and adds no explicit content.
 
@@ -476,13 +476,15 @@ Save schema 13 advances only the envelope vocabulary needed for D3 commands, eve
 | D315 | A 1,000-character fixture records coercion/lifecycle workflow, snapshot/checksum, JSON, and gzip behavior without a brittle threshold | Raw local Apple Silicon measurement | Local macOS pass; full SP-04 budget unmet |
 | D316 | Independent architecture and verification re-review find no remaining correctness or package-boundary blocker | Read-only reviews and focused reruns | Local pass after remediation |
 | D317 | Repository validation, complete Release suites, touched-file formatting, diff, and LFS gates pass | Local repository gates | Local pass |
-| D318 | The same accepted revision passes deterministic validation and complete suites on hosted macOS arm64 and Windows x64 | Exact-SHA clean-checkout hosted evidence | Pending |
+| D318 | The same accepted revision passes deterministic validation and complete suites on hosted macOS arm64 and Windows x64 | Exact-SHA clean-checkout hosted evidence | Pass at `93d38810a87707a7c4c98c7392e2a2f20dc030fb` |
 
 Final local verification on 2026-07-15 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 490 Simulation.Core, 71 Game.Content, 6 Game.Application, and 18 repository tests. The focused D3/save slice passes 203 tests and the complete Core suite passes 490 tests. Touched-file formatting, `git diff --check`, and `git lfs fsck` pass.
 
 Independent review found and remediated missing custody-memory application, schema-12 acceptance of a future explicit-null consequence property, a negative-attraction fallback that violated the exact-zero rule, a relationship limit owned by the career subsystem, and incomplete death/race/save/source-kind/overflow coverage. The corrected candidate uses relationship-owned limits, atomically applies custody memories, keeps attraction exactly zero through every saturation step, strictly rejects the future property in schema 12, and covers both event-ID orderings plus complete D3 persistence and lifecycle matrices. Final architecture and verification re-review report no remaining correctness or package-boundary blocker.
 
-The representative local Release fixture contains 1,000 characters, 200 coerced unions, 200 released captives, and 200 incapacitated characters. Workflow measured 12,802.979 ms; snapshot plus checksum measured 90.260 ms; snapshot JSON was 1,331,895 bytes; gzip was 81,218 bytes; checksum was `9d7bd98955e016f85aa6c0ea8dbeab5387efa97b584ee871603c3533e9a1d374`. The test asserts shape and correctness, not a wall-clock threshold. These working-tree measurements are not exact-SHA, hosted, cross-platform, physical-Windows, signing, Steam, release, or full-turn performance evidence. The full SP-04 three-second budget remains unmet, every full SP-04 acceptance criterion remains unchecked, and SP-05 remains blocked pending D318 and all later SP-04 packages.
+The representative local Release fixture contains 1,000 characters, 200 coerced unions, 200 released captives, and 200 incapacitated characters. Workflow measured 12,802.979 ms; snapshot plus checksum measured 90.260 ms; snapshot JSON was 1,331,895 bytes; gzip was 81,218 bytes; checksum was `9d7bd98955e016f85aa6c0ea8dbeab5387efa97b584ee871603c3533e9a1d374`. The test asserts shape and correctness, not a wall-clock threshold. These working-tree measurements are not exact-SHA, hosted, cross-platform, physical-Windows, signing, Steam, release, or full-turn performance evidence. The full SP-04 three-second budget remains unmet, every full SP-04 acceptance criterion remains unchecked, and SP-05 remains blocked pending all later SP-04 packages.
+
+Accepted revision `93d38810a87707a7c4c98c7392e2a2f20dc030fb` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04D3-EXACT-SHA-93d3881.md). D314 and D318 therefore pass at that revision. Physical Windows remains an M4 gate, production signing and Steam remain SP-15 gates, and the full SP-04 three-second budget remains unmet. Every full SP-04 acceptance criterion remains unchecked, SP-05 remains blocked, and the next dependency-ordered SP-04E package may begin.
 
 ## Edge cases and failure handling
 
