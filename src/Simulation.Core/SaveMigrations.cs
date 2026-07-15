@@ -38,6 +38,7 @@ public sealed class SaveSchemaRegistry
             new SaveMigrationV16ToV17(),
             new SaveMigrationV17ToV18(),
             new SaveMigrationV18ToV19(),
+            new SaveMigrationV19ToV20(),
         ]).ToArray();
         if (registered.Any(item => item.ToSchemaVersion != item.FromSchemaVersion + 1))
         {
@@ -107,7 +108,7 @@ public sealed class SaveSchemaRegistry
 
     internal static void ValidateHistoricalSourceChecksum(JsonObject source, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 18)
+        if (schemaVersion is < 1 or > 19)
         {
             throw new SaveCompatibilityException($"Save schema {schemaVersion} has no historical checksum contract.");
         }
@@ -252,7 +253,7 @@ public sealed class SaveSchemaRegistry
                 $"Schema {schemaVersion} unexpectedly contains schema 10 character-marriage data.");
         }
 
-        if (schemaVersion is >= 10 and <= 18)
+        if (schemaVersion is >= 10 and <= 19)
         {
             ValidateCharacterMarriageSnapshotShape(
                 RequireHistoricalObject(
@@ -351,11 +352,15 @@ public sealed class SaveSchemaRegistry
                 RejectE4Discriminators(diagnosticCommands, "diagnostic commands");
                 RejectE4Discriminators(diagnosticEvents, "diagnostic events");
             }
-            else
+            else if (schemaVersion == 18)
             {
                 RejectE5Discriminators(pendingCommands, "snapshot pending commands");
                 RejectE5Discriminators(diagnosticCommands, "diagnostic commands");
                 RejectE5Discriminators(diagnosticEvents, "diagnostic events");
+            }
+            else
+            {
+                RejectE6Discriminators(source, "save payload");
             }
         }
 
@@ -506,14 +511,21 @@ public sealed class SaveSchemaRegistry
             characters,
             $"Save schema {schemaVersion}",
             schemaVersion >= 6
-                ? CharacterContractVersions.Snapshot
+                ? CharacterContractVersions.PreviousSnapshot
                 : CharacterContractVersions.LegacySnapshot,
-            requireVersionTwoFields: schemaVersion >= 6);
+            schemaVersion >= 6
+                ? CharacterContractVersions.Definition
+                : CharacterContractVersions.LegacyDefinition,
+            schemaVersion >= 6
+                ? CharacterContractVersions.PreviousState
+                : CharacterContractVersions.LegacyState,
+            requireVersionTwoFields: schemaVersion >= 6,
+            requireEducationAttainments: false);
         if (!systemVersions.Any(version => IsSystemVersion(
                 version,
                 "simulation.characters",
                 schemaVersion >= 6
-                    ? CharacterContractVersions.Snapshot
+                    ? CharacterContractVersions.PreviousSnapshot
                     : CharacterContractVersions.LegacySnapshot)))
         {
             throw new SaveCompatibilityException(
@@ -708,7 +720,10 @@ public sealed class SaveSchemaRegistry
             characters,
             "Current save schema",
             CharacterContractVersions.Snapshot,
-            requireVersionTwoFields: true);
+            CharacterContractVersions.Definition,
+            CharacterContractVersions.State,
+            requireVersionTwoFields: true,
+            requireEducationAttainments: true);
         ValidateRelationshipSnapshotShape(
             relationships,
             "Current save schema",
@@ -736,7 +751,7 @@ public sealed class SaveSchemaRegistry
             || !systemVersions.Any(IsCurrentCharacterSystemVersion))
         {
             throw new SaveCompatibilityException(
-                "Current save schema is missing required 'simulation.characters@2' system-version data.");
+                $"Current save schema is missing required 'simulation.characters@{CharacterContractVersions.Snapshot}' system-version data.");
         }
 
         if (!systemVersions.Any(IsCurrentRelationshipSystemVersion))
@@ -859,8 +874,11 @@ public sealed class SaveSchemaRegistry
     private static void ValidateCharacterSnapshotShape(
         JsonObject characters,
         string context,
-        int expectedVersion,
-        bool requireVersionTwoFields)
+        int expectedSnapshotVersion,
+        int expectedDefinitionVersion,
+        int expectedStateVersion,
+        bool requireVersionTwoFields,
+        bool requireEducationAttainments)
     {
         string[] requiredArrays =
         [
@@ -874,7 +892,7 @@ public sealed class SaveSchemaRegistry
         ];
         if (characters["contractVersion"] is not JsonValue contractVersion
             || !contractVersion.TryGetValue(out int version)
-            || version != expectedVersion
+            || version != expectedSnapshotVersion
             || requiredArrays.Any(property => characters[property] is not JsonArray))
         {
             throw new SaveCompatibilityException(
@@ -885,13 +903,13 @@ public sealed class SaveSchemaRegistry
             characters,
             context,
             "identityDefinitions",
-            expectedVersion,
+            expectedDefinitionVersion,
             []);
         ValidateVersionedCharacterEntries(
             characters,
             context,
             "characterDefinitions",
-            expectedVersion,
+            expectedDefinitionVersion,
             requireVersionTwoFields
                 ? ["structuredName", "contentOrigin", "flawIds"]
                 : []);
@@ -899,31 +917,33 @@ public sealed class SaveSchemaRegistry
             characters,
             context,
             "familyDefinitions",
-            expectedVersion,
+            expectedDefinitionVersion,
             []);
         ValidateVersionedCharacterEntries(
             characters,
             context,
             "householdDefinitions",
-            expectedVersion,
+            expectedDefinitionVersion,
             []);
         ValidateVersionedCharacterEntries(
             characters,
             context,
             "characterStates",
-            expectedVersion,
-            requireVersionTwoFields ? ["parentLinks", "condition"] : []);
+            expectedStateVersion,
+            requireEducationAttainments
+                ? ["parentLinks", "condition", "educationAttainments"]
+                : requireVersionTwoFields ? ["parentLinks", "condition"] : []);
         ValidateVersionedCharacterEntries(
             characters,
             context,
             "familyStates",
-            expectedVersion,
+            expectedStateVersion,
             []);
         ValidateVersionedCharacterEntries(
             characters,
             context,
             "householdStates",
-            expectedVersion,
+            expectedStateVersion,
             []);
 
         ValidateCommonCharacterEntryShape(characters, context);
@@ -931,10 +951,57 @@ public sealed class SaveSchemaRegistry
         if (requireVersionTwoFields)
         {
             ValidateCharacterV2EntryShape(characters, context);
+            if (requireEducationAttainments)
+            {
+                ValidateCharacterEducationEntryShape(characters, context);
+            }
         }
         else
         {
             RejectLegacyCharacterV2Fields(characters, context);
+        }
+    }
+
+    private static void ValidateCharacterEducationEntryShape(
+        JsonObject characters,
+        string context)
+    {
+        foreach (JsonObject state in characters["characterStates"]!.AsArray().OfType<JsonObject>())
+        {
+            JsonArray attainments = RequireCharacterArray(
+                state,
+                "educationAttainments",
+                context,
+                "character education-attainment collection");
+            foreach (JsonNode? node in attainments)
+            {
+                if (node is not JsonObject attainment)
+                {
+                    throw MalformedCharacterData(context, "character education attainment");
+                }
+
+                RequireCharacterInteger(
+                    attainment,
+                    "contractVersion",
+                    context,
+                    "character education attainment");
+                if (attainment["contractVersion"]!.GetValue<int>()
+                    != CharacterEducationContractVersions.Attainment)
+                {
+                    throw new SaveCompatibilityException(
+                        $"{context} contains an unsupported character education-attainment version.");
+                }
+
+                RequireCharacterObject(attainment, "attainmentId", context, "character education attainment");
+                RequireCharacterObject(attainment, "wardCharacterId", context, "character education attainment");
+                RequireCharacterObject(attainment, "teacherCharacterId", context, "character education attainment");
+                RequireCharacterObject(attainment, "primaryGuardianshipId", context, "character education attainment");
+                RequireCharacterObject(attainment, "abilityId", context, "character education attainment");
+                RequireCharacterObject(attainment, "resolutionDate", context, "character education attainment");
+                RequireCharacterInteger(attainment, "resolutionTurnIndex", context, "character education attainment");
+                RequireCharacterObject(attainment, "sourceCommandId", context, "character education attainment");
+                RequireCharacterObject(attainment, "sourceEventId", context, "character education attainment");
+            }
         }
     }
 
@@ -1878,6 +1945,15 @@ public sealed class SaveSchemaRegistry
         }
     }
 
+    private static void RejectE6Discriminators(JsonNode node, string description)
+    {
+        if (ContainsE6Discriminator(node) || ContainsE6Property(node))
+        {
+            throw new SaveCompatibilityException(
+                $"Save schema 19 unexpectedly contains schema 20 character-education data in {description}.");
+        }
+    }
+
     private static bool ContainsD1Discriminator(JsonNode? node)
     {
         if (node is JsonObject value)
@@ -2186,6 +2262,44 @@ public sealed class SaveSchemaRegistry
         return node is JsonArray array && array.Any(ContainsE5Property);
     }
 
+    private static bool ContainsE6Discriminator(JsonNode? node)
+    {
+        if (node is JsonObject value)
+        {
+            if (value["$type"] is JsonValue discriminator
+                && discriminator.TryGetValue(out string? type)
+                && type is "complete_primary_guardian_education.v1"
+                    or "primary_guardian_education_completed.v1")
+            {
+                return true;
+            }
+
+            return value.Any(property => ContainsE6Discriminator(property.Value));
+        }
+
+        return node is JsonArray array && array.Any(ContainsE6Discriminator);
+    }
+
+    private static bool ContainsE6Property(JsonNode? node)
+    {
+        if (node is JsonObject value)
+        {
+            if (value.ContainsKey("educationAttainments")
+                || value.ContainsKey("attainment")
+                || value.ContainsKey("attainmentId")
+                || value.ContainsKey("teacherCharacterId")
+                || value.ContainsKey("primaryGuardianshipId")
+                || value.ContainsKey("expectedPrimaryGuardianshipId"))
+            {
+                return true;
+            }
+
+            return value.Any(property => ContainsE6Property(property.Value));
+        }
+
+        return node is JsonArray array && array.Any(ContainsE6Property);
+    }
+
     private static bool ContainsPostD2RelationshipSourceKind(JsonNode? node)
     {
         if (node is JsonObject value)
@@ -2386,7 +2500,7 @@ public sealed class SaveMigrationV5ToV6 : ISaveMigration
         CharacterWorldSnapshot legacy = characterNode.Deserialize<CharacterWorldSnapshot>(SimulationJson.CreateOptions())
             ?? throw new SaveCompatibilityException("Schema 5 character snapshot is empty.");
         CharacterWorldSnapshot migratedCharacters = new CharacterWorldSnapshot(
-            CharacterContractVersions.Snapshot,
+            CharacterContractVersions.PreviousSnapshot,
             legacy.IdentityDefinitions.Select(definition => definition with
             {
                 ContractVersion = CharacterContractVersions.Definition,
@@ -2410,7 +2524,7 @@ public sealed class SaveMigrationV5ToV6 : ISaveMigration
             }).ToArray(),
             legacy.CharacterStates.Select(state => state with
             {
-                ContractVersion = CharacterContractVersions.State,
+                ContractVersion = CharacterContractVersions.PreviousState,
                 ParentLinks = state.ParentIds
                     .Select(parentId => new CharacterParentLink(parentId, ParentChildLinkKind.UnspecifiedLegacy))
                     .ToArray(),
@@ -2418,23 +2532,29 @@ public sealed class SaveMigrationV5ToV6 : ISaveMigration
             }).ToArray(),
             legacy.FamilyStates.Select(state => state with
             {
-                ContractVersion = CharacterContractVersions.State,
+                ContractVersion = CharacterContractVersions.PreviousState,
             }).ToArray(),
             legacy.HouseholdStates.Select(state => state with
             {
-                ContractVersion = CharacterContractVersions.State,
+                ContractVersion = CharacterContractVersions.PreviousState,
             }).ToArray()).Canonicalize();
 
         snapshot["characters"] = JsonSerializer.SerializeToNode(
             migratedCharacters,
             SimulationJson.CreateOptions());
+        foreach (JsonObject state in snapshot["characters"]!["characterStates"]!
+                     .AsArray()
+                     .OfType<JsonObject>())
+        {
+            state.Remove("educationAttainments");
+        }
 
         JsonObject characterVersion = systemVersions
             .OfType<JsonObject>()
             .SingleOrDefault(node => IsCharacterSystemVersion(node, CharacterContractVersions.LegacySnapshot))
             ?? throw new SaveCompatibilityException(
                 "Schema 5 is missing required 'simulation.characters@1' system-version data.");
-        characterVersion["version"] = CharacterContractVersions.Snapshot;
+        characterVersion["version"] = CharacterContractVersions.PreviousSnapshot;
 
         WorldSnapshot migratedSnapshot = SaveSchemaRegistry.DeserializeHistoricalSnapshotForChecksum(
             snapshot,
@@ -2995,7 +3115,9 @@ public sealed class SaveMigrationV17ToV18 : ISaveMigration
         WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(
             SimulationJson.CreateOptions())
             ?? throw new SaveCompatibilityException("Migrated schema 18 snapshot is empty.");
-        source["checksum"] = SimulationChecksum.Compute(migratedSnapshot).Value;
+        source["checksum"] = SimulationChecksum.ComputeForSaveSchema(
+            migratedSnapshot,
+            ToSchemaVersion).Value;
         source["schemaVersion"] = ToSchemaVersion;
         return source;
     }
@@ -3019,8 +3141,120 @@ public sealed class SaveMigrationV18ToV19 : ISaveMigration
         WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(
             SimulationJson.CreateOptions())
             ?? throw new SaveCompatibilityException("Migrated schema 19 snapshot is empty.");
+        source["checksum"] = SimulationChecksum.ComputeForSaveSchema(
+            migratedSnapshot,
+            ToSchemaVersion).Value;
+        source["schemaVersion"] = ToSchemaVersion;
+        return source;
+    }
+}
+
+public sealed class SaveMigrationV19ToV20 : ISaveMigration
+{
+    public int FromSchemaVersion => 19;
+
+    public int ToSchemaVersion => 20;
+
+    public JsonObject Migrate(JsonObject source)
+    {
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(source, FromSchemaVersion);
+        if (source["snapshot"] is not JsonObject snapshot
+            || snapshot["characters"] is not JsonObject characters
+            || snapshot["systemVersions"] is not JsonArray systemVersions)
+        {
+            throw new SaveCompatibilityException(
+                "Schema 19 save is missing character or system-version data.");
+        }
+
+        characters["contractVersion"] = CharacterContractVersions.Snapshot;
+        AdvanceStateVersions(
+            characters,
+            "characterStates",
+            addEducationAttainments: true);
+        AdvanceStateVersions(characters, "familyStates", addEducationAttainments: false);
+        AdvanceStateVersions(characters, "householdStates", addEducationAttainments: false);
+        UpgradeEmbeddedBirthChildStates(source["diagnosticEvents"]);
+
+        JsonObject characterSystemVersion = systemVersions
+            .OfType<JsonObject>()
+            .SingleOrDefault(node =>
+                node["systemId"]?.GetValue<string>() == "simulation.characters"
+                && node["version"]?.GetValue<int>() == CharacterContractVersions.PreviousSnapshot)
+            ?? throw new SaveCompatibilityException(
+                $"Schema 19 is missing required 'simulation.characters@{CharacterContractVersions.PreviousSnapshot}' system-version data.");
+        characterSystemVersion["version"] = CharacterContractVersions.Snapshot;
+
+        WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(
+            SimulationJson.CreateOptions())
+            ?? throw new SaveCompatibilityException("Migrated schema 20 snapshot is empty.");
         source["checksum"] = SimulationChecksum.Compute(migratedSnapshot).Value;
         source["schemaVersion"] = ToSchemaVersion;
         return source;
+    }
+
+    private static void AdvanceStateVersions(
+        JsonObject characters,
+        string property,
+        bool addEducationAttainments)
+    {
+        if (characters[property] is not JsonArray states)
+        {
+            throw new SaveCompatibilityException(
+                $"Schema 19 character snapshot is missing '{property}' data.");
+        }
+
+        foreach (JsonObject state in states.OfType<JsonObject>())
+        {
+            if (state["contractVersion"]?.GetValue<int>()
+                != CharacterContractVersions.PreviousState)
+            {
+                throw new SaveCompatibilityException(
+                    $"Schema 19 character snapshot contains unsupported '{property}' state data.");
+            }
+
+            state["contractVersion"] = CharacterContractVersions.State;
+            if (addEducationAttainments)
+            {
+                state["educationAttainments"] = new JsonArray();
+            }
+        }
+    }
+
+    private static void UpgradeEmbeddedBirthChildStates(JsonNode? node)
+    {
+        if (node is JsonArray array)
+        {
+            foreach (JsonNode? item in array)
+            {
+                UpgradeEmbeddedBirthChildStates(item);
+            }
+
+            return;
+        }
+
+        if (node is not JsonObject value)
+        {
+            return;
+        }
+
+        if (value["$type"]?.GetValue<string>() == "pregnancy_birth_resolved.v1"
+            && value["birth"] is JsonObject birth
+            && birth["childState"] is JsonObject childState)
+        {
+            if (childState["contractVersion"]?.GetValue<int>()
+                != CharacterContractVersions.PreviousState)
+            {
+                throw new SaveCompatibilityException(
+                    "Schema 19 pregnancy-birth diagnostics contain an unsupported child-state version.");
+            }
+
+            childState["contractVersion"] = CharacterContractVersions.State;
+            childState["educationAttainments"] = new JsonArray();
+        }
+
+        foreach ((_, JsonNode? child) in value)
+        {
+            UpgradeEmbeddedBirthChildStates(child);
+        }
     }
 }

@@ -34,6 +34,8 @@ public sealed class SaveStoreTests : IDisposable
     private const string FrozenSchemaSeventeenFileSha256 = "c99c1183f408dfd66eb08015e3b10d4e5b3a2f573c4adb364cd395fb8a1eb9c2";
     private const string FrozenSchemaEighteenChecksum = "7f0feb49415b8d0074d447381340aea0c09200964f55104034db60c04f70d49e";
     private const string FrozenSchemaEighteenFileSha256 = "b27ccfdc51704721055161d6e57738e40030ff67d96f928e61bcbf5ed93c9453";
+    private const string FrozenSchemaNineteenChecksum = "dc49cef5fe5d55a310ec0191189358a188224afd8df33fc689efc4c34edd999c";
+    private const string FrozenSchemaNineteenFileSha256 = "d6af4142e95b38fbd47386668de7b85253f345f29699258c0b9dce99b87369f0";
     // Reconstructed literally from the exact schema-4 serializer contract at eaa3aaf.
     // Unlike the inferred schema-1/2 fixtures, this contains nonempty character history.
     private const string FrozenSchemaFourFixture = """{"schemaVersion":4,"contractVersion":2,"gameVersion":"0.1.0","createdUtc":"2026-07-15T00:00:00+00:00","contentManifests":[{"packId":{"value":"base:synthetic"},"version":"1.0.0","checksum":"sha256:abc","requiredForSimulation":true}],"seed":99,"snapshot":{"contractVersion":1,"calendar":{"date":{"year":191,"month":7,"day":14},"turnIndex":0,"daysInCurrentTurn":3},"rootSeed":99,"randomStreams":[],"entities":[],"pendingCommands":[],"systemVersions":[{"systemId":"simulation.calendar","version":1},{"systemId":"simulation.synthetic_entities","version":1},{"systemId":"simulation.command_events","version":1},{"systemId":"simulation.geography","version":1},{"systemId":"simulation.characters","version":1}],"lastEventDate":null,"lastEventPhase":null,"lastEventPriority":null,"lastEventId":null,"geography":{"graph":{"regions":[],"districts":[],"localities":[],"stops":[],"routes":[]},"season":0,"weather":0,"locations":[],"routes":[],"armies":[]},"characters":{"contractVersion":1,"identityDefinitions":[{"contractVersion":1,"id":{"value":"ability:synthetic/command"},"kind":0,"nameKey":{"value":"loc:ability/synthetic_command"}}],"characterDefinitions":[{"contractVersion":1,"id":{"value":"character:synthetic/adult"},"nameKey":{"value":"loc:character/synthetic_adult"},"birthDate":{"year":160,"month":1,"day":1},"abilityIds":[{"value":"ability:synthetic/command"}],"aptitudeIds":[],"traitIds":[],"ambitionIds":[],"reputationIds":[]}],"familyDefinitions":[],"householdDefinitions":[],"characterStates":[{"contractVersion":1,"characterId":{"value":"character:synthetic/adult"},"parentIds":[]}],"familyStates":[],"householdStates":[]}},"diagnosticCommands":[],"diagnosticEvents":[],"checksum":"48b94dad9d4dda78591243341afa16ece40e0ed157368f84c1189641684ecd3e"}""";
@@ -185,6 +187,8 @@ public sealed class SaveStoreTests : IDisposable
     [InlineData("null-parent-links")]
     [InlineData("missing-parent-link-kind")]
     [InlineData("missing-condition")]
+    [InlineData("missing-education-attainments")]
+    [InlineData("null-education-attainments")]
     [InlineData("missing-vital-status")]
     [InlineData("missing-incapacitated")]
     [InlineData("missing-custodian-id")]
@@ -290,6 +294,13 @@ public sealed class SaveStoreTests : IDisposable
                 break;
             case "missing-condition":
                 snapshot["characters"]!["characterStates"]![0]!.AsObject().Remove("condition");
+                break;
+            case "missing-education-attainments":
+                snapshot["characters"]!["characterStates"]![0]!
+                    .AsObject().Remove("educationAttainments");
+                break;
+            case "null-education-attainments":
+                snapshot["characters"]!["characterStates"]![0]!["educationAttainments"] = null;
                 break;
             case "missing-vital-status":
                 snapshot["characters"]!["characterStates"]![0]!["condition"]!
@@ -478,6 +489,12 @@ public sealed class SaveStoreTests : IDisposable
         compatible["snapshot"] = JsonSerializer.SerializeToNode(
             historical,
             SimulationJson.CreateOptions());
+        foreach (JsonObject state in compatible["snapshot"]!["characters"]!["characterStates"]!
+                     .AsArray()
+                     .OfType<JsonObject>())
+        {
+            state.Remove("educationAttainments");
+        }
         compatible["checksum"] = SimulationChecksum.ComputeForSaveSchema(
             historical,
             18).Value;
@@ -1312,7 +1329,9 @@ public sealed class SaveStoreTests : IDisposable
         Assert.Equal(SaveEnvelope.CurrentSchemaVersion, migrated.SchemaVersion);
         Assert.Empty(migrated.Snapshot.Characters.CharacterDefinitions);
         Assert.Contains(migrated.Snapshot.SystemVersions, version =>
-            version == new SystemVersion("simulation.characters", 2));
+            version == new SystemVersion(
+                "simulation.characters",
+                CharacterContractVersions.Snapshot));
         Assert.Empty(migrated.Snapshot.Relationships.Subjects);
         Assert.Contains(migrated.Snapshot.SystemVersions, version =>
             version == new SystemVersion(
@@ -1354,7 +1373,9 @@ public sealed class SaveStoreTests : IDisposable
 
         Assert.Equal(SaveEnvelope.CurrentSchemaVersion, migrated.SchemaVersion);
         Assert.Contains(migrated.Snapshot.SystemVersions, version =>
-            version == new SystemVersion("simulation.characters", 2));
+            version == new SystemVersion(
+                "simulation.characters",
+                CharacterContractVersions.Snapshot));
         CharacterDefinition child = Assert.Single(
             migrated.Snapshot.Characters.CharacterDefinitions,
             definition => definition.Id == new EntityId("character:synthetic/child"));
@@ -1455,8 +1476,8 @@ public sealed class SaveStoreTests : IDisposable
         Assert.Empty(migrated.Snapshot.CharacterResources.LedgerEntries);
         Assert.Empty(migrated.Snapshot.CharacterResources.History);
         Assert.Equal(
-            JsonSerializer.Serialize(historical.Characters, CanonicalJson.Options),
-            JsonSerializer.Serialize(migrated.Snapshot.Characters, CanonicalJson.Options));
+            SerializeCharactersWithoutEducation(historical.Characters),
+            SerializeCharactersWithoutEducation(migrated.Snapshot.Characters));
         Assert.Equal(
             JsonSerializer.Serialize(historical.Relationships, CanonicalJson.Options),
             JsonSerializer.Serialize(migrated.Snapshot.Relationships, CanonicalJson.Options));
@@ -1519,8 +1540,8 @@ public sealed class SaveStoreTests : IDisposable
             JsonSerializer.Serialize(frozen["contentManifests"], CanonicalJson.Options),
             JsonSerializer.Serialize(migrated.ContentManifests, CanonicalJson.Options));
         Assert.Equal(
-            JsonSerializer.Serialize(historical, CanonicalJson.Options),
-            JsonSerializer.Serialize(normalizedPreC3, CanonicalJson.Options));
+            SerializeWithoutCharacterEducation(historical),
+            SerializeWithoutCharacterEducation(normalizedPreC3));
         Assert.Equal(SimulationChecksum.Compute(migrated.Snapshot).Value, migrated.Checksum);
         Assert.Contains(migrated.Snapshot.SystemVersions, version =>
             version == new SystemVersion(
@@ -1528,8 +1549,8 @@ public sealed class SaveStoreTests : IDisposable
                 CharacterEstateHoldingSystem.Version));
         Assert.Empty(migrated.Snapshot.CharacterEstateHoldings.Holdings);
         Assert.Equal(
-            JsonSerializer.Serialize(historical.Characters, CanonicalJson.Options),
-            JsonSerializer.Serialize(migrated.Snapshot.Characters, CanonicalJson.Options));
+            SerializeCharactersWithoutEducation(historical.Characters),
+            SerializeCharactersWithoutEducation(migrated.Snapshot.Characters));
         Assert.Equal(
             JsonSerializer.Serialize(historical.Relationships, CanonicalJson.Options),
             JsonSerializer.Serialize(migrated.Snapshot.Relationships, CanonicalJson.Options));
@@ -1598,8 +1619,8 @@ public sealed class SaveStoreTests : IDisposable
             JsonSerializer.Serialize(frozen["contentManifests"], CanonicalJson.Options),
             JsonSerializer.Serialize(migrated.ContentManifests, CanonicalJson.Options));
         Assert.Equal(
-            JsonSerializer.Serialize(historical, CanonicalJson.Options),
-            JsonSerializer.Serialize(normalizedPreD0, CanonicalJson.Options));
+            SerializeWithoutCharacterEducation(historical),
+            SerializeWithoutCharacterEducation(normalizedPreD0));
         Assert.Equal(SimulationChecksum.Compute(migrated.Snapshot).Value, migrated.Checksum);
         Assert.Contains(migrated.Snapshot.SystemVersions, version =>
             version == new SystemVersion(
@@ -2819,7 +2840,7 @@ public sealed class SaveStoreTests : IDisposable
         Assert.Equal(SaveEnvelope.CurrentSchemaVersion, migrated.SchemaVersion);
         Assert.Equal(
             historicalSnapshot,
-            JsonSerializer.Serialize(migrated.Snapshot, CanonicalJson.Options));
+            SerializeWithoutCharacterEducation(migrated.Snapshot));
         Assert.Equal(
             historicalCommands,
             JsonSerializer.Serialize(migrated.DiagnosticCommands, CanonicalJson.Options));
@@ -2979,7 +3000,7 @@ public sealed class SaveStoreTests : IDisposable
                     [])).ToArray(),
             CharacterStates = historical.Characters.CharacterStates.Append(
                 new CharacterState(
-                    CharacterContractVersions.State,
+                    CharacterContractVersions.PreviousState,
                     childId,
                     parentLinks.Select(link => link.ParentCharacterId).Order().ToArray(),
                     parentLinks.OrderBy(link => link.ParentCharacterId).ToArray(),
@@ -2991,7 +3012,7 @@ public sealed class SaveStoreTests : IDisposable
                     new EntityId("loc:fixture/schema_18_family"))).ToArray(),
             FamilyStates = historical.Characters.FamilyStates.Append(
                 new FamilyState(
-                    CharacterContractVersions.State,
+                    CharacterContractVersions.PreviousState,
                     familyId,
                     new[] { firstParent, childId }.Order().ToArray())).ToArray(),
             HouseholdStates = historical.Characters.HouseholdStates.Select(state =>
@@ -3006,6 +3027,12 @@ public sealed class SaveStoreTests : IDisposable
         compatible["snapshot"] = JsonSerializer.SerializeToNode(
             historical,
             SimulationJson.CreateOptions());
+        foreach (JsonObject state in compatible["snapshot"]!["characters"]!["characterStates"]!
+                     .AsArray()
+                     .OfType<JsonObject>())
+        {
+            state.Remove("educationAttainments");
+        }
         compatible["checksum"] = SimulationChecksum.ComputeForSaveSchema(
             historical,
             18).Value;
@@ -3027,6 +3054,309 @@ public sealed class SaveStoreTests : IDisposable
             parentLinks.OrderBy(link => link.ParentCharacterId),
             child.ParentLinks);
         Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void SchemaNineteen_AuthenticatesExactE5FixtureAndMigratesRuntimeCharactersWithoutChangingSource()
+    {
+        JsonObject frozen = CreateHistoricalFixture(19);
+        Assert.Equal(FrozenSchemaNineteenChecksum, frozen["checksum"]!.GetValue<string>());
+        string fixturePath = Path.Combine(
+            AppContext.BaseDirectory,
+            "Fixtures",
+            "save-schema-19-history-backed.json");
+        byte[] fixtureBytes = File.ReadAllBytes(fixturePath);
+        Assert.Equal(17_797, fixtureBytes.Length);
+        Assert.Equal(
+            FrozenSchemaNineteenFileSha256,
+            Convert.ToHexStringLower(SHA256.HashData(fixtureBytes)));
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(frozen, 19);
+        JsonObject original = (JsonObject)frozen.DeepClone();
+        string historicalCommands = JsonSerializer.Serialize(
+            frozen["diagnosticCommands"],
+            CanonicalJson.Options);
+        string path = Path.Combine(directory, "schema-nineteen-history-backed.save.gz");
+        WriteFrozenHistoricalFixture(path, 19);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        SaveEnvelope migrated = new SaveStore().Load(path);
+
+        JsonObject expectedSnapshot = original["snapshot"]!.DeepClone().AsObject();
+        JsonObject expectedCharacters = expectedSnapshot["characters"]!.AsObject();
+        expectedCharacters["contractVersion"] = CharacterContractVersions.Snapshot;
+        foreach (JsonObject state in expectedCharacters["characterStates"]!.AsArray()
+                     .OfType<JsonObject>())
+        {
+            state["contractVersion"] = CharacterContractVersions.State;
+            state["educationAttainments"] = new JsonArray();
+        }
+        foreach (JsonObject state in expectedCharacters["familyStates"]!.AsArray()
+                     .Concat(expectedCharacters["householdStates"]!.AsArray())
+                     .OfType<JsonObject>())
+        {
+            state["contractVersion"] = CharacterContractVersions.State;
+        }
+        expectedSnapshot["systemVersions"]!.AsArray()
+            .OfType<JsonObject>()
+            .Single(item => item["systemId"]!.GetValue<string>() == "simulation.characters")
+            ["version"] = CharacterContractVersions.Snapshot;
+        JsonNode migratedSnapshot = JsonSerializer.SerializeToNode(
+            migrated.Snapshot,
+            SimulationJson.CreateOptions())!;
+        JsonArray expectedDiagnosticEvents = original["diagnosticEvents"]!
+            .DeepClone()
+            .AsArray();
+        JsonObject expectedBirthChildState = expectedDiagnosticEvents
+            .OfType<JsonObject>()
+            .Single(campaignEvent => campaignEvent["payload"]?["outcome"]?["$type"]
+                ?.GetValue<string>() == "pregnancy_birth_resolved.v1")
+            ["payload"]!["outcome"]!["birth"]!["childState"]!.AsObject();
+        expectedBirthChildState["contractVersion"] = CharacterContractVersions.State;
+        expectedBirthChildState["educationAttainments"] = new JsonArray();
+        JsonObject migratedJson = JsonSerializer.SerializeToNode(
+            migrated,
+            SimulationJson.CreateOptions())!.AsObject();
+
+        Assert.Equal(SaveEnvelope.CurrentSchemaVersion, migrated.SchemaVersion);
+        Assert.True(JsonNode.DeepEquals(expectedSnapshot, migratedSnapshot));
+        foreach (string preservedEnvelopeProperty in new[]
+                 {
+                     "contractVersion",
+                     "gameVersion",
+                     "createdUtc",
+                     "contentManifests",
+                     "seed",
+                 })
+        {
+            Assert.True(JsonNode.DeepEquals(
+                original[preservedEnvelopeProperty],
+                migratedJson[preservedEnvelopeProperty]));
+        }
+        Assert.True(JsonNode.DeepEquals(
+            original["diagnosticCommands"],
+            migratedJson["diagnosticCommands"]));
+        Assert.True(JsonNode.DeepEquals(
+            expectedDiagnosticEvents,
+            migratedJson["diagnosticEvents"]));
+        Assert.Equal(CharacterContractVersions.Snapshot, migrated.Snapshot.Characters.ContractVersion);
+        Assert.All(migrated.Snapshot.Characters.IdentityDefinitions, item =>
+            Assert.Equal(CharacterContractVersions.Definition, item.ContractVersion));
+        Assert.All(migrated.Snapshot.Characters.CharacterDefinitions, item =>
+            Assert.Equal(CharacterContractVersions.Definition, item.ContractVersion));
+        Assert.All(migrated.Snapshot.Characters.CharacterStates, item =>
+        {
+            Assert.Equal(CharacterContractVersions.State, item.ContractVersion);
+            Assert.Empty(item.EducationAttainments!);
+        });
+        Assert.All(migrated.Snapshot.Characters.FamilyStates, item =>
+            Assert.Equal(CharacterContractVersions.State, item.ContractVersion));
+        Assert.All(migrated.Snapshot.Characters.HouseholdStates, item =>
+            Assert.Equal(CharacterContractVersions.State, item.ContractVersion));
+        Assert.Contains(
+            migrated.Snapshot.SystemVersions,
+            item => item.SystemId == "simulation.characters"
+                && item.Version == CharacterContractVersions.Snapshot);
+        Assert.Contains(
+            migrated.Snapshot.PendingCommands,
+            command => command.Payload is CharacterFamilyActionCommandPayload
+            {
+                Action: ResolvePregnancyBirthAction,
+            });
+        Assert.Contains(
+            migrated.DiagnosticEvents,
+            campaignEvent => campaignEvent.Payload is CharacterFamilyActionResolvedEventPayload
+            {
+                Outcome: PregnancyBirthResolvedOutcome,
+            });
+        Assert.Equal(
+            historicalCommands,
+            JsonSerializer.Serialize(migrated.DiagnosticCommands, CanonicalJson.Options));
+        PregnancyBirthResolvedOutcome migratedBirth = Assert.IsType<
+            PregnancyBirthResolvedOutcome>(Assert.IsType<
+                CharacterFamilyActionResolvedEventPayload>(Assert.Single(
+                    migrated.DiagnosticEvents).Payload).Outcome);
+        Assert.Equal(CharacterContractVersions.State, migratedBirth.Birth.ChildState.ContractVersion);
+        Assert.Empty(migratedBirth.Birth.ChildState.EducationAttainments!);
+        Assert.Equal(
+            FrozenSchemaNineteenChecksum,
+            SimulationChecksum.ComputeForSaveSchema(migrated.Snapshot, 19).Value);
+        Assert.Equal(SimulationChecksum.Compute(migrated.Snapshot).Value, migrated.Checksum);
+        WorldState restored = WorldState.Restore(migrated.Snapshot);
+        AuthoritativeCharacterProfile generated = Assert.Single(
+            restored.Characters.Profiles,
+            item => item.ContentOrigin.OriginKind == CharacterOriginKind.Generated);
+        Assert.Empty(generated.EducationAttainments);
+        Assert.Equal(
+            JsonSerializer.Serialize(original, CanonicalJson.Options),
+            JsonSerializer.Serialize(frozen, CanonicalJson.Options));
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Theory]
+    [InlineData("pending-action")]
+    [InlineData("diagnostic-action")]
+    [InlineData("diagnostic-outcome")]
+    public void SchemaNineteen_RejectsE6DiscriminatorsWithoutChangingSource(string mutation)
+    {
+        JsonObject invalid = CreateHistoricalFixture(19);
+        JsonObject pendingAction = invalid["snapshot"]!["pendingCommands"]!.AsArray()
+            .OfType<JsonObject>()
+            .First(command => command["payload"]?["action"]?["$type"]?.GetValue<string>()
+                == "resolve_pregnancy_birth.v1");
+        JsonObject diagnosticAction = invalid["diagnosticCommands"]!.AsArray()
+            .OfType<JsonObject>()
+            .First(command => command["payload"]?["action"]?["$type"]?.GetValue<string>()
+                == "resolve_pregnancy_birth.v1");
+        JsonObject diagnosticOutcome = invalid["diagnosticEvents"]!.AsArray()
+            .OfType<JsonObject>()
+            .First(campaignEvent => campaignEvent["payload"]?["outcome"]?["$type"]?.GetValue<string>()
+                == "pregnancy_birth_resolved.v1");
+        switch (mutation)
+        {
+            case "pending-action":
+                pendingAction["payload"]!["action"]!["$type"] =
+                    "complete_primary_guardian_education.v1";
+                break;
+            case "diagnostic-action":
+                diagnosticAction["payload"]!["action"]!["$type"] =
+                    "complete_primary_guardian_education.v1";
+                break;
+            case "diagnostic-outcome":
+                diagnosticOutcome["payload"]!["outcome"]!["$type"] =
+                    "primary_guardian_education_completed.v1";
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(mutation));
+        }
+
+        string path = Path.Combine(directory, $"schema-nineteen-e6-{mutation}.save.gz");
+        WriteJsonGzip(path, invalid);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        Assert.Throws<SaveCompatibilityException>(() => new SaveStore().Load(path));
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Theory]
+    [InlineData("educationAttainments", false)]
+    [InlineData("educationAttainments", true)]
+    [InlineData("attainment", false)]
+    [InlineData("attainment", true)]
+    [InlineData("attainmentId", false)]
+    [InlineData("attainmentId", true)]
+    [InlineData("teacherCharacterId", false)]
+    [InlineData("teacherCharacterId", true)]
+    [InlineData("primaryGuardianshipId", false)]
+    [InlineData("primaryGuardianshipId", true)]
+    [InlineData("expectedPrimaryGuardianshipId", false)]
+    [InlineData("expectedPrimaryGuardianshipId", true)]
+    public void SchemaNineteen_RejectsEachIsolatedE6PropertyIncludingExplicitNull(
+        string propertyName,
+        bool explicitNull)
+    {
+        JsonObject invalid = CreateHistoricalFixture(19);
+        string beforeMutation = JsonSerializer.Serialize(invalid, CanonicalJson.Options);
+        Assert.DoesNotContain($"\"{propertyName}\"", beforeMutation, StringComparison.Ordinal);
+        JsonObject target = propertyName == "educationAttainments"
+            ? invalid["snapshot"]!["characters"]!["characterStates"]!.AsArray()[0]!.AsObject()
+            : invalid["diagnosticCommands"]!.AsArray()[0]!["payload"]!.AsObject();
+        target[propertyName] = explicitNull
+            ? null
+            : JsonValue.Create("isolated-e6-property-probe");
+        string path = Path.Combine(
+            directory,
+            $"schema-nineteen-isolated-{propertyName}-{explicitNull}.save.gz");
+        WriteJsonGzip(path, invalid);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        Assert.Throws<SaveCompatibilityException>(() => new SaveStore().Load(path));
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Theory]
+    [InlineData("snapshot-version")]
+    [InlineData("state-version")]
+    [InlineData("system-version")]
+    public void SchemaNineteen_RejectsCharacterV3VersionInjectionWithoutChangingSource(
+        string mutation)
+    {
+        JsonObject invalid = CreateHistoricalFixture(19);
+        switch (mutation)
+        {
+            case "snapshot-version":
+                invalid["snapshot"]!["characters"]!["contractVersion"] =
+                    CharacterContractVersions.Snapshot;
+                break;
+            case "state-version":
+                invalid["snapshot"]!["characters"]!["characterStates"]![0]!["contractVersion"] =
+                    CharacterContractVersions.State;
+                break;
+            case "system-version":
+                invalid["snapshot"]!["systemVersions"]!.AsArray()
+                    .OfType<JsonObject>()
+                    .Single(item => item["systemId"]!.GetValue<string>() == "simulation.characters")
+                    ["version"] = CharacterContractVersions.Snapshot;
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(mutation));
+        }
+
+        string path = Path.Combine(directory, $"schema-nineteen-v3-{mutation}.save.gz");
+        WriteJsonGzip(path, invalid);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        Assert.Throws<SaveCompatibilityException>(() => new SaveStore().Load(path));
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void SchemaNineteen_GeneratedChildMigratesEmptyThenGainsEducationAbility()
+    {
+        string path = Path.Combine(directory, "schema-nineteen-generated-education.save.gz");
+        WriteFrozenHistoricalFixture(path, 19);
+        SaveEnvelope migrated = new SaveStore().Load(path);
+        CampaignSimulation simulation = new(WorldState.Restore(migrated.Snapshot));
+        AuthoritativeCharacterProfile child = Assert.Single(
+            simulation.World.Characters.Profiles,
+            item => item.ContentOrigin.OriginKind == CharacterOriginKind.Generated);
+        EntityId teacher = new("character:fixture/e5-first");
+        EntityId ability = new("ability:fixture/e5-teaching");
+        CampaignCommand guardianshipCommand = CampaignCommand.Create(
+            new EntityId("command:test/schema19-generated-guardian"),
+            CharacterFamilySystem.AuthoritativeActorId,
+            simulation.World.Calendar.Date,
+            new CharacterFamilyActionCommandPayload(
+                new EstablishPrimaryGuardianshipAction(teacher, child.CharacterId, null)));
+        Assert.True(simulation.Submit(guardianshipCommand).IsValid);
+
+        IReadOnlyList<CampaignEvent> firstTurn = simulation.ResolveTurn();
+        PrimaryGuardianshipEstablishedOutcome guardianship = Assert.IsType<
+            PrimaryGuardianshipEstablishedOutcome>(Assert.IsType<
+                CharacterFamilyActionResolvedEventPayload>(firstTurn.Single(item =>
+                    item.CausalId == guardianshipCommand.CommandId).Payload).Outcome);
+        CampaignCommand educationCommand = CampaignCommand.Create(
+            new EntityId("command:test/schema19-generated-education"),
+            CharacterFamilySystem.AuthoritativeActorId,
+            simulation.World.Calendar.Date,
+            new CharacterFamilyActionCommandPayload(
+                new CompletePrimaryGuardianEducationAction(
+                    child.CharacterId,
+                    guardianship.Guardianship.GuardianshipId,
+                    ability)));
+        Assert.True(simulation.Submit(educationCommand).IsValid);
+        Assert.Contains(
+            simulation.ResolveTurn(),
+            item => item.CausalId == educationCommand.CommandId
+                && item.Payload is CharacterFamilyActionResolvedEventPayload
+                {
+                    Outcome: PrimaryGuardianEducationCompletedOutcome,
+                });
+
+        Assert.True(simulation.World.Characters.TryGetCharacterProfile(
+            child.CharacterId,
+            out AuthoritativeCharacterProfile? educated));
+        Assert.Equal([ability], educated.AbilityIds);
+        Assert.Equal(ability, Assert.Single(educated.EducationAttainments).AbilityId);
     }
 
     [Theory]
@@ -3434,6 +3764,7 @@ public sealed class SaveStoreTests : IDisposable
     [InlineData(16)]
     [InlineData(17)]
     [InlineData(18)]
+    [InlineData(19)]
     public void CorruptedHistoricalSnapshotFailsAuthenticationWithoutOverwritingSource(int schemaVersion)
     {
         JsonObject historical = CreateHistoricalFixture(schemaVersion);
@@ -3744,7 +4075,9 @@ public sealed class SaveStoreTests : IDisposable
 
         Assert.Empty(restored.Characters.Profiles);
         Assert.Contains(restored.CaptureSnapshot().SystemVersions, version =>
-            version == new SystemVersion("simulation.characters", 2));
+            version == new SystemVersion(
+                "simulation.characters",
+                CharacterContractVersions.Snapshot));
     }
 
     [Fact]
@@ -3760,7 +4093,9 @@ public sealed class SaveStoreTests : IDisposable
 
         Assert.Empty(restored.Characters.Profiles);
         Assert.Contains(restored.CaptureSnapshot().SystemVersions, version =>
-            version == new SystemVersion("simulation.characters", 2));
+            version == new SystemVersion(
+                "simulation.characters",
+                CharacterContractVersions.Snapshot));
     }
 
     [Fact]
@@ -4585,6 +4920,8 @@ public sealed class SaveStoreTests : IDisposable
             systemVersions.Remove(pregnancyVersion);
         }
 
+        DowngradeSerializedCharactersFromV3(serialized);
+
         return JsonSerializer.Serialize(serialized, CanonicalJson.Options);
     }
 
@@ -4603,7 +4940,54 @@ public sealed class SaveStoreTests : IDisposable
             systemVersions.Remove(pregnancyVersion);
         }
 
+        DowngradeSerializedCharactersFromV3(serialized);
+
         return JsonSerializer.Serialize(serialized, CanonicalJson.Options);
+    }
+
+    private static string SerializeWithoutCharacterEducation(WorldSnapshot snapshot)
+    {
+        JsonObject serialized = JsonSerializer.SerializeToNode(
+            snapshot,
+            CanonicalJson.Options)!.AsObject();
+        DowngradeSerializedCharactersFromV3(serialized);
+        return JsonSerializer.Serialize(serialized, CanonicalJson.Options);
+    }
+
+    private static string SerializeCharactersWithoutEducation(CharacterWorldSnapshot characters)
+    {
+        JsonObject serialized = JsonSerializer.SerializeToNode(
+            characters,
+            CanonicalJson.Options)!.AsObject();
+        serialized["contractVersion"] = CharacterContractVersions.PreviousSnapshot;
+        DowngradeSerializedCharacterStateCollections(serialized);
+        return JsonSerializer.Serialize(serialized, CanonicalJson.Options);
+    }
+
+    private static void DowngradeSerializedCharactersFromV3(JsonObject snapshot)
+    {
+        JsonObject characters = snapshot["characters"]!.AsObject();
+        characters["contractVersion"] = CharacterContractVersions.PreviousSnapshot;
+        DowngradeSerializedCharacterStateCollections(characters);
+        JsonObject version = snapshot["systemVersions"]!.AsArray()
+            .OfType<JsonObject>()
+            .Single(item => item["systemId"]!.GetValue<string>() == "simulation.characters");
+        version["version"] = CharacterContractVersions.PreviousSnapshot;
+    }
+
+    private static void DowngradeSerializedCharacterStateCollections(JsonObject characters)
+    {
+        foreach (string collection in new[] { "characterStates", "familyStates", "householdStates" })
+        {
+            foreach (JsonObject state in characters[collection]!.AsArray().OfType<JsonObject>())
+            {
+                state["contractVersion"] = CharacterContractVersions.PreviousState;
+                if (collection == "characterStates")
+                {
+                    state.Remove("educationAttainments");
+                }
+            }
+        }
     }
 
     private static void WriteJsonGzip(string path, JsonObject json)
@@ -4639,6 +5023,8 @@ public sealed class SaveStoreTests : IDisposable
         // Schema 16 is generated from the exact accepted SP-04E2 contract at 7491da8.
         // Schema 17 is generated from the exact accepted SP-04E3 contract at 59588be.
         // Schema 18 is generated from the exact accepted SP-04E4 contract at 177346b.
+        // Schema 19 is generated by a detached harness compiled from the exact
+        // accepted SP-04E5 implementation source at 4b28fb7.
         // Schema 1/2 are synthetic fixtures inferred from the registered migration contracts.
         string fileName = schemaVersion switch
         {
@@ -4660,6 +5046,7 @@ public sealed class SaveStoreTests : IDisposable
             16 => "save-schema-16-history-backed.json",
             17 => "save-schema-17-history-backed.json",
             18 => "save-schema-18-history-backed.json",
+            19 => "save-schema-19-history-backed.json",
             _ => throw new ArgumentOutOfRangeException(nameof(schemaVersion)),
         };
         return schemaVersion == 4
@@ -4721,6 +5108,7 @@ public sealed class SaveStoreTests : IDisposable
         {
             state.Remove("parentLinks");
             state.Remove("condition");
+            state.Remove("educationAttainments");
         }
     }
 

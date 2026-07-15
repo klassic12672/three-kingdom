@@ -89,7 +89,7 @@ public static class CharacterContentLoader
             CharacterContractVersions.LegacySnapshot => NormalizeLegacyWorld(
                 Deserialize<LegacyCharacterWorldData>(worldRecord),
                 worldRecord),
-            CharacterContractVersions.Snapshot => NormalizeCurrentWorld(
+            CharacterContractVersions.AuthoredSnapshot => NormalizeCurrentWorld(
                 Deserialize<CurrentCharacterWorldData>(worldRecord),
                 worldRecord),
             _ => throw UnsupportedVersion(worldRecord, "world", version),
@@ -115,7 +115,8 @@ public static class CharacterContentLoader
             state.ParentIds.Select(parentId => new CharacterParentLink(
                 parentId,
                 ParentChildLinkKind.UnspecifiedLegacy)).ToArray(),
-            CharacterConditionState.Default)).ToArray();
+            CharacterConditionState.Default,
+            [])).ToArray();
         FamilyState[] families = world.FamilyStates.Select(state => new FamilyState(
             CharacterContractVersions.State,
             state.FamilyId,
@@ -153,7 +154,7 @@ public static class CharacterContentLoader
         RequireWorldLists(world, worldRecord);
         foreach (CurrentCharacterStateData state in world.CharacterStates)
         {
-            RequireVersion(state.ContractVersion, CharacterContractVersions.State, worldRecord, "character state");
+            RequireVersion(state.ContractVersion, CharacterContractVersions.AuthoredState, worldRecord, "character state");
             RequireList(state.ParentIds, worldRecord, "characterStates[].parentIds");
             RequireList(state.ParentLinks, worldRecord, "characterStates[].parentLinks");
             RequireCanonicalIds(state.ParentIds, worldRecord, "characterStates[].parentIds");
@@ -174,7 +175,11 @@ public static class CharacterContentLoader
             ValidateCondition(state.Condition, worldRecord);
         }
 
-        ValidateCommonWorldStates(world.FamilyStates, world.HouseholdStates, CharacterContractVersions.State, worldRecord);
+        ValidateCommonWorldStates(
+            world.FamilyStates,
+            world.HouseholdStates,
+            CharacterContractVersions.AuthoredState,
+            worldRecord);
         CharacterState[] characters = world.CharacterStates.Select(state => new CharacterState(
             CharacterContractVersions.State,
             state.CharacterId,
@@ -185,7 +190,8 @@ public static class CharacterContentLoader
                 state.Condition.HealthStatus,
                 state.Condition.IsIncapacitated,
                 state.Condition.CustodyStatus,
-                state.Condition.CustodianId))).ToArray();
+                state.Condition.CustodianId),
+            [])).ToArray();
         FamilyState[] families = world.FamilyStates.Select(state => new FamilyState(
             CharacterContractVersions.State,
             state.FamilyId,
@@ -685,7 +691,8 @@ public static class CharacterContentLoader
         string contractKind,
         int actual) => new(
             $"Character record '{record.Id}' uses unsupported {contractKind} version {actual}; expected "
-            + $"{CharacterContractVersions.LegacySnapshot} or {CharacterContractVersions.Snapshot}.");
+            + $"{CharacterContractVersions.LegacySnapshot} or "
+            + $"{(contractKind == "definition" ? CharacterContractVersions.Definition : CharacterContractVersions.AuthoredSnapshot)}.");
 
     private static void RequireSupportedDefinitionVersion(int actual, NormalizedContentRecord record)
     {

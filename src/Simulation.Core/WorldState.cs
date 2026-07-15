@@ -97,11 +97,37 @@ public sealed class WorldState : IWorldQuery
             characterGuardianships,
             Characters,
             calendar);
+        ValidateCharacterEducationAttainmentGuardianships();
         CharacterPregnancies = new CharacterPregnancyWorldState(
             characterPregnancies,
             Characters,
             CharacterMarriages,
             calendar);
+    }
+
+    private void ValidateCharacterEducationAttainmentGuardianships()
+    {
+        IReadOnlyDictionary<EntityId, CharacterGuardianshipState> guardianships =
+            CharacterGuardianships.Guardianships.ToDictionary(item => item.GuardianshipId);
+        foreach (CharacterEducationAttainment attainment in Characters.Profiles
+                     .SelectMany(profile => profile.EducationAttainments))
+        {
+            if (!guardianships.TryGetValue(
+                    attainment.PrimaryGuardianshipId,
+                    out CharacterGuardianshipState? guardianship)
+                || guardianship.WardCharacterId != attainment.WardCharacterId
+                || guardianship.GuardianCharacterId != attainment.TeacherCharacterId
+                || attainment.ResolutionDate.CompareTo(guardianship.EstablishedDate) < 0
+                || attainment.ResolutionTurnIndex < guardianship.EstablishedTurnIndex
+                || (guardianship.EndDate is CampaignDate endDate
+                    && attainment.ResolutionDate.CompareTo(endDate) > 0)
+                || (guardianship.EndTurnIndex is long endTurnIndex
+                    && attainment.ResolutionTurnIndex > endTurnIndex))
+            {
+                throw new SimulationValidationException(
+                    $"Character education attainment '{attainment.AttainmentId}' does not match its retained primary guardianship source.");
+            }
+        }
     }
 
     public CampaignCalendar Calendar { get; private set; }
@@ -809,6 +835,37 @@ public sealed class WorldState : IWorldQuery
                         character.CharacterPlan,
                         null,
                         pregnancy.PregnancyPlan);
+                }
+            case CompletePrimaryGuardianEducationAction educationAction:
+                {
+                    if (!CharacterGuardianships.TryGetActivePrimaryGuardianshipForWard(
+                            educationAction.WardCharacterId,
+                            out CharacterGuardianshipState? guardianship)
+                        || guardianship.GuardianshipId
+                            != educationAction.ExpectedPrimaryGuardianshipId)
+                    {
+                        throw new SimulationValidationException(
+                            $"Character education requires exact active primary guardianship '{educationAction.ExpectedPrimaryGuardianshipId}' for ward '{educationAction.WardCharacterId}'.");
+                    }
+
+                    CharacterEducationMutationPlan education =
+                        Characters.PreparePrimaryGuardianEducation(
+                            educationAction,
+                            guardianship,
+                            resolutionDate,
+                            authoritativeTurnIndex,
+                            commandId,
+                            eventId);
+                    CharacterFamilyActionResolvedEventPayload resolved = new(
+                        actingActorId,
+                        payload.Action,
+                        new PrimaryGuardianEducationCompletedOutcome(
+                            education.Attainment));
+                    return new CharacterFamilyAggregatePlan(
+                        resolved,
+                        education.CharacterPlan,
+                        null,
+                        null);
                 }
             default:
                 throw new SimulationValidationException(
@@ -1619,6 +1676,21 @@ public sealed class WorldState : IWorldQuery
                     ? new[] { householdId }
                     : [],
             ],
+            (CompletePrimaryGuardianEducationAction action,
+                PrimaryGuardianEducationCompletedOutcome outcome)
+                when outcome.Attainment is not null
+                    && outcome.Attainment.WardCharacterId == action.WardCharacterId
+                    && outcome.Attainment.PrimaryGuardianshipId
+                        == action.ExpectedPrimaryGuardianshipId
+                    && outcome.Attainment.AbilityId == action.AbilityId =>
+            [
+                payload.ActingActorId,
+                outcome.Attainment.AttainmentId,
+                outcome.Attainment.WardCharacterId,
+                outcome.Attainment.TeacherCharacterId,
+                outcome.Attainment.PrimaryGuardianshipId,
+                outcome.Attainment.AbilityId,
+            ],
             _ => throw new SimulationValidationException(
                 "Character-family action event contains mismatched action and outcome data."),
         };
@@ -2175,7 +2247,7 @@ public sealed class WorldState : IWorldQuery
             if (!IsCompleteEmptyCharacterSnapshot(characters))
             {
                 throw new SaveCompatibilityException(
-                    "A legacy snapshot without current 'simulation.characters@2' data must contain a complete, valid, empty character snapshot.");
+                    $"A legacy snapshot without current 'simulation.characters@{CharacterContractVersions.Snapshot}' data must contain a complete, valid, empty character snapshot.");
             }
 
             normalizedCharacters = CharacterWorldSnapshot.Empty;

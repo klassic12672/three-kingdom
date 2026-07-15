@@ -81,6 +81,8 @@ SP-04E4's active-only, explicit-role, adult union-linked pregnancy registration 
 
 SP-04E5's deterministic due/overdue pregnancy resolution, generated-child insertion, biological parent links, parental placement/trait validation, and authenticated vocabulary-only schema-18-to-19 migration have passing [exact-SHA hosted macOS arm64/Windows x64 evidence](evidence/SP-04E5-EXACT-SHA-4b28fb7.md) at `4b28fb74bed9181ce021e1c5e32ef9d039b4e2e1`. The package adds no automatic scheduling or naming, pregnancy loss, twins, education, public death, inheritance, content, UI, or AI. The full SP-04 criteria and three-second turn budget remain unchecked.
 
+SP-04E6's source-backed primary-guardian education attainment, runtime character-v3 effective abilities, authored v1/v2 separation, and authenticated schema-19-to-20 migration are locally verified. Exact-SHA hosted macOS arm64/Windows x64 evidence is pending, so E6 is not yet accepted. The package adds no education scheduler/progress/levels, mutable definitions, relationship effects, public death, inheritance, succession, content, UI, or AI. The full SP-04 criteria and three-second turn budget remain unchecked.
+
 ## Platform verification gates
 
 - Through M3, Apple Silicon macOS is the primary interactive and visual development platform.
@@ -112,8 +114,8 @@ Before M4, estimates are internal ranges only. After M4, record measured velocit
 16. Preserve SP-04E3's deterministic coming of age, atomic guardianship closure, schema-16-to-17 compatibility, independent-remediation record, and exact-SHA hosted evidence at `59588be9d277dc4c4cb7ec98ef99e33591b0eeda`.
 17. Preserve SP-04E4's active-only pregnancy registration, schema-17-to-18 compatibility, independent-remediation record, and exact-SHA hosted evidence at `177346b7358e84da358f3bfac8057b6ea70ed412`.
 18. Preserve SP-04E5's deterministic pregnancy birth resolution, generated-child insertion, schema-18-to-19 compatibility, independent-remediation record, and exact-SHA hosted evidence at `4b28fb74bed9181ce021e1c5e32ef9d039b4e2e1`.
-19. Select the next dependency-ordered SP-04 package.
+19. Complete SP-04E6 exact-SHA hosted macOS arm64/Windows x64 evidence and accept the package only if every required job and artifact check passes.
 
-M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A through SP-04E5 have passing exact-SHA hosted macOS arm64/Windows x64 evidence at their accepted revisions. SP-05 remains blocked, and later SP-04 packages remain pending.
+M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A through SP-04E5 have passing exact-SHA hosted macOS arm64/Windows x64 evidence at their accepted revisions; SP-04E6 is a local candidate awaiting exact-SHA hosted evidence. SP-05 remains blocked, and later SP-04 packages remain pending.
 
 See the [subsystem plan index](plans/README.md) for dependency status.

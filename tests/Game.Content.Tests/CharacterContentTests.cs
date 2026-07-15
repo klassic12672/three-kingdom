@@ -70,6 +70,13 @@ public sealed class CharacterContentTests
         Assert.All(snapshot.CharacterDefinitions, definition =>
             Assert.Equal(CharacterContractVersions.Definition, definition.ContractVersion));
         Assert.All(snapshot.CharacterStates, state =>
+        {
+            Assert.Equal(CharacterContractVersions.State, state.ContractVersion);
+            Assert.Empty(state.EducationAttainments!);
+        });
+        Assert.All(snapshot.FamilyStates, state =>
+            Assert.Equal(CharacterContractVersions.State, state.ContractVersion));
+        Assert.All(snapshot.HouseholdStates, state =>
             Assert.Equal(CharacterContractVersions.State, state.ContractVersion));
 
         CharacterDefinition araDefinition = Assert.Single(
@@ -130,6 +137,16 @@ public sealed class CharacterContentTests
 
         Assert.False(content.Report.HasErrors);
         CharacterWorldSnapshot snapshot = CharacterContentLoader.LoadSingleWorld(content.Registry);
+        Assert.Equal(CharacterContractVersions.Snapshot, snapshot.ContractVersion);
+        Assert.All(snapshot.CharacterStates, state =>
+        {
+            Assert.Equal(CharacterContractVersions.State, state.ContractVersion);
+            Assert.Empty(state.EducationAttainments!);
+        });
+        Assert.All(snapshot.FamilyStates, state =>
+            Assert.Equal(CharacterContractVersions.State, state.ContractVersion));
+        Assert.All(snapshot.HouseholdStates, state =>
+            Assert.Equal(CharacterContractVersions.State, state.ContractVersion));
         CharacterDefinition ara = Assert.Single(
             snapshot.CharacterDefinitions,
             definition => definition.Id == CharacterA);
@@ -158,6 +175,7 @@ public sealed class CharacterContentTests
     [InlineData("missingCultureRecord", "record.reference")]
     [InlineData("nullCondition", "character.world")]
     [InlineData("mismatchedParentLinks", "character.world")]
+    [InlineData("educationAttainments", "character.world")]
     public void StrictVersionTwoFailuresAreControlledAndRejectTheOwningPack(
         string mutation,
         string expectedCode)
@@ -171,7 +189,7 @@ public sealed class CharacterContentTests
         {
             definitions.RemoveAll(record => record.Id == CultureId);
         }
-        else if (mutation is "nullCondition" or "mismatchedParentLinks")
+        else if (mutation is "nullCondition" or "mismatchedParentLinks" or "educationAttainments")
         {
             JsonArray states = world.Data["characterStates"]!.AsArray();
             JsonObject child = states.Single(node =>
@@ -182,7 +200,14 @@ public sealed class CharacterContentTests
             }
             else
             {
-                child["parentLinks"] = new JsonArray();
+                if (mutation == "mismatchedParentLinks")
+                {
+                    child["parentLinks"] = new JsonArray();
+                }
+                else
+                {
+                    child["educationAttainments"] = new JsonArray();
+                }
             }
         }
 
@@ -1052,7 +1077,7 @@ public sealed class CharacterContentTests
         EntityId[] characterIds = [CharacterA, CharacterB, CharacterC, CharacterD];
         EntityId[] familyIds = [FamilyId];
         EntityId[] householdIds = [BranchHouseholdId, MainHouseholdId];
-        CharacterState[] characterStates =
+        CurrentCharacterStateFixture[] characterStates =
         [
             new(2, CharacterA, [], [], CharacterConditionState.Default),
             new(2, CharacterB, [], [], CharacterConditionState.Default),
@@ -1191,4 +1216,11 @@ public sealed class CharacterContentTests
         int ContractVersion,
         EntityId CharacterId,
         IReadOnlyList<EntityId> ParentIds);
+
+    private sealed record CurrentCharacterStateFixture(
+        int ContractVersion,
+        EntityId CharacterId,
+        IReadOnlyList<EntityId> ParentIds,
+        IReadOnlyList<CharacterParentLink> ParentLinks,
+        CharacterConditionState Condition);
 }

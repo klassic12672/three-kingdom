@@ -18,7 +18,7 @@ public readonly record struct SimulationChecksum(string Value)
 
     internal static SimulationChecksum ComputeForSaveSchema(WorldSnapshot snapshot, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 18)
+        if (schemaVersion is < 1 or > 19)
         {
             throw new ArgumentOutOfRangeException(nameof(schemaVersion));
         }
@@ -44,6 +44,8 @@ public readonly record struct SimulationChecksum(string Value)
         // is the exact E3 world shape and predates character pregnancies.
         // Schema 18 is the exact E4 world shape and differs from schema 19
         // only in the registered pregnancy-birth command/event vocabulary.
+        // Schema 19 is the exact E5 world shape and predates runtime
+        // character-v3 education attainments.
         if (schemaVersion < 18)
         {
             canonical.Remove("characterPregnancies");
@@ -90,9 +92,13 @@ public readonly record struct SimulationChecksum(string Value)
         {
             canonical.Remove("characters");
         }
-        else if (schemaVersion < 6)
+        else
         {
-            StripCharacterV2Fields(canonical);
+            StripCharacterV3Fields(canonical);
+            if (schemaVersion < 6)
+            {
+                StripCharacterV2Fields(canonical);
+            }
         }
 
         if (schemaVersion < 3)
@@ -145,6 +151,16 @@ public readonly record struct SimulationChecksum(string Value)
             return;
         }
 
+        characters["contractVersion"] = CharacterContractVersions.LegacySnapshot;
+        SetCharacterEntryVersions(
+            characters,
+            ["identityDefinitions", "characterDefinitions", "familyDefinitions", "householdDefinitions"],
+            CharacterContractVersions.LegacyDefinition);
+        SetCharacterEntryVersions(
+            characters,
+            ["characterStates", "familyStates", "householdStates"],
+            CharacterContractVersions.LegacyState);
+
         if (characters["characterDefinitions"] is JsonArray definitions)
         {
             foreach (JsonObject definition in definitions.OfType<JsonObject>())
@@ -163,6 +179,46 @@ public readonly record struct SimulationChecksum(string Value)
             {
                 state.Remove("parentLinks");
                 state.Remove("condition");
+            }
+        }
+    }
+
+    private static void StripCharacterV3Fields(JsonObject canonical)
+    {
+        if (canonical["characters"] is not JsonObject characters)
+        {
+            return;
+        }
+
+        characters["contractVersion"] = CharacterContractVersions.PreviousSnapshot;
+        SetCharacterEntryVersions(
+            characters,
+            ["characterStates", "familyStates", "householdStates"],
+            CharacterContractVersions.PreviousState);
+        if (characters["characterStates"] is JsonArray states)
+        {
+            foreach (JsonObject state in states.OfType<JsonObject>())
+            {
+                state.Remove("educationAttainments");
+            }
+        }
+    }
+
+    private static void SetCharacterEntryVersions(
+        JsonObject characters,
+        IReadOnlyList<string> collections,
+        int version)
+    {
+        foreach (string collection in collections)
+        {
+            if (characters[collection] is not JsonArray entries)
+            {
+                continue;
+            }
+
+            foreach (JsonObject entry in entries.OfType<JsonObject>())
+            {
+                entry["contractVersion"] = version;
             }
         }
     }
@@ -232,7 +288,14 @@ public readonly record struct SimulationChecksum(string Value)
             }
 
             string? systemId = version["systemId"]?.GetValue<string>();
-            if (schemaVersion < 7
+            if (schemaVersion < 20
+                && StringComparer.Ordinal.Equals(systemId, "simulation.characters"))
+            {
+                version["version"] = schemaVersion < 6
+                    ? CharacterContractVersions.LegacySnapshot
+                    : CharacterContractVersions.PreviousSnapshot;
+            }
+            else if (schemaVersion < 7
                 && StringComparer.Ordinal.Equals(systemId, "simulation.character_careers"))
             {
                 versions.RemoveAt(index);

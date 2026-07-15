@@ -717,6 +717,53 @@ Independent review's first pass identified incomplete same-day stale-placement, 
 
 Accepted revision `4b28fb74bed9181ce021e1c5e32ef9d039b4e2e1` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04E5-EXACT-SHA-4b28fb7.md). E519 therefore passes at that revision. Full SP-04 acceptance, education, public death, inheritance, succession, and the overall performance gate remain open.
 
+## Local candidate: SP-04E6 primary-guardian education attainment
+
+SP-04E6 is the smallest dependency-safe education package after accepted E5. It adds one source-backed ability attainment under an exact active primary guardianship. The reserved-system Commands-phase `complete_primary_guardian_education.v1` action names the ward, exact primary-guardianship record, and one ability; the active guardian is derived as the teacher. Success emits `primary_guardian_education_completed.v1` and appends one immutable version-1 `CharacterEducationAttainment` to the ward. The record retains stable attainment, ward, teacher, guardianship, ability, date/turn, source-command, and source-event identities.
+
+Runtime `CharacterWorldSnapshot`, character/family/household state, authoritative profile/query, and `simulation.characters` advance from version 2 to 3. `CharacterDefinition` and all identity/family/household definitions remain immutable version 2. A profile's effective abilities are the canonical union of definition-listed baseline abilities and acquired education attainments; baseline definitions never mutate. Attainments are unique per ward/ability, globally unique by stable ID, canonical, defensive, source-backed, and capped at 64 without eviction.
+
+At submission, resolution, and apply-time replan, the ward must exist, be born, living, capable, and under 18. Ward custody remains allowed and no minimum education age is invented. The exact guardianship must remain active for that ward. Its guardian/teacher must be distinct from the ward, living, capable, free, and at least 18. The target must be a listed ability held in the teacher's immutable definition; an acquired ability cannot be taught. The ward must lack the ability in both baseline and prior attainments. On the exact eighteenth birthday the Commands-phase education action fails before the Systems-phase coming-of-age transition. Guardianship end/replacement and education follow priority then event ID and always replan the exact current record. Same-ability races choose one deterministic winner in either submission order; different abilities commute.
+
+Character-local construction validates attainment shape, source identity, historical ward age, teacher existence/baseline ability, target kind, uniqueness, capacity, and canonical ordering. `WorldState` then cross-checks every retained attainment against its retained guardianship because guardianships depend inward on characters. A guardianship ending at the same date/turn remains valid retained evidence when education resolved first. Success changes only one character state's attainment collection; family, household, condition, guardianship, relationship, career, resources, estates, marriage, pregnancy, geography, entities, and random streams remain unchanged.
+
+Authored `character_world` v1/v2 and `CharacterState` v1/v2 remain the only accepted content contracts. Both normalize to runtime v3 with empty attainments, definitions remain v2, and the unchanged closed published schema rejects authored runtime-v3 versions or `educationAttainments`. No shipped record, published schema, localization row, manifest, provenance record, or content checksum changes.
+
+Save schema 20 adds runtime character v3. The authenticated 19→20 migration advances the character snapshot/system and all character/family/household state tags, inserts empty attainment arrays into snapshot character states and retained E5 diagnostic child states, preserves definition versions and every prior value, and computes the current checksum. Historical checksum projection removes attainments and maps runtime character v3 back to the exact schema-19 v2 shape. Schema 19 rejects E6 nested discriminators, state/properties including explicit null, and snapshot/state/system v3 injection before deserialization.
+
+The frozen schema-19 fixture is 17,797 bytes with stored checksum `dc49cef5fe5d55a310ec0191189358a188224afd8df33fc689efc4c34edd999c` and file SHA-256 `d6af4142e95b38fbd47386668de7b85253f345f29699258c0b9dce99b87369f0`. A detached harness compiled against exact accepted E5 implementation source `4b28fb74bed9181ce021e1c5e32ef9d039b4e2e1` generated it. It contains four authored adults, one generated E5 child, one still-pending E5 birth, one resolved E5 birth diagnostic, active pregnancy/marriage evidence, and a baseline teacher ability. Migration leaves the generated child's attainments empty; the public guardianship then education workflows can subsequently grant that child the fixture ability.
+
+E6 adds no enrollment, curriculum, time progress, scheduler, RNG, ability levels, aptitude or trait mutation, removal or decay, relationship effects, custody/access rules, guardian-issued authority, same-day acquired teaching, content, localization, UI, AI, public death, inheritance, succession, battle, or platform behavior. No ADR is required.
+
+### SP-04E6 verification matrix
+
+| ID | Observable package criterion | Required evidence | Current classification |
+|---|---|---|---|
+| E601 | Exact E5 is accepted; E6 is dependency-safe and requires no ADR | Source-of-truth and architecture review | Local pass |
+| E602 | Runtime character snapshot/state/profile/query/system are v3 while definitions remain v2 | Contract and construction tests | Local pass |
+| E603 | Authored v1/v2 normalize to runtime v3 empty attainments and cannot author runtime state | Loader, closed-schema, and pack-identity tests | Local pass |
+| E604 | Attainments are canonical, defensive, source-backed, unique per ward/ability, globally ID-unique, and capped at 64 | Domain construction/limit/copy tests | Local pass |
+| E605 | Effective abilities are baseline union attained abilities without definition mutation | Query and snapshot tests | Local pass |
+| E606 | Only the reserved actor may submit the Commands-phase action with exact event/source/affected identities | Campaign authority, phase, JSON, and ID tests | Local pass |
+| E607 | Ward and exact active guardian/teacher satisfy the accepted age/life/capacity/freedom/custody rules | Eligibility and boundary matrix | Local pass |
+| E608 | Teacher has the target baseline ability and the ward lacks it | Target-kind, baseline, acquired-only, and duplicate tests | Local pass |
+| E609 | Success appends exactly one record and mutates no unrelated field or subsystem | Immutable candidate and complete snapshot comparisons | Local pass |
+| E610 | Same-ability races choose one priority/event-ID winner in either submission order; different abilities commute | Campaign race and commutativity tests | Local pass |
+| E611 | End/replacement/condition/coming-of-age ordering replans exact current state | Priority, stale-guardian, replacement, condition, and birthday tests | Local pass |
+| E612 | Replay and source/payload/affected/causal/event tampering roll back completely | Apply-time reconstruction and rollback matrix | Local pass |
+| E613 | Current schema-20 pending/resolved action, nonempty state, diagnostics, JSON, gzip, restore, checksum, and replay round-trip | Save and campaign persistence tests | Local pass |
+| E614 | Exact-E5 schema 19 authenticates and migrates source-byte-preservingly while rejecting all E6 injection | Frozen fixture, projection, corruption, explicit-null, and version tests | Local pass |
+| E615 | The migrated generated E5 child starts empty and gains an ability through public E1/E6 workflows | Exact-fixture migration and continuation test | Local pass |
+| E616 | Every unrelated subsystem and random stream remains unchanged | Complete subsystem comparisons | Local pass |
+| E617 | A representative 1,000-character fixture records workflow/query/checksum/JSON/gzip measurements without a brittle threshold | Raw local Apple Silicon measurement | Local pass; no threshold |
+| E618 | Focused suites, repository gates, diff/LFS checks, and independent review find no blocker | Local gates and read-only review | Local pass |
+| E619 | The accepted exact SHA passes hosted macOS arm64 and Windows x64 | Clean-checkout hosted CI and artifact evidence | Pending |
+| E620 | E6 introduces none of its enumerated non-goals | Diff, dependency, content, and architecture review | Local pass |
+
+The representative local Release fixture contains 1,000 characters and resolves one exact education attainment. A raw Apple Silicon run measured 120.422 ms for submission/resolution, 2.603 ms for the complete profile query, and 118.541 ms for snapshot/checksum; snapshot JSON was 928,858 bytes, gzip was 17,995 bytes, and checksum was `2630b10d6dd1c7c2f058e8829769d8ae4cb5b15c89219dcfaed7cdfc632c8708`. The test asserts shape and correctness, not a wall-clock threshold. This component observation does not establish the full SP-04 three-second campaign-turn budget.
+
+Local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 758 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. `git diff --check` and `git lfs fsck` pass. The final independent review reran the 43-test CharacterEducation/schema-19 slice and the full 758-test Core suite, and found no remaining correctness, compatibility, documentation, or package-boundary blocker. These are working-tree results, not exact-SHA or hosted evidence. E619, full SP-04 acceptance, public death, inheritance, succession, and the overall performance gate remain open.
+
 ## Edge cases and failure handling
 
 - Invalid parentage cycles, duplicate spouses where rules forbid them, impossible ages, and self-relationships fail content validation.

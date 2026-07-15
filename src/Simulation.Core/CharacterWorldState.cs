@@ -45,6 +45,7 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
         ValidateOneToOneState(familyDefinitions.Keys, familyStates.Keys, "family");
         ValidateOneToOneState(householdDefinitions.Keys, householdStates.Keys, "household");
         ValidateCharacterDefinitions();
+        ValidateEducationAttainments();
         ValidateParentage();
         IndexChildren();
         ValidateAndIndexFamilies();
@@ -611,6 +612,153 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
             new CharacterWorldUpdatePlan(new CharacterWorldState(updated, candidateDate)));
     }
 
+    internal CharacterEducationMutationPlan PreparePrimaryGuardianEducation(
+        CompletePrimaryGuardianEducationAction action,
+        CharacterGuardianshipState exactActiveGuardianship,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (action is null)
+        {
+            throw new SimulationValidationException(
+                "Primary-guardian education action cannot be null.");
+        }
+
+        if (exactActiveGuardianship is null)
+        {
+            throw new SimulationValidationException(
+                "Primary-guardian education requires an exact active guardianship.");
+        }
+
+        if (!resolutionDate.IsValid
+            || resolutionDate.CompareTo(campaignDate) < 0
+            || authoritativeTurnIndex < 0)
+        {
+            throw new SimulationValidationException(
+                "Primary-guardian education resolution date or turn is invalid.");
+        }
+
+        if (!commandId.IsValid
+            || eventId != CharacterFamilyIds.DeriveActionEventId(
+                resolutionDate,
+                commandId))
+        {
+            throw new SimulationValidationException(
+                "Primary-guardian education command or family-event identity is invalid.");
+        }
+
+        ValidateExactEducationGuardianship(
+            action,
+            exactActiveGuardianship,
+            resolutionDate,
+            authoritativeTurnIndex);
+        AuthoritativeCharacterProfile ward = RequireCurrentCharacter(
+            action.WardCharacterId,
+            resolutionDate,
+            "Primary-guardian education ward");
+        if (ward.Condition.VitalStatus != CharacterVitalStatus.Alive
+            || ward.Condition.IsIncapacitated
+            || CalculateAge(ward.BirthDate, resolutionDate) >= AdultAge)
+        {
+            throw new SimulationValidationException(
+                $"Primary-guardian education ward '{ward.CharacterId}' must be living, capable, and under 18.");
+        }
+
+        AuthoritativeCharacterProfile teacher = RequireCurrentCharacter(
+            exactActiveGuardianship.GuardianCharacterId,
+            resolutionDate,
+            "Primary-guardian education teacher");
+        RequireLivingCapableFree(teacher, "Primary-guardian education teacher");
+        if (CalculateAge(teacher.BirthDate, resolutionDate) < AdultAge)
+        {
+            throw new SimulationValidationException(
+                $"Primary-guardian education teacher '{teacher.CharacterId}' must be at least 18 years old.");
+        }
+
+        if (!identityDefinitions.TryGetValue(
+                action.AbilityId,
+                out CharacterIdentityDefinition? ability)
+            || ability.Kind != CharacterIdentityKind.Ability)
+        {
+            throw new SimulationValidationException(
+                $"Primary-guardian education ability '{action.AbilityId}' must be a listed ability definition.");
+        }
+
+        CharacterDefinition teacherDefinition = characterDefinitions[teacher.CharacterId];
+        if (!teacherDefinition.AbilityIds.Contains(action.AbilityId))
+        {
+            throw new SimulationValidationException(
+                $"Primary-guardian education teacher '{teacher.CharacterId}' must have baseline ability '{action.AbilityId}'.");
+        }
+
+        CharacterDefinition wardDefinition = characterDefinitions[ward.CharacterId];
+        CharacterState wardState = characterStates[ward.CharacterId];
+        CharacterEducationAttainment[] currentAttainments = wardState.EducationAttainments!
+            .Select(Clone)
+            .ToArray();
+        if (wardDefinition.AbilityIds.Contains(action.AbilityId)
+            || currentAttainments.Any(item => item.AbilityId == action.AbilityId))
+        {
+            throw new SimulationValidationException(
+                $"Primary-guardian education ward '{ward.CharacterId}' already has ability '{action.AbilityId}'.");
+        }
+
+        if (currentAttainments.Length >= CharacterEducationLimits.MaximumAttainmentsPerCharacter)
+        {
+            throw new SimulationValidationException(
+                $"Primary-guardian education ward '{ward.CharacterId}' has reached the maximum {CharacterEducationLimits.MaximumAttainmentsPerCharacter} attainments.");
+        }
+
+        EntityId attainmentId = CharacterEducationIds.DeriveAttainmentId(
+            eventId,
+            ward.CharacterId,
+            teacher.CharacterId,
+            action.AbilityId);
+        if (characterStates.Values
+            .SelectMany(state => state.EducationAttainments!)
+            .Any(item => item.AttainmentId == attainmentId))
+        {
+            throw new SimulationValidationException(
+                $"Primary-guardian education attainment '{attainmentId}' already exists.");
+        }
+
+        CharacterEducationAttainment attainment = new(
+            CharacterEducationContractVersions.Attainment,
+            attainmentId,
+            ward.CharacterId,
+            teacher.CharacterId,
+            exactActiveGuardianship.GuardianshipId,
+            action.AbilityId,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+        CharacterEducationAttainment[] updatedAttainments = currentAttainments
+            .Append(Clone(attainment))
+            .OrderBy(item => item.AttainmentId)
+            .ToArray();
+        CharacterWorldSnapshot updated = CaptureSnapshot() with
+        {
+            CharacterStates = characterStates.Values.Select(state =>
+                state.CharacterId == ward.CharacterId
+                    ? Clone(state) with
+                    {
+                        EducationAttainments = updatedAttainments
+                            .Select(Clone)
+                            .ToArray(),
+                    }
+                    : Clone(state)).ToArray(),
+        };
+        CampaignDate candidateDate = resolutionDate.CompareTo(campaignDate) > 0
+            ? resolutionDate
+            : campaignDate;
+        return new CharacterEducationMutationPlan(
+            Clone(attainment),
+            new CharacterWorldUpdatePlan(new CharacterWorldState(updated, candidateDate)));
+    }
+
     internal void ApplyPrepared(CharacterWorldUpdatePlan plan)
     {
         if (plan?.Candidate is null)
@@ -1059,6 +1207,7 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
             ValidateCanonicalIds(state.ParentIds, $"Character '{state.CharacterId}' parent IDs");
             ValidateParentLinks(state);
             ValidateCondition(state);
+            ValidateEducationAttainmentListShape(state);
             if (!characterStates.TryAdd(state.CharacterId, Clone(state)))
             {
                 throw new SimulationValidationException(
@@ -1107,6 +1256,199 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
             ValidateIdentityReferences(definition.Id, definition.AmbitionIds, CharacterIdentityKind.Ambition);
             ValidateIdentityReferences(definition.Id, definition.ReputationIds, CharacterIdentityKind.Reputation);
             ValidateIdentityReferences(definition.Id, definition.FlawIds!, CharacterIdentityKind.Flaw);
+        }
+    }
+
+    private void ValidateEducationAttainments()
+    {
+        HashSet<EntityId> attainmentIds = [];
+        foreach (CharacterState state in characterStates.Values)
+        {
+            CharacterDefinition ward = characterDefinitions[state.CharacterId];
+            HashSet<EntityId> attainedAbilityIds = [];
+            foreach (CharacterEducationAttainment attainment in state.EducationAttainments!)
+            {
+                ValidateEducationAttainmentRecord(
+                    state,
+                    ward,
+                    attainment,
+                    attainmentIds,
+                    attainedAbilityIds);
+            }
+        }
+    }
+
+    private static void ValidateEducationAttainmentListShape(CharacterState state)
+    {
+        if (state.EducationAttainments is null)
+        {
+            throw new SimulationValidationException(
+                $"Character '{state.CharacterId}' education attainments cannot be null in contract version {CharacterContractVersions.State}.");
+        }
+
+        if (state.EducationAttainments.Count
+            > CharacterEducationLimits.MaximumAttainmentsPerCharacter)
+        {
+            throw new SimulationValidationException(
+                $"Character '{state.CharacterId}' exceeds the maximum {CharacterEducationLimits.MaximumAttainmentsPerCharacter} education attainments.");
+        }
+
+        EntityId? previousId = null;
+        foreach (CharacterEducationAttainment? attainment in state.EducationAttainments)
+        {
+            if (attainment is null)
+            {
+                throw new SimulationValidationException(
+                    $"Character '{state.CharacterId}' education attainments cannot contain null entries.");
+            }
+
+            ValidateId(
+                attainment.AttainmentId,
+                $"Character '{state.CharacterId}' education attainment ID");
+            if (previousId is EntityId previous
+                && previous.CompareTo(attainment.AttainmentId) >= 0)
+            {
+                throw new SimulationValidationException(
+                    $"Character '{state.CharacterId}' education attainments must contain unique IDs in ordinal canonical order.");
+            }
+
+            previousId = attainment.AttainmentId;
+        }
+    }
+
+    private void ValidateEducationAttainmentRecord(
+        CharacterState state,
+        CharacterDefinition ward,
+        CharacterEducationAttainment attainment,
+        HashSet<EntityId> attainmentIds,
+        HashSet<EntityId> attainedAbilityIds)
+    {
+        if (attainment.ContractVersion != CharacterEducationContractVersions.Attainment)
+        {
+            throw new SimulationValidationException(
+                $"Unsupported education-attainment contract version {attainment.ContractVersion} for '{attainment.AttainmentId}'.");
+        }
+
+        ValidateId(attainment.WardCharacterId, "Education-attainment ward ID");
+        ValidateId(attainment.TeacherCharacterId, "Education-attainment teacher ID");
+        ValidateId(attainment.PrimaryGuardianshipId, "Education-attainment primary-guardianship ID");
+        ValidateId(attainment.AbilityId, "Education-attainment ability ID");
+        ValidateId(attainment.SourceCommandId, "Education-attainment source command ID");
+        ValidateId(attainment.SourceEventId, "Education-attainment source event ID");
+        if (attainment.WardCharacterId != state.CharacterId)
+        {
+            throw new SimulationValidationException(
+                $"Education attainment '{attainment.AttainmentId}' must be stored on its ward '{attainment.WardCharacterId}'.");
+        }
+
+        if (!attainmentIds.Add(attainment.AttainmentId))
+        {
+            throw new SimulationValidationException(
+                $"Duplicate education attainment ID '{attainment.AttainmentId}'.");
+        }
+
+        if (!attainment.ResolutionDate.IsValid
+            || attainment.ResolutionDate.CompareTo(campaignDate) > 0
+            || attainment.ResolutionTurnIndex < 0)
+        {
+            throw new SimulationValidationException(
+                $"Education attainment '{attainment.AttainmentId}' has an invalid resolution date or turn.");
+        }
+
+        if (attainment.SourceEventId != CharacterFamilyIds.DeriveActionEventId(
+                attainment.ResolutionDate,
+                attainment.SourceCommandId))
+        {
+            throw new SimulationValidationException(
+                $"Education attainment '{attainment.AttainmentId}' has invalid source-event evidence.");
+        }
+
+        if (attainment.AttainmentId != CharacterEducationIds.DeriveAttainmentId(
+                attainment.SourceEventId,
+                attainment.WardCharacterId,
+                attainment.TeacherCharacterId,
+                attainment.AbilityId))
+        {
+            throw new SimulationValidationException(
+                $"Education attainment '{attainment.AttainmentId}' has invalid derived identity.");
+        }
+
+        if (!characterDefinitions.TryGetValue(
+                attainment.TeacherCharacterId,
+                out CharacterDefinition? teacher))
+        {
+            throw new SimulationValidationException(
+                $"Education attainment '{attainment.AttainmentId}' references missing teacher '{attainment.TeacherCharacterId}'.");
+        }
+
+        if (ward.BirthDate.CompareTo(attainment.ResolutionDate) > 0
+            || CalculateAge(ward.BirthDate, attainment.ResolutionDate) >= AdultAge)
+        {
+            throw new SimulationValidationException(
+                $"Education attainment '{attainment.AttainmentId}' requires its ward to be born and under 18 at resolution.");
+        }
+
+        if (teacher.BirthDate.CompareTo(attainment.ResolutionDate) > 0
+            || CalculateAge(teacher.BirthDate, attainment.ResolutionDate) < AdultAge)
+        {
+            throw new SimulationValidationException(
+                $"Education attainment '{attainment.AttainmentId}' requires its teacher to be born and at least 18 at resolution.");
+        }
+
+        if (!identityDefinitions.TryGetValue(
+                attainment.AbilityId,
+                out CharacterIdentityDefinition? ability)
+            || ability.Kind != CharacterIdentityKind.Ability)
+        {
+            throw new SimulationValidationException(
+                $"Education attainment '{attainment.AttainmentId}' references a non-ability definition '{attainment.AbilityId}'.");
+        }
+
+        if (!teacher.AbilityIds.Contains(attainment.AbilityId))
+        {
+            throw new SimulationValidationException(
+                $"Education attainment '{attainment.AttainmentId}' requires teacher baseline ability '{attainment.AbilityId}'.");
+        }
+
+        if (ward.AbilityIds.Contains(attainment.AbilityId))
+        {
+            throw new SimulationValidationException(
+                $"Education attainment '{attainment.AttainmentId}' duplicates ward baseline ability '{attainment.AbilityId}'.");
+        }
+
+        if (!attainedAbilityIds.Add(attainment.AbilityId))
+        {
+            throw new SimulationValidationException(
+                $"Ward '{state.CharacterId}' has more than one education attainment for ability '{attainment.AbilityId}'.");
+        }
+    }
+
+    private static void ValidateExactEducationGuardianship(
+        CompletePrimaryGuardianEducationAction action,
+        CharacterGuardianshipState guardianship,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex)
+    {
+        if (guardianship.ContractVersion != CharacterGuardianshipContractVersions.State
+            || !guardianship.GuardianshipId.IsValid
+            || !guardianship.WardCharacterId.IsValid
+            || !guardianship.GuardianCharacterId.IsValid
+            || guardianship.GuardianshipId != action.ExpectedPrimaryGuardianshipId
+            || guardianship.WardCharacterId != action.WardCharacterId
+            || guardianship.GuardianCharacterId == action.WardCharacterId
+            || guardianship.Status != CharacterGuardianshipStatus.Active
+            || guardianship.EndDate is not null
+            || guardianship.EndTurnIndex is not null
+            || guardianship.EndSourceCommandId is not null
+            || guardianship.EndSourceEventId is not null
+            || guardianship.EndReason is not null
+            || !guardianship.EstablishedDate.IsValid
+            || guardianship.EstablishedDate.CompareTo(resolutionDate) > 0
+            || guardianship.EstablishedTurnIndex < 0
+            || guardianship.EstablishedTurnIndex > authoritativeTurnIndex)
+        {
+            throw new SimulationValidationException(
+                "Primary-guardian education requires the exact active guardianship for the ward and resolution coordinates.");
         }
     }
 
@@ -1506,7 +1848,10 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
             childrenByCharacter[id].Select(link => link.ChildCharacterId).ToArray(),
             familyByCharacter.TryGetValue(id, out EntityId familyId) ? familyId : null,
             householdByCharacter.TryGetValue(id, out EntityId householdId) ? householdId : null,
-            definition.AbilityIds.ToArray(),
+            definition.AbilityIds
+                .Concat(state.EducationAttainments!.Select(item => item.AbilityId))
+                .Order()
+                .ToArray(),
             definition.AptitudeIds.ToArray(),
             definition.TraitIds.ToArray(),
             definition.AmbitionIds.ToArray(),
@@ -1518,7 +1863,8 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
             definition.FlawIds!.ToArray(),
             Clone(state.Condition!),
             state.ParentLinks!.Select(Clone).ToArray(),
-            childrenByCharacter[id].Select(Clone).ToArray());
+            childrenByCharacter[id].Select(Clone).ToArray(),
+            state.EducationAttainments!.Select(Clone).ToArray());
     }
 
     private AuthoritativeHouseholdView CreateHouseholdView(EntityId id)
@@ -1717,6 +2063,7 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
         ParentIds = state.ParentIds.ToArray(),
         ParentLinks = state.ParentLinks?.Select(Clone).ToArray(),
         Condition = state.Condition is null ? null : Clone(state.Condition),
+        EducationAttainments = state.EducationAttainments?.Select(Clone).ToArray(),
     };
 
     private static StructuredCharacterName Clone(StructuredCharacterName name) => name with { };
@@ -1732,6 +2079,9 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
     private static CharacterParentLink Clone(CharacterParentLink link) => link with { };
 
     private static CharacterChildLink Clone(CharacterChildLink link) => link with { };
+
+    private static CharacterEducationAttainment Clone(CharacterEducationAttainment attainment) =>
+        attainment with { };
 
     private static FamilyState Clone(FamilyState state) => state with
     {
@@ -1833,4 +2183,8 @@ internal sealed record HouseholdDecisionMutationPlan(
 
 internal sealed record CharacterBirthMutationPlan(
     CharacterBirthChange Birth,
+    CharacterWorldUpdatePlan CharacterPlan);
+
+internal sealed record CharacterEducationMutationPlan(
+    CharacterEducationAttainment Attainment,
     CharacterWorldUpdatePlan CharacterPlan);

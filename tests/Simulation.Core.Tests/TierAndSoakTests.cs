@@ -44,9 +44,9 @@ public sealed class TierAndSoakTests
 
         Assert.True(result.Turns > 1_000);
         Assert.Equal(200, result.FinalDate.Year);
-        // SP-04E4 adds the default-empty character-pregnancy snapshot and system identity,
-        // so the canonical golden changes without altering the soak inputs or simulated outcomes.
-        Assert.Equal("ff5de686f960dc216e853642476c0334f598543c7aa62d5e07530977297bb218", result.Checksum.Value);
+        // SP-04E6 advances the runtime character snapshot/state/system contract and adds
+        // default-empty education attainments, changing only the canonical representation.
+        Assert.Equal("c6ed3643b46211034dede534ab236971dca7ebe6c129904ecfd5eacea1ad9930", result.Checksum.Value);
     }
 
     [Theory]

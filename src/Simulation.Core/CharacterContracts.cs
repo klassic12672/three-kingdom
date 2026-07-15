@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Text.Json.Serialization;
 
 namespace Simulation.Core;
 
@@ -7,10 +8,14 @@ public static class CharacterContractVersions
     public const int LegacySnapshot = 1;
     public const int LegacyDefinition = 1;
     public const int LegacyState = 1;
-    public const int Snapshot = 2;
+    public const int AuthoredSnapshot = 2;
+    public const int PreviousSnapshot = 2;
+    public const int Snapshot = 3;
     public const int Definition = 2;
-    public const int State = 2;
-    public const int AuthoritativeQuery = 2;
+    public const int AuthoredState = 2;
+    public const int PreviousState = 2;
+    public const int State = 3;
+    public const int AuthoritativeQuery = 3;
 }
 
 public enum CharacterIdentityKind
@@ -165,13 +170,42 @@ public sealed record HouseholdDefinition(
     EntityId Id,
     EntityId NameKey);
 
+[method: JsonConstructor]
 public sealed record CharacterState(
     int ContractVersion,
     EntityId CharacterId,
     IReadOnlyList<EntityId> ParentIds,
-    IReadOnlyList<CharacterParentLink>? ParentLinks = null,
-    CharacterConditionState? Condition = null)
+    IReadOnlyList<CharacterParentLink>? ParentLinks,
+    CharacterConditionState? Condition,
+    IReadOnlyList<CharacterEducationAttainment>? EducationAttainments)
 {
+    public CharacterState(
+        int contractVersion,
+        EntityId characterId,
+        IReadOnlyList<EntityId> parentIds)
+        : this(contractVersion, characterId, parentIds, null, null, [])
+    {
+    }
+
+    public CharacterState(
+        int contractVersion,
+        EntityId characterId,
+        IReadOnlyList<EntityId> parentIds,
+        IReadOnlyList<CharacterParentLink>? parentLinks)
+        : this(contractVersion, characterId, parentIds, parentLinks, null, [])
+    {
+    }
+
+    public CharacterState(
+        int contractVersion,
+        EntityId characterId,
+        IReadOnlyList<EntityId> parentIds,
+        IReadOnlyList<CharacterParentLink>? parentLinks,
+        CharacterConditionState? condition)
+        : this(contractVersion, characterId, parentIds, parentLinks, condition, [])
+    {
+    }
+
     public CharacterState Canonicalize() => this with
     {
         ParentIds = ParentIds.Order().ToArray(),
@@ -180,6 +214,9 @@ public sealed record CharacterState(
             : ParentLinks.OrderBy(link => link.ParentCharacterId)
                 .ThenBy(link => link.Kind)
                 .ToArray(),
+        EducationAttainments = EducationAttainments is null
+            ? null
+            : EducationAttainments.OrderBy(item => item.AttainmentId).ToArray(),
     };
 }
 
@@ -278,7 +315,8 @@ public sealed record AuthoritativeCharacterProfile(
     IReadOnlyList<EntityId> FlawIds,
     CharacterConditionState Condition,
     IReadOnlyList<CharacterParentLink> ParentLinks,
-    IReadOnlyList<CharacterChildLink> ChildLinks);
+    IReadOnlyList<CharacterChildLink> ChildLinks,
+    IReadOnlyList<CharacterEducationAttainment> EducationAttainments);
 
 public sealed record AuthoritativeHouseholdView(
     int ContractVersion,

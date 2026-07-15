@@ -349,6 +349,7 @@ public sealed class CharacterFamilyCampaignTests
             changeId.Value);
         Assert.Equal(
             [
+                typeof(CompletePrimaryGuardianEducationAction),
                 typeof(EndPrimaryGuardianshipAction),
                 typeof(EstablishLegalAdoptiveParentAction),
                 typeof(EstablishPrimaryGuardianshipAction),
@@ -366,6 +367,7 @@ public sealed class CharacterFamilyCampaignTests
                 typeof(ActivePregnancyRegisteredOutcome),
                 typeof(LegalAdoptiveParentEstablishedOutcome),
                 typeof(PregnancyBirthResolvedOutcome),
+                typeof(PrimaryGuardianEducationCompletedOutcome),
                 typeof(PrimaryGuardianshipEndedOutcome),
                 typeof(PrimaryGuardianshipEstablishedOutcome),
                 typeof(PrimaryGuardianshipReplacedOutcome),
