@@ -28,6 +28,8 @@ public sealed class SaveStoreTests : IDisposable
     private const string FrozenSchemaFourteenFileSha256 = "381c774072a549090dd275f3fefa1bb7a3953a0a74eb3852eeb8323ad0b8f01e";
     private const string FrozenSchemaFifteenChecksum = "ed398b879de95b9065bffb367fb3a7b830c40d6a8e1f29d3a0a64ffb414e5b86";
     private const string FrozenSchemaFifteenFileSha256 = "51a6ecf8e0556af35cbe4010645925d50bc965ca4a2d07ea05c8c9c486538fc3";
+    private const string FrozenSchemaSixteenChecksum = "aac74df0b0c97f3ec49c6e2aeaef1be742f102a797f7d317b576e1e8ed2da471";
+    private const string FrozenSchemaSixteenFileSha256 = "3f118e24486fc7367dc00f07419abfb19eff13a144daffc878ee73a99277fbe5";
     // Reconstructed literally from the exact schema-4 serializer contract at eaa3aaf.
     // Unlike the inferred schema-1/2 fixtures, this contains nonempty character history.
     private const string FrozenSchemaFourFixture = """{"schemaVersion":4,"contractVersion":2,"gameVersion":"0.1.0","createdUtc":"2026-07-15T00:00:00+00:00","contentManifests":[{"packId":{"value":"base:synthetic"},"version":"1.0.0","checksum":"sha256:abc","requiredForSimulation":true}],"seed":99,"snapshot":{"contractVersion":1,"calendar":{"date":{"year":191,"month":7,"day":14},"turnIndex":0,"daysInCurrentTurn":3},"rootSeed":99,"randomStreams":[],"entities":[],"pendingCommands":[],"systemVersions":[{"systemId":"simulation.calendar","version":1},{"systemId":"simulation.synthetic_entities","version":1},{"systemId":"simulation.command_events","version":1},{"systemId":"simulation.geography","version":1},{"systemId":"simulation.characters","version":1}],"lastEventDate":null,"lastEventPhase":null,"lastEventPriority":null,"lastEventId":null,"geography":{"graph":{"regions":[],"districts":[],"localities":[],"stops":[],"routes":[]},"season":0,"weather":0,"locations":[],"routes":[],"armies":[]},"characters":{"contractVersion":1,"identityDefinitions":[{"contractVersion":1,"id":{"value":"ability:synthetic/command"},"kind":0,"nameKey":{"value":"loc:ability/synthetic_command"}}],"characterDefinitions":[{"contractVersion":1,"id":{"value":"character:synthetic/adult"},"nameKey":{"value":"loc:character/synthetic_adult"},"birthDate":{"year":160,"month":1,"day":1},"abilityIds":[{"value":"ability:synthetic/command"}],"aptitudeIds":[],"traitIds":[],"ambitionIds":[],"reputationIds":[]}],"familyDefinitions":[],"householdDefinitions":[],"characterStates":[{"contractVersion":1,"characterId":{"value":"character:synthetic/adult"},"parentIds":[]}],"familyStates":[],"householdStates":[]}},"diagnosticCommands":[],"diagnosticEvents":[],"checksum":"48b94dad9d4dda78591243341afa16ece40e0ed157368f84c1189641684ecd3e"}""";
@@ -2284,6 +2286,172 @@ public sealed class SaveStoreTests : IDisposable
         Assert.Equal(sourceBytes, File.ReadAllBytes(path));
     }
 
+    [Fact]
+    public void SchemaSixteen_AuthenticatesExactE2FixtureAndMigratesVocabularyWithoutChangingSource()
+    {
+        JsonObject frozen = CreateHistoricalFixture(16);
+        Assert.Equal(FrozenSchemaSixteenChecksum, frozen["checksum"]!.GetValue<string>());
+        string fixturePath = Path.Combine(
+            AppContext.BaseDirectory,
+            "Fixtures",
+            "save-schema-16-history-backed.json");
+        byte[] fixtureBytes = File.ReadAllBytes(fixturePath);
+        Assert.Equal(64_549, fixtureBytes.Length);
+        Assert.Equal(
+            FrozenSchemaSixteenFileSha256,
+            Convert.ToHexStringLower(SHA256.HashData(fixtureBytes)));
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(frozen, 16);
+        JsonObject original = (JsonObject)frozen.DeepClone();
+        string historicalSnapshot = JsonSerializer.Serialize(
+            frozen["snapshot"],
+            CanonicalJson.Options);
+        string historicalCommands = JsonSerializer.Serialize(
+            frozen["diagnosticCommands"],
+            CanonicalJson.Options);
+        string historicalEvents = JsonSerializer.Serialize(
+            frozen["diagnosticEvents"],
+            CanonicalJson.Options);
+        string path = Path.Combine(directory, "schema-sixteen-history-backed.save.gz");
+        WriteFrozenHistoricalFixture(path, 16);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        SaveEnvelope migrated = new SaveStore().Load(path);
+
+        Assert.Equal(SaveEnvelope.CurrentSchemaVersion, migrated.SchemaVersion);
+        Assert.Equal(
+            historicalSnapshot,
+            JsonSerializer.Serialize(migrated.Snapshot, CanonicalJson.Options));
+        Assert.Equal(
+            historicalCommands,
+            JsonSerializer.Serialize(migrated.DiagnosticCommands, CanonicalJson.Options));
+        Assert.Equal(
+            historicalEvents,
+            JsonSerializer.Serialize(migrated.DiagnosticEvents, CanonicalJson.Options));
+        Assert.Contains(
+            migrated.DiagnosticCommands,
+            command => command.Payload is CharacterFamilyActionCommandPayload
+            {
+                Action: EndPrimaryGuardianshipAction,
+            });
+        Assert.Contains(
+            migrated.DiagnosticEvents,
+            campaignEvent => campaignEvent.Payload
+                is CharacterFamilyActionResolvedEventPayload
+            {
+                Outcome: PrimaryGuardianshipEndedOutcome,
+            });
+        Assert.Contains(
+            migrated.Snapshot.CharacterGuardianships.Guardianships,
+            guardianship => guardianship.Status == CharacterGuardianshipStatus.Ended
+                && guardianship.EndReason == CharacterGuardianshipEndReason.Revoked);
+        Assert.Contains(
+            migrated.Snapshot.CharacterGuardianships.Guardianships,
+            guardianship => guardianship.Status == CharacterGuardianshipStatus.Ended
+                && guardianship.EndReason == CharacterGuardianshipEndReason.Replaced);
+        Assert.Equal(
+            SimulationChecksum.Compute(migrated.Snapshot).Value,
+            migrated.Checksum);
+        _ = WorldState.Restore(migrated.Snapshot);
+        Assert.Equal(
+            JsonSerializer.Serialize(original, CanonicalJson.Options),
+            JsonSerializer.Serialize(frozen, CanonicalJson.Options));
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void SchemaSixteen_AllowsExistingWardCameOfAgeTerminalReason()
+    {
+        JsonObject compatible = CreateHistoricalFixture(16);
+        JsonObject terminal = compatible["snapshot"]!["characterGuardianships"]![
+            "guardianships"]!.AsArray().OfType<JsonObject>().First();
+        terminal["endReason"] = (int)CharacterGuardianshipEndReason.WardCameOfAge;
+        WorldSnapshot historical = compatible["snapshot"]!.Deserialize<WorldSnapshot>(
+            SimulationJson.CreateOptions())!;
+        compatible["checksum"] = SimulationChecksum.ComputeForSaveSchema(
+            historical,
+            16).Value;
+        string path = Path.Combine(directory, "schema-sixteen-coming-of-age-reason.save.gz");
+        WriteJsonGzip(path, compatible);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        SaveEnvelope migrated = new SaveStore().Load(path);
+
+        Assert.Contains(
+            migrated.Snapshot.CharacterGuardianships.Guardianships,
+            guardianship => guardianship.EndReason
+                == CharacterGuardianshipEndReason.WardCameOfAge);
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Theory]
+    [InlineData("pending-command")]
+    [InlineData("diagnostic-command")]
+    [InlineData("diagnostic-event")]
+    [InlineData("explicit-null-expectation")]
+    [InlineData("explicit-null-ended-guardianship")]
+    public void SchemaSixteen_RejectsE3VocabularyAndPropertiesWithoutChangingSource(
+        string mutation)
+    {
+        JsonObject invalid = CreateHistoricalFixture(16);
+        CampaignDate resolutionDate = new(200, 6, 24);
+        EntityId characterId = new("character:d3/000");
+        EntityId commandId = CharacterComingOfAgeIds.DeriveCommandId(
+            resolutionDate,
+            characterId);
+        CharacterComingOfAgeCommandPayload commandPayload = new(characterId, null);
+        CharacterCameOfAgeEventPayload eventPayload = new(characterId, null);
+        JsonObject serializedCommandPayload = JsonSerializer.SerializeToNode<ICampaignCommandPayload>(
+            commandPayload,
+            SimulationJson.CreateOptions())!.AsObject();
+        JsonObject serializedEventPayload = JsonSerializer.SerializeToNode<ICampaignEventPayload>(
+            eventPayload,
+            SimulationJson.CreateOptions())!.AsObject();
+        switch (mutation)
+        {
+            case "pending-command":
+                CampaignCommand future = CampaignCommand.Create(
+                    commandId,
+                    CharacterComingOfAgeSystem.AuthoritativeActorId,
+                    resolutionDate,
+                    commandPayload,
+                    ResolutionPhase.Systems,
+                    CharacterComingOfAgeSystem.Priority);
+                invalid["snapshot"]!["pendingCommands"]!.AsArray().Add(
+                    JsonSerializer.SerializeToNode(future, SimulationJson.CreateOptions()));
+                WorldSnapshot snapshot = invalid["snapshot"]!.Deserialize<WorldSnapshot>(
+                    SimulationJson.CreateOptions())!;
+                invalid["checksum"] = SimulationChecksum.ComputeForSaveSchema(
+                    snapshot,
+                    16).Value;
+                break;
+            case "diagnostic-command":
+                invalid["diagnosticCommands"]!.AsArray()[0]!["payload"] =
+                    serializedCommandPayload;
+                break;
+            case "diagnostic-event":
+                invalid["diagnosticEvents"]!.AsArray()[0]!["payload"] =
+                    serializedEventPayload;
+                break;
+            case "explicit-null-expectation":
+                invalid["diagnosticCommands"]!.AsArray()[0]!["payload"]![
+                    "expectedActivePrimaryGuardianshipId"] = null;
+                break;
+            case "explicit-null-ended-guardianship":
+                invalid["diagnosticEvents"]!.AsArray()[0]!["payload"]![
+                    "endedPrimaryGuardianship"] = null;
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(mutation));
+        }
+
+        string path = Path.Combine(directory, $"schema-sixteen-future-{mutation}.save.gz");
+        WriteJsonGzip(path, invalid);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        Assert.Throws<SaveCompatibilityException>(() => new SaveStore().Load(path));
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
     [Theory]
     [InlineData("pending-command")]
     [InlineData("diagnostic-command")]
@@ -2683,6 +2851,8 @@ public sealed class SaveStoreTests : IDisposable
     [InlineData(12)]
     [InlineData(13)]
     [InlineData(14)]
+    [InlineData(15)]
+    [InlineData(16)]
     public void CorruptedHistoricalSnapshotFailsAuthenticationWithoutOverwritingSource(int schemaVersion)
     {
         JsonObject historical = CreateHistoricalFixture(schemaVersion);
@@ -3759,6 +3929,7 @@ public sealed class SaveStoreTests : IDisposable
         // Schema 13 is generated from the exact accepted SP-04D3 contract at 93d3881.
         // Schema 14 is generated from the exact accepted SP-04E0 contract at 30fd0ad.
         // Schema 15 is generated from the exact accepted SP-04E1 contract at 97b607a.
+        // Schema 16 is generated from the exact accepted SP-04E2 contract at 7491da8.
         // Schema 1/2 are synthetic fixtures inferred from the registered migration contracts.
         string fileName = schemaVersion switch
         {
@@ -3777,6 +3948,7 @@ public sealed class SaveStoreTests : IDisposable
             13 => "save-schema-13-history-backed.json",
             14 => "save-schema-14-history-backed.json",
             15 => "save-schema-15-history-backed.json",
+            16 => "save-schema-16-history-backed.json",
             _ => throw new ArgumentOutOfRangeException(nameof(schemaVersion)),
         };
         return schemaVersion == 4

@@ -2409,7 +2409,9 @@ public sealed class CharacterMarriageCampaignTests
         Assert.True(
             validation.IsValid,
             string.Join("; ", validation.Issues.Select(issue => $"{issue.Code}: {issue.Message}")));
-        return Assert.Single(simulation.ResolveTurn());
+        return Assert.Single(
+            simulation.ResolveTurn(),
+            campaignEvent => campaignEvent.Payload is CharacterMarriageActionResolvedEventPayload);
     }
 
     private static CampaignCommand Command(

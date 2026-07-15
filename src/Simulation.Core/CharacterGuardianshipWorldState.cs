@@ -382,6 +382,59 @@ public sealed class CharacterGuardianshipWorldState
                 authoritativeTurnIndex));
     }
 
+    internal CharacterGuardianshipComingOfAgePlan PrepareComingOfAgeTermination(
+        EntityId wardCharacterId,
+        EntityId expectedCurrentPrimaryGuardianshipId,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (!resolutionDate.IsValid
+            || resolutionDate.CompareTo(calendar.Date) < 0
+            || authoritativeTurnIndex < calendar.TurnIndex
+            || commandId != CharacterComingOfAgeIds.DeriveCommandId(
+                resolutionDate,
+                wardCharacterId)
+            || eventId != CharacterComingOfAgeIds.DeriveEventId(
+                resolutionDate,
+                commandId))
+        {
+            throw new SimulationValidationException(
+                "Coming-of-age guardianship termination coordinates or identities are invalid.");
+        }
+
+        AuthoritativeCharacterProfile ward = RequireCurrentCharacter(
+            wardCharacterId,
+            resolutionDate,
+            "Coming-of-age ward");
+        if (ward.Condition.VitalStatus != CharacterVitalStatus.Alive
+            || !CharacterComingOfAgePlanner.IsComingOfAgeTransition(
+                ward.BirthDate,
+                resolutionDate))
+        {
+            throw new SimulationValidationException(
+                $"Guardianship ward '{wardCharacterId}' is not living through an exact 17-to-18 transition.");
+        }
+
+        CharacterGuardianshipState active = RequireExpectedActiveGuardianship(
+            wardCharacterId,
+            expectedCurrentPrimaryGuardianshipId);
+        CharacterGuardianshipState ended = EndGuardianship(
+            active,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId,
+            CharacterGuardianshipEndReason.WardCameOfAge);
+        return new CharacterGuardianshipComingOfAgePlan(
+            Clone(ended),
+            CreateUpdatePlan(
+                ReplaceGuardianship(active.GuardianshipId, ended),
+                resolutionDate,
+                authoritativeTurnIndex));
+    }
+
     internal void ApplyPrepared(CharacterGuardianshipWorldUpdatePlan plan)
     {
         if (plan?.Candidate is null)
@@ -765,4 +818,8 @@ internal sealed record CharacterGuardianshipTerminationPlan(
 internal sealed record CharacterGuardianshipReplacementPlan(
     CharacterGuardianshipState EndedGuardianship,
     CharacterGuardianshipState ReplacementGuardianship,
+    CharacterGuardianshipWorldUpdatePlan GuardianshipPlan);
+
+internal sealed record CharacterGuardianshipComingOfAgePlan(
+    CharacterGuardianshipState EndedPrimaryGuardianship,
     CharacterGuardianshipWorldUpdatePlan GuardianshipPlan);

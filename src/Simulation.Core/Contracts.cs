@@ -34,6 +34,7 @@ public sealed record CommandValidationResult(bool IsValid, IReadOnlyList<Validat
 [JsonDerivedType(typeof(CharacterConditionActionCommandPayload), "character_condition_action.v1")]
 [JsonDerivedType(typeof(HouseholdDecisionCommandPayload), "household_decision.v1")]
 [JsonDerivedType(typeof(CharacterFamilyActionCommandPayload), "character_family_action.v1")]
+[JsonDerivedType(typeof(CharacterComingOfAgeCommandPayload), "character_coming_of_age.v1")]
 public interface ICampaignCommandPayload;
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "$type", UnknownDerivedTypeHandling = JsonUnknownDerivedTypeHandling.FailSerialization)]
@@ -53,6 +54,7 @@ public interface ICampaignCommandPayload;
 [JsonDerivedType(typeof(CharacterConditionActionResolvedEventPayload), "character_condition_action_resolved.v1")]
 [JsonDerivedType(typeof(HouseholdDecisionResolvedEventPayload), "household_decision_resolved.v1")]
 [JsonDerivedType(typeof(CharacterFamilyActionResolvedEventPayload), "character_family_action_resolved.v1")]
+[JsonDerivedType(typeof(CharacterCameOfAgeEventPayload), "character_came_of_age.v1")]
 public interface ICampaignEventPayload;
 
 public sealed record AdjustResourcesCommandPayload(EntityId Target, long PeopleDelta, long FoodDelta, long GoldDelta)
@@ -100,6 +102,7 @@ public sealed record CampaignCommand(
         CharacterConditionActionCommandPayload => "character_condition_action.v1",
         HouseholdDecisionCommandPayload => "household_decision.v1",
         CharacterFamilyActionCommandPayload => "character_family_action.v1",
+        CharacterComingOfAgeCommandPayload => "character_coming_of_age.v1",
         _ => "unregistered",
     };
 
@@ -148,6 +151,7 @@ public sealed record CampaignEvent(
         CharacterConditionActionResolvedEventPayload => "character_condition_action_resolved.v1",
         HouseholdDecisionResolvedEventPayload => "household_decision_resolved.v1",
         CharacterFamilyActionResolvedEventPayload => "character_family_action_resolved.v1",
+        CharacterCameOfAgeEventPayload => "character_came_of_age.v1",
         _ => "unregistered",
     };
 }

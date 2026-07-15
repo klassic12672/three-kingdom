@@ -52,7 +52,21 @@ public sealed class CampaignSimulation
         {
             foreach (ResolutionPhase phase in OrderedPhases)
             {
+                CampaignCommand[] generatedCommands = phase == ResolutionPhase.Systems
+                    ? World.PlanCharacterComingOfAgeCommands(date).ToArray()
+                    : [];
+                foreach (CampaignCommand generated in generatedCommands)
+                {
+                    AddBounded(recentCommands, generated);
+                }
+
                 IEnumerable<PendingResolution> commandResolutions = World.DequeueCommandsFor(date, phase)
+                    .Select(command => new PendingResolution(
+                        command.Priority,
+                        GetEventId(command),
+                        command,
+                        null));
+                IEnumerable<PendingResolution> generatedCommandResolutions = generatedCommands
                     .Select(command => new PendingResolution(
                         command.Priority,
                         GetEventId(command),
@@ -75,6 +89,7 @@ public sealed class CampaignSimulation
                             campaignEvent))
                     : [];
                 PendingResolution[] phaseResolutions = commandResolutions
+                    .Concat(generatedCommandResolutions)
                     .Concat(backgroundResolutions)
                     .Concat(geographicResolutions)
                     .OrderBy(item => item.Priority)
@@ -408,6 +423,11 @@ public sealed class CampaignSimulation
                 }
 
                 break;
+            case CharacterComingOfAgeCommandPayload:
+                issues.Add(new(
+                    "system_generated_command",
+                    "Coming-of-age commands are generated internally and cannot be submitted externally."));
+                break;
             default:
                 issues.Add(new("unregistered_payload", $"Command payload '{command.Payload?.GetType().Name ?? "null"}' is not registered."));
                 break;
@@ -714,6 +734,32 @@ public sealed class CampaignSimulation
                     }
 
                     break;
+                case CharacterComingOfAgeCommandPayload comingOfAge:
+                    try
+                    {
+                        EntityId comingOfAgeEventId = GetEventId(command);
+                        CharacterComingOfAgeResolutionPlan plan =
+                            World.PrepareCharacterComingOfAge(
+                                command.IssuingActor,
+                                comingOfAge,
+                                date,
+                                World.Calendar.TurnIndex,
+                                command.CommandId,
+                                comingOfAgeEventId);
+                        payload = plan.Payload;
+                        affected = plan.AffectedIds.ToArray();
+                    }
+                    catch (Exception exception) when (exception is SimulationValidationException
+                        or ArgumentException
+                        or OverflowException)
+                    {
+                        payload = new CommandCancelledEventPayload(
+                            "command_invalidated",
+                            exception.Message);
+                        affected = [];
+                    }
+
+                    break;
                 default:
                     throw new SimulationValidationException($"Unregistered command payload '{command.Payload.GetType().Name}'.");
             }
@@ -758,6 +804,11 @@ public sealed class CampaignSimulation
         if (command.Payload is CharacterFamilyActionCommandPayload)
         {
             return command.IssuingActor == CharacterFamilySystem.AuthoritativeActorId;
+        }
+
+        if (command.Payload is CharacterComingOfAgeCommandPayload)
+        {
+            return command.IssuingActor == CharacterComingOfAgeSystem.AuthoritativeActorId;
         }
 
         return command.Payload is RelationshipActionCommandPayload
@@ -812,6 +863,13 @@ public sealed class CampaignSimulation
         if (command.Payload is HouseholdDecisionCommandPayload)
         {
             return HouseholdDecisionIds.DeriveActionEventId(
+                command.IssuedDate,
+                command.CommandId);
+        }
+
+        if (command.Payload is CharacterComingOfAgeCommandPayload)
+        {
+            return CharacterComingOfAgeIds.DeriveEventId(
                 command.IssuedDate,
                 command.CommandId);
         }

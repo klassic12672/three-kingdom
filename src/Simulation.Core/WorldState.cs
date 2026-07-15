@@ -489,6 +489,9 @@ public sealed class WorldState : IWorldQuery
             case HouseholdDecisionResolvedEventPayload householdDecision:
                 ApplyHouseholdDecision(campaignEvent, householdDecision);
                 break;
+            case CharacterCameOfAgeEventPayload comingOfAge:
+                ApplyCharacterCameOfAge(campaignEvent, comingOfAge);
+                break;
             default:
                 throw new SimulationValidationException($"Unregistered event payload '{campaignEvent.Payload.GetType().Name}'.");
         }
@@ -511,6 +514,28 @@ public sealed class WorldState : IWorldQuery
 
     internal IReadOnlyList<CampaignEvent> PlanGeographicEvents(CampaignDate date) =>
         Geography.PlanDailyEvents(date, Calendar.TurnIndex);
+
+    internal IReadOnlyList<CampaignCommand> PlanCharacterComingOfAgeCommands(
+        CampaignDate date) => CharacterComingOfAgePlanner.PlanCommands(
+            date,
+            Characters,
+            CharacterGuardianships);
+
+    internal CharacterComingOfAgeResolutionPlan PrepareCharacterComingOfAge(
+        EntityId actingActorId,
+        CharacterComingOfAgeCommandPayload payload,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId) => CharacterComingOfAgePlanner.PrepareResolution(
+            actingActorId,
+            payload,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId,
+            Characters,
+            CharacterGuardianships);
 
     internal CharacterConditionAggregatePlan PrepareCharacterConditionAction(
         EntityId actingActorId,
@@ -1121,6 +1146,57 @@ public sealed class WorldState : IWorldQuery
 
         Characters.ApplyPrepared(aggregate.CharacterPlan);
         Relationships.ApplyPrepared(aggregate.RelationshipPlan);
+    }
+
+    private void ApplyCharacterCameOfAge(
+        CampaignEvent campaignEvent,
+        CharacterCameOfAgeEventPayload payload)
+    {
+        if (campaignEvent.Phase != ResolutionPhase.Systems
+            || campaignEvent.Priority != CharacterComingOfAgeSystem.Priority
+            || campaignEvent.CausalId is not EntityId commandId
+            || !commandId.IsValid)
+        {
+            throw new SimulationValidationException(
+                "Coming-of-age events require the exact Systems-phase priority and a valid causal command ID.");
+        }
+
+        EntityId expectedCommandId = CharacterComingOfAgeIds.DeriveCommandId(
+            campaignEvent.ResolutionDate,
+            payload.CharacterId);
+        EntityId expectedEventId = CharacterComingOfAgeIds.DeriveEventId(
+            campaignEvent.ResolutionDate,
+            commandId);
+        if (commandId != expectedCommandId
+            || campaignEvent.EventId != expectedEventId
+            || campaignEvent.AffectedIds is null
+            || !campaignEvent.AffectedIds.SequenceEqual(
+                CharacterComingOfAgePlanner.GetAffectedIds(payload)))
+        {
+            throw new SimulationValidationException(
+                "Coming-of-age event identities or affected IDs do not match its exact deterministic outcome.");
+        }
+
+        CharacterComingOfAgeCommandPayload commandPayload = new(
+            payload.CharacterId,
+            payload.EndedPrimaryGuardianship?.GuardianshipId);
+        CharacterComingOfAgeResolutionPlan plan = PrepareCharacterComingOfAge(
+            CharacterComingOfAgeSystem.AuthoritativeActorId,
+            commandPayload,
+            campaignEvent.ResolutionDate,
+            Calendar.TurnIndex,
+            commandId,
+            campaignEvent.EventId);
+        if (!PayloadsEqual(plan.Payload, payload))
+        {
+            throw new SimulationValidationException(
+                "Coming-of-age event payload does not match its exact deterministic plan.");
+        }
+
+        if (plan.GuardianshipPlan is not null)
+        {
+            CharacterGuardianships.ApplyPrepared(plan.GuardianshipPlan);
+        }
     }
 
     internal static EntityId[] GetCharacterMarriageActionAffectedIds(
@@ -2220,6 +2296,12 @@ public sealed class WorldState : IWorldQuery
             || command.Payload is null))
         {
             throw new SimulationValidationException("Snapshot contains an invalid pending command.");
+        }
+
+        if (commands.Any(command => command.Payload is CharacterComingOfAgeCommandPayload))
+        {
+            throw new SimulationValidationException(
+                "Snapshot cannot persist internally generated coming-of-age commands as pending work.");
         }
 
         foreach (CampaignCommand command in commands.Where(
