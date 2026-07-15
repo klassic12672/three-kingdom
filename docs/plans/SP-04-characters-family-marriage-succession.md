@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — SP-04A/SP-04B/SP-04C0 exact-SHA hosted verified; SP-04C1 locally verified; exact-SHA hosted pending |
+| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1 exact-SHA hosted verified; later packages pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -178,7 +178,7 @@ Subsequent exact-SHA evidence does not relabel the historical local measurements
 
 ## Active package: SP-04C1 career and social-action kernel
 
-SP-04C1 is bounded to the career/social half of workstream 3: retinue invitations and departures, patronage offers and endings, recommendations, employment offers and endings, bounded history, and their explicit relationship-memory consequences. SP-04A/B/C0 and SP-01/SP-02/SP-03 dependencies are satisfied. This package requires no ADR because it preserves deterministic inward-only domain mutation, stable namespaced IDs, forward-only versioned persistence, bilingual-content boundaries, and the existing non-explicit-content rule.
+SP-04C1 is accepted at exact revision `d5d2705d3516c67a06e127dcfa867a854b37a21f` with passing [hosted macOS arm64/Windows x64 evidence](../evidence/SP-04C1-EXACT-SHA-d5d2705.md). It is bounded to the career/social half of workstream 3: retinue invitations and departures, patronage offers and endings, recommendations, employment offers and endings, bounded history, and their explicit relationship-memory consequences. SP-04A/B/C0 and SP-01/SP-02/SP-03 dependencies are satisfied. This package requires no ADR because it preserves deterministic inward-only domain mutation, stable namespaced IDs, forward-only versioned persistence, bilingual-content boundaries, and the existing non-explicit-content rule.
 
 `CharacterCareerWorldState` is a version-1 default-empty subsystem registered as `simulation.character_careers@1`. Its authoritative query exposes canonical defensive proposals, retinues and memberships, patronage bonds, recommendations, employment tenures, and folded history. Character and household principals are explicit; retinue membership does not imply employment, faction allegiance, office, title, or resource ownership. No global exclusive-retinue rule is invented.
 
@@ -207,7 +207,7 @@ History, active state, and event workload are explicitly bounded: 8 active propo
 | C111 | 1,000-character/1,000-action fixture records bounded shape, query, checksum, save, and load measurements without a brittle threshold | Raw local Apple Silicon macOS measurement | Local macOS pass; full three-second SP-04 turn budget remains unmet/unproven |
 | C112 | Repository validation, complete tests, diff/LFS checks, and C1-touched-file format verification pass; unrelated whole-tree formatter baseline is disclosed | Local repository gates | Local pass |
 | C113 | No personal resources, marriage/romance, lifecycle/succession, faction/court, combat, AI, content, UI, platform, or release behavior enters C1 | Diff and architecture review | Local pass after independent review and remediation |
-| C114 | The same accepted revision passes deterministic validation on hosted macOS arm64 and Windows x64 | Exact-SHA clean-checkout hosted evidence | Pending |
+| C114 | The same accepted revision passes deterministic validation on hosted macOS arm64 and Windows x64 | Exact-SHA clean-checkout hosted evidence | Hosted macOS arm64/Windows x64 pass at `d5d2705d3516c67a06e127dcfa867a854b37a21f` |
 
 The raw local performance fixture contains 1,000 characters and 1,000 registered actions: 450 offers, 450 acceptances, and 100 recommendations, resulting in 150 active retinue memberships, 150 patronage bonds, 150 employment tenures, 100 recommendations, and 1,000 generic relationship memories. On the final corrected Apple Silicon macOS tree, combined submission and resolution measured 15,649.077 ms, one career query 2.200 ms, snapshot/checksum 80.037 ms, save 285.490 ms, and load 174.532 ms. The save was 387,824 bytes and the checksum was `313d5183aa8b3d60a064076da5a91082217771753c08f958212ef6880a45e55b`. These are raw local measurements and the test asserts shape/correctness only. The full SP-04 three-second turn budget remains unchecked; this result is not relabeled as a pass for that criterion.
 
@@ -215,7 +215,9 @@ Local integrated verification on 2026-07-15 used macOS 26.5.1 build 25F80 on arm
 
 The required independent read-only review initially found five issues: a public direct-mutation bypass, relationship consequences surviving an invalidated response, an unbounded consequence list, omission of a recommendation role from affected IDs, and an inaccurate authentication-order sentence. The corrected tree makes the helper internal, suppresses invalidated consequences through the integrated event path, enforces and tests an exact 64-consequence maximum, includes the optional recommendation role, and fixes the wording. Targeted re-review confirmed all five resolutions and found no new issue in the fix delta.
 
-These results establish an uncommitted local working tree only. They are not clean-checkout, exact-SHA, hosted, cross-platform, physical-Windows, signing, Steam, or release evidence. C114 therefore remains pending.
+These results established an uncommitted local working tree only. They were not clean-checkout, exact-SHA, hosted, cross-platform, physical-Windows, signing, Steam, or release evidence; C114 remained pending at that point.
+
+Subsequent exact-SHA evidence does not relabel those historical local measurements. Accepted revision `d5d2705d3516c67a06e127dcfa867a854b37a21f` passed hosted macOS arm64 and Windows x64 validation, complete 243/71/6/18 suites, import, native export, automated smoke, manifest inspection, artifact upload, and static artifact verification. See the [SP-04C1 exact-SHA report](../evidence/SP-04C1-EXACT-SHA-d5d2705.md). Physical Windows remains an M4 gate, signing/Steam remain SP-15 gates, and the full SP-04 three-second budget remains unmet.
 
 Personal resources, faction/subfaction/imperial allegiance, offices/titles, marriage/romance, household expansion, birth/death resolution, inheritance/succession, battle, AI, historical/shipped content, UI, platform, signing, and release behavior remain deferred. Consequently every full SP-04 acceptance criterion below remains unchecked and SP-05 remains blocked.
 
