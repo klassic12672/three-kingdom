@@ -13,7 +13,7 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
     private readonly SortedDictionary<EntityId, HouseholdState> householdStates = [];
     private readonly Dictionary<EntityId, EntityId> familyByCharacter = [];
     private readonly Dictionary<EntityId, EntityId> householdByCharacter = [];
-    private readonly Dictionary<EntityId, EntityId[]> childrenByCharacter = [];
+    private readonly Dictionary<EntityId, CharacterChildLink[]> childrenByCharacter = [];
     private CampaignDate campaignDate;
 
     public CharacterWorldState(CharacterWorldSnapshot snapshot, CampaignDate campaignDate)
@@ -179,6 +179,7 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
             ValidateCanonicalIds(definition.TraitIds, $"Character '{definition.Id}' trait IDs");
             ValidateCanonicalIds(definition.AmbitionIds, $"Character '{definition.Id}' ambition IDs");
             ValidateCanonicalIds(definition.ReputationIds, $"Character '{definition.Id}' reputation IDs");
+            ValidateCharacterDescriptor(definition);
             characterDefinitions.Add(definition.Id, Clone(definition));
         }
     }
@@ -216,6 +217,8 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
             ValidateStateVersion(state.ContractVersion, "character", state.CharacterId);
             ValidateId(state.CharacterId, "Character state ID");
             ValidateCanonicalIds(state.ParentIds, $"Character '{state.CharacterId}' parent IDs");
+            ValidateParentLinks(state);
+            ValidateCondition(state);
             if (!characterStates.TryAdd(state.CharacterId, Clone(state)))
             {
                 throw new SimulationValidationException(
@@ -263,6 +266,232 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
             ValidateIdentityReferences(definition.Id, definition.TraitIds, CharacterIdentityKind.Trait);
             ValidateIdentityReferences(definition.Id, definition.AmbitionIds, CharacterIdentityKind.Ambition);
             ValidateIdentityReferences(definition.Id, definition.ReputationIds, CharacterIdentityKind.Reputation);
+            ValidateIdentityReferences(definition.Id, definition.FlawIds!, CharacterIdentityKind.Flaw);
+        }
+    }
+
+    private static void ValidateCharacterDescriptor(CharacterDefinition definition)
+    {
+        if (definition.StructuredName is null)
+        {
+            throw new SimulationValidationException(
+                $"Character '{definition.Id}' structured name cannot be null in contract version {CharacterContractVersions.Definition}.");
+        }
+
+        ValidateId(
+            definition.StructuredName.PrimaryNameKey,
+            $"Character '{definition.Id}' structured primary name key");
+        if (definition.StructuredName.PrimaryNameKey != definition.NameKey)
+        {
+            throw new SimulationValidationException(
+                $"Character '{definition.Id}' structured primary name key must equal its name key.");
+        }
+
+        if (definition.StructuredName.CourtesyNameKey is EntityId courtesyNameKey)
+        {
+            ValidateId(courtesyNameKey, $"Character '{definition.Id}' courtesy name key");
+        }
+
+        ValidateContentOrigin(definition.Id, definition.ContentOrigin);
+        if (definition.CultureId is EntityId cultureId)
+        {
+            ValidateId(cultureId, $"Character '{definition.Id}' culture ID");
+        }
+
+        if (definition.OriginLocationId is EntityId originLocationId)
+        {
+            ValidateId(originLocationId, $"Character '{definition.Id}' origin location ID");
+        }
+
+        ValidateCanonicalIds(definition.FlawIds!, $"Character '{definition.Id}' flaw IDs");
+    }
+
+    private static void ValidateContentOrigin(EntityId characterId, CharacterContentOrigin? origin)
+    {
+        if (origin is null)
+        {
+            throw new SimulationValidationException(
+                $"Character '{characterId}' content origin cannot be null in contract version {CharacterContractVersions.Definition}.");
+        }
+
+        if (!Enum.IsDefined(origin.OriginKind))
+        {
+            throw new SimulationValidationException(
+                $"Character '{characterId}' has an invalid content-origin kind.");
+        }
+
+        if (origin.HistoricalClassification is CharacterHistoricalClassification classification
+            && !Enum.IsDefined(classification))
+        {
+            throw new SimulationValidationException(
+                $"Character '{characterId}' has an invalid historical classification.");
+        }
+
+        ValidateId(origin.RecordId, $"Character '{characterId}' content record ID");
+        if (origin.OwningPackId is EntityId owningPackId)
+        {
+            ValidateId(owningPackId, $"Character '{characterId}' owning pack ID");
+        }
+
+        ValidateCanonicalIds(
+            origin.AppliedOverridePackIds,
+            $"Character '{characterId}' applied override pack IDs");
+        ValidateCanonicalIds(origin.SourceIds, $"Character '{characterId}' source IDs");
+
+        switch (origin.OriginKind)
+        {
+            case CharacterOriginKind.LegacyUnknown:
+                if (origin.HistoricalClassification is not null
+                    || origin.OwningPackId is not null
+                    || origin.AppliedOverridePackIds.Count != 0
+                    || origin.SourceIds.Count != 0)
+                {
+                    throw new SimulationValidationException(
+                        $"Character '{characterId}' legacy-unknown content origin cannot assert classification, pack lineage, overrides, or sources.");
+                }
+
+                break;
+            case CharacterOriginKind.Authored:
+                if (origin.HistoricalClassification is null
+                    || origin.OwningPackId is null
+                    || (origin.HistoricalClassification != CharacterHistoricalClassification.Fictional
+                        && origin.SourceIds.Count == 0))
+                {
+                    throw new SimulationValidationException(
+                        $"Character '{characterId}' authored content origin requires classification, an owning pack, and sources for non-fictional classification.");
+                }
+
+                break;
+            case CharacterOriginKind.Custom:
+                if (origin.HistoricalClassification != CharacterHistoricalClassification.Fictional
+                    || origin.OwningPackId is null)
+                {
+                    throw new SimulationValidationException(
+                        $"Character '{characterId}' custom content origin requires fictional classification and an owning pack.");
+                }
+
+                break;
+            case CharacterOriginKind.Generated:
+                if (origin.HistoricalClassification != CharacterHistoricalClassification.Fictional
+                    || origin.OwningPackId is not null
+                    || origin.AppliedOverridePackIds.Count != 0
+                    || origin.SourceIds.Count != 0)
+                {
+                    throw new SimulationValidationException(
+                        $"Character '{characterId}' generated content origin requires fictional classification and cannot assert pack lineage, overrides, or sources.");
+                }
+
+                break;
+        }
+
+        if (origin.OwningPackId is EntityId packId && origin.AppliedOverridePackIds.Contains(packId))
+        {
+            throw new SimulationValidationException(
+                $"Character '{characterId}' owning pack cannot also be an applied override pack.");
+        }
+    }
+
+    private static void ValidateParentLinks(CharacterState state)
+    {
+        if (state.ParentLinks is null)
+        {
+            throw new SimulationValidationException(
+                $"Character '{state.CharacterId}' typed parent links cannot be null in contract version {CharacterContractVersions.State}.");
+        }
+
+        EntityId? previousParentId = null;
+        foreach (CharacterParentLink? link in state.ParentLinks)
+        {
+            if (link is null)
+            {
+                throw new SimulationValidationException(
+                    $"Character '{state.CharacterId}' typed parent links cannot contain null entries.");
+            }
+
+            ValidateId(link.ParentCharacterId, $"Character '{state.CharacterId}' typed parent ID");
+            if (!Enum.IsDefined(link.Kind))
+            {
+                throw new SimulationValidationException(
+                    $"Character '{state.CharacterId}' has an invalid parent-link kind.");
+            }
+
+            if (previousParentId is EntityId previous && previous.CompareTo(link.ParentCharacterId) >= 0)
+            {
+                throw new SimulationValidationException(
+                    $"Character '{state.CharacterId}' typed parent links must contain unique parent IDs in ordinal canonical order.");
+            }
+
+            previousParentId = link.ParentCharacterId;
+        }
+
+        if (!state.ParentIds.SequenceEqual(state.ParentLinks.Select(link => link.ParentCharacterId)))
+        {
+            throw new SimulationValidationException(
+                $"Character '{state.CharacterId}' typed parent-link IDs must exactly equal its retained parent IDs.");
+        }
+    }
+
+    private void ValidateCondition(CharacterState state)
+    {
+        CharacterConditionState? condition = state.Condition;
+        if (condition is null)
+        {
+            throw new SimulationValidationException(
+                $"Character '{state.CharacterId}' condition cannot be null in contract version {CharacterContractVersions.State}.");
+        }
+
+        if (!Enum.IsDefined(condition.VitalStatus)
+            || !Enum.IsDefined(condition.HealthStatus)
+            || !Enum.IsDefined(condition.CustodyStatus))
+        {
+            throw new SimulationValidationException(
+                $"Character '{state.CharacterId}' condition contains an invalid enum value.");
+        }
+
+        if (condition.HealthStatus == CharacterHealthStatus.Critical && !condition.IsIncapacitated)
+        {
+            throw new SimulationValidationException(
+                $"Critical character '{state.CharacterId}' must be incapacitated.");
+        }
+
+        if (condition.VitalStatus == CharacterVitalStatus.Dead
+            && (condition.HealthStatus != CharacterHealthStatus.Critical
+                || !condition.IsIncapacitated
+                || condition.CustodyStatus != CharacterCustodyStatus.Free
+                || condition.CustodianId is not null))
+        {
+            throw new SimulationValidationException(
+                $"Dead character '{state.CharacterId}' must be critical, incapacitated, and free of custody.");
+        }
+
+        if (condition.CustodyStatus == CharacterCustodyStatus.Free)
+        {
+            if (condition.CustodianId is not null)
+            {
+                throw new SimulationValidationException(
+                    $"Free character '{state.CharacterId}' cannot have a custodian.");
+            }
+        }
+        else
+        {
+            if (condition.CustodianId is not EntityId custodianId)
+            {
+                throw new SimulationValidationException(
+                    $"Character '{state.CharacterId}' in custody requires a custodian ID.");
+            }
+
+            ValidateId(custodianId, $"Character '{state.CharacterId}' custodian ID");
+            if (custodianId == state.CharacterId)
+            {
+                throw new SimulationValidationException(
+                    $"Character '{state.CharacterId}' cannot be their own custodian.");
+            }
+
+            if (!characterDefinitions.ContainsKey(custodianId))
+            {
+                throw new SimulationValidationException(
+                    $"Character '{state.CharacterId}' references missing custodian '{custodianId}'.");
+            }
         }
     }
 
@@ -353,19 +582,25 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
 
     private void IndexChildren()
     {
-        Dictionary<EntityId, List<EntityId>> childLists = characterDefinitions.Keys
-            .ToDictionary(id => id, _ => new List<EntityId>());
+        Dictionary<EntityId, List<CharacterChildLink>> childLists = characterDefinitions.Keys
+            .ToDictionary(id => id, _ => new List<CharacterChildLink>());
         foreach (CharacterState state in characterStates.Values)
         {
-            foreach (EntityId parentId in state.ParentIds)
+            foreach (CharacterParentLink parentLink in state.ParentLinks!)
             {
-                childLists[parentId].Add(state.CharacterId);
+                childLists[parentLink.ParentCharacterId].Add(new CharacterChildLink(
+                    state.CharacterId,
+                    parentLink.Kind));
             }
         }
 
-        foreach ((EntityId id, List<EntityId> children) in childLists)
+        foreach ((EntityId id, List<CharacterChildLink> children) in childLists)
         {
-            childrenByCharacter.Add(id, children.Order().ToArray());
+            childrenByCharacter.Add(
+                id,
+                children.OrderBy(link => link.ChildCharacterId)
+                    .ThenBy(link => link.Kind)
+                    .ToArray());
         }
     }
 
@@ -428,14 +663,22 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
             definition.BirthDate,
             CalculateAge(definition.BirthDate, campaignDate),
             state.ParentIds.ToArray(),
-            childrenByCharacter[id].ToArray(),
+            childrenByCharacter[id].Select(link => link.ChildCharacterId).ToArray(),
             familyByCharacter.TryGetValue(id, out EntityId familyId) ? familyId : null,
             householdByCharacter.TryGetValue(id, out EntityId householdId) ? householdId : null,
             definition.AbilityIds.ToArray(),
             definition.AptitudeIds.ToArray(),
             definition.TraitIds.ToArray(),
             definition.AmbitionIds.ToArray(),
-            definition.ReputationIds.ToArray());
+            definition.ReputationIds.ToArray(),
+            Clone(definition.StructuredName!),
+            Clone(definition.ContentOrigin!),
+            definition.CultureId,
+            definition.OriginLocationId,
+            definition.FlawIds!.ToArray(),
+            Clone(state.Condition!),
+            state.ParentLinks!.Select(Clone).ToArray(),
+            childrenByCharacter[id].Select(Clone).ToArray());
     }
 
     private AuthoritativeHouseholdView CreateHouseholdView(EntityId id)
@@ -539,12 +782,31 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
         TraitIds = definition.TraitIds.ToArray(),
         AmbitionIds = definition.AmbitionIds.ToArray(),
         ReputationIds = definition.ReputationIds.ToArray(),
+        StructuredName = definition.StructuredName is null ? null : Clone(definition.StructuredName),
+        ContentOrigin = definition.ContentOrigin is null ? null : Clone(definition.ContentOrigin),
+        FlawIds = definition.FlawIds?.ToArray(),
     };
 
     private static CharacterState Clone(CharacterState state) => state with
     {
         ParentIds = state.ParentIds.ToArray(),
+        ParentLinks = state.ParentLinks?.Select(Clone).ToArray(),
+        Condition = state.Condition is null ? null : Clone(state.Condition),
     };
+
+    private static StructuredCharacterName Clone(StructuredCharacterName name) => name with { };
+
+    private static CharacterContentOrigin Clone(CharacterContentOrigin origin) => origin with
+    {
+        AppliedOverridePackIds = origin.AppliedOverridePackIds.ToArray(),
+        SourceIds = origin.SourceIds.ToArray(),
+    };
+
+    private static CharacterConditionState Clone(CharacterConditionState condition) => condition with { };
+
+    private static CharacterParentLink Clone(CharacterParentLink link) => link with { };
+
+    private static CharacterChildLink Clone(CharacterChildLink link) => link with { };
 
     private static FamilyState Clone(FamilyState state) => state with
     {

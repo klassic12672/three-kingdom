@@ -191,20 +191,31 @@ public sealed class RelationshipSummaryQueryTests
 
     private static CampaignSimulation CreateSimulation(IReadOnlyList<EntityId> characterIds)
     {
-        CharacterDefinition[] definitions = characterIds.Select(id => new CharacterDefinition(
-            CharacterContractVersions.Definition,
-            id,
-            new EntityId($"loc:{id.Value.Replace(':', '/')}/name"),
-            new CampaignDate(150, 1, 1),
-            [],
-            [],
-            [],
-            [],
-            [])).ToArray();
+        CharacterDefinition[] definitions = characterIds.Select(id =>
+        {
+            EntityId nameKey = new($"loc:{id.Value.Replace(':', '/')}/name");
+            return new CharacterDefinition(
+                CharacterContractVersions.Definition,
+                id,
+                nameKey,
+                new CampaignDate(150, 1, 1),
+                [],
+                [],
+                [],
+                [],
+                [],
+                new StructuredCharacterName(nameKey, null),
+                CharacterContentOrigin.LegacyUnknown(id),
+                null,
+                null,
+                []);
+        }).ToArray();
         CharacterState[] states = characterIds.Select(id => new CharacterState(
             CharacterContractVersions.State,
             id,
-            [])).ToArray();
+            [],
+            [],
+            CharacterConditionState.Default)).ToArray();
         CharacterWorldSnapshot characters = new(
             CharacterContractVersions.Snapshot,
             [],

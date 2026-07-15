@@ -44,9 +44,9 @@ public sealed class TierAndSoakTests
 
         Assert.True(result.Turns > 1_000);
         Assert.Equal(200, result.FinalDate.Year);
-        // SP-04B-L adds the authoritative simulation.relationships@1 system and empty relationship
-        // snapshot to newly captured worlds, so the canonical golden changes without altering the soak inputs.
-        Assert.Equal("8430e2054d15fdb9a6e0c54a88b20de3b34dbca7ba80030b30676041773e7155", result.Checksum.Value);
+        // SP-04C0 advances the authoritative character snapshot to v2, so the canonical golden
+        // changes without altering the soak inputs or simulated outcomes.
+        Assert.Equal("37504979fcaa25789cc9e12af7084c351d115c1195054e062ca7f7ea6ba943dd", result.Checksum.Value);
     }
 
     [Theory]

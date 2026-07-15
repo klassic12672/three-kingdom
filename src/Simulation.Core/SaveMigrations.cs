@@ -24,6 +24,7 @@ public sealed class SaveSchemaRegistry
             new SaveMigrationV2ToV3(),
             new SaveMigrationV3ToV4(),
             new SaveMigrationV4ToV5(),
+            new SaveMigrationV5ToV6(),
         ]).ToArray();
         if (registered.Any(item => item.ToSchemaVersion != item.FromSchemaVersion + 1))
         {
@@ -93,7 +94,7 @@ public sealed class SaveSchemaRegistry
 
     internal static void ValidateHistoricalSourceChecksum(JsonObject source, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 4)
+        if (schemaVersion is < 1 or > 5)
         {
             throw new SaveCompatibilityException($"Save schema {schemaVersion} has no historical checksum contract.");
         }
@@ -139,11 +140,27 @@ public sealed class SaveSchemaRegistry
             schemaVersion,
             "snapshot.systemVersions");
 
-        if (snapshot.ContainsKey("relationships")
-            || systemVersions.Any(version => IsSystemId(version, "simulation.relationships")))
+        if (schemaVersion < 5
+            && (snapshot.ContainsKey("relationships")
+                || systemVersions.Any(version => IsSystemId(version, "simulation.relationships"))))
         {
             throw new SaveCompatibilityException(
                 $"Schema {schemaVersion} unexpectedly contains schema 5 relationship data.");
+        }
+
+        if (schemaVersion == 5)
+        {
+            ValidateRelationshipSnapshotShape(
+                RequireHistoricalObject(snapshot, "relationships", schemaVersion, "snapshot.relationships"),
+                $"Save schema {schemaVersion}");
+            if (!systemVersions.Any(version => IsSystemVersion(
+                    version,
+                    "simulation.relationships",
+                    RelationshipContractVersions.Snapshot)))
+            {
+                throw new SaveCompatibilityException(
+                    "Save schema 5 is missing required 'simulation.relationships@1' system-version data.");
+            }
         }
 
         if (schemaVersion < 4 && snapshot.ContainsKey("characters"))
@@ -178,11 +195,18 @@ public sealed class SaveSchemaRegistry
             "characters",
             schemaVersion,
             "snapshot.characters");
-        ValidateCharacterSnapshotShape(characters, "Save schema 4");
-        if (!systemVersions.Any(version => IsSystemVersion(version, "simulation.characters", 1)))
+        ValidateCharacterSnapshotShape(
+            characters,
+            $"Save schema {schemaVersion}",
+            CharacterContractVersions.LegacySnapshot,
+            requireVersionTwoFields: false);
+        if (!systemVersions.Any(version => IsSystemVersion(
+                version,
+                "simulation.characters",
+                CharacterContractVersions.LegacySnapshot)))
         {
             throw new SaveCompatibilityException(
-                "Save schema 4 is missing required 'simulation.characters@1' system-version data.");
+                $"Save schema {schemaVersion} is missing required 'simulation.characters@1' system-version data.");
         }
     }
 
@@ -363,14 +387,18 @@ public sealed class SaveSchemaRegistry
                 "Current save schema contains missing or null required snapshot fields.");
         }
 
-        ValidateCharacterSnapshotShape(characters, "Current save schema");
-        ValidateRelationshipSnapshotShape(relationships);
+        ValidateCharacterSnapshotShape(
+            characters,
+            "Current save schema",
+            CharacterContractVersions.Snapshot,
+            requireVersionTwoFields: true);
+        ValidateRelationshipSnapshotShape(relationships, "Current save schema");
 
         if (snapshot["systemVersions"] is not JsonArray systemVersions
             || !systemVersions.Any(IsCurrentCharacterSystemVersion))
         {
             throw new SaveCompatibilityException(
-                "Current save schema is missing required 'simulation.characters@1' system-version data.");
+                "Current save schema is missing required 'simulation.characters@2' system-version data.");
         }
 
         if (!systemVersions.Any(IsCurrentRelationshipSystemVersion))
@@ -380,7 +408,11 @@ public sealed class SaveSchemaRegistry
         }
     }
 
-    private static void ValidateCharacterSnapshotShape(JsonObject characters, string context)
+    private static void ValidateCharacterSnapshotShape(
+        JsonObject characters,
+        string context,
+        int expectedVersion,
+        bool requireVersionTwoFields)
     {
         string[] requiredArrays =
         [
@@ -394,25 +426,389 @@ public sealed class SaveSchemaRegistry
         ];
         if (characters["contractVersion"] is not JsonValue contractVersion
             || !contractVersion.TryGetValue(out int version)
-            || version != CharacterContractVersions.Snapshot
+            || version != expectedVersion
             || requiredArrays.Any(property => characters[property] is not JsonArray))
         {
             throw new SaveCompatibilityException(
                 $"{context} contains missing, null, or unsupported character snapshot fields.");
         }
+
+        ValidateVersionedCharacterEntries(
+            characters,
+            context,
+            "identityDefinitions",
+            expectedVersion,
+            []);
+        ValidateVersionedCharacterEntries(
+            characters,
+            context,
+            "characterDefinitions",
+            expectedVersion,
+            requireVersionTwoFields
+                ? ["structuredName", "contentOrigin", "flawIds"]
+                : []);
+        ValidateVersionedCharacterEntries(
+            characters,
+            context,
+            "familyDefinitions",
+            expectedVersion,
+            []);
+        ValidateVersionedCharacterEntries(
+            characters,
+            context,
+            "householdDefinitions",
+            expectedVersion,
+            []);
+        ValidateVersionedCharacterEntries(
+            characters,
+            context,
+            "characterStates",
+            expectedVersion,
+            requireVersionTwoFields ? ["parentLinks", "condition"] : []);
+        ValidateVersionedCharacterEntries(
+            characters,
+            context,
+            "familyStates",
+            expectedVersion,
+            []);
+        ValidateVersionedCharacterEntries(
+            characters,
+            context,
+            "householdStates",
+            expectedVersion,
+            []);
+
+        ValidateCommonCharacterEntryShape(characters, context);
+
+        if (requireVersionTwoFields)
+        {
+            ValidateCharacterV2EntryShape(characters, context);
+        }
+        else
+        {
+            RejectLegacyCharacterV2Fields(characters, context);
+        }
     }
 
-    private static void ValidateRelationshipSnapshotShape(JsonObject relationships)
+    private static void ValidateCommonCharacterEntryShape(JsonObject characters, string context)
+    {
+        foreach (JsonObject identity in characters["identityDefinitions"]!.AsArray().OfType<JsonObject>())
+        {
+            RequireCharacterObject(identity, "id", context, "identity definition");
+            RequireCharacterInteger(identity, "kind", context, "identity definition");
+            RequireCharacterObject(identity, "nameKey", context, "identity definition");
+        }
+
+        foreach (JsonObject definition in characters["characterDefinitions"]!.AsArray().OfType<JsonObject>())
+        {
+            RequireCharacterObject(definition, "id", context, "character definition");
+            RequireCharacterObject(definition, "nameKey", context, "character definition");
+            RequireCharacterObject(definition, "birthDate", context, "character definition");
+            RequireCharacterArray(definition, "abilityIds", context, "character definition");
+            RequireCharacterArray(definition, "aptitudeIds", context, "character definition");
+            RequireCharacterArray(definition, "traitIds", context, "character definition");
+            RequireCharacterArray(definition, "ambitionIds", context, "character definition");
+            RequireCharacterArray(definition, "reputationIds", context, "character definition");
+        }
+
+        foreach (JsonObject definition in characters["familyDefinitions"]!.AsArray().OfType<JsonObject>())
+        {
+            RequireCharacterObject(definition, "id", context, "family definition");
+            RequireCharacterObject(definition, "nameKey", context, "family definition");
+        }
+
+        foreach (JsonObject definition in characters["householdDefinitions"]!.AsArray().OfType<JsonObject>())
+        {
+            RequireCharacterObject(definition, "id", context, "household definition");
+            RequireCharacterObject(definition, "nameKey", context, "household definition");
+        }
+
+        foreach (JsonObject state in characters["characterStates"]!.AsArray().OfType<JsonObject>())
+        {
+            RequireCharacterObject(state, "characterId", context, "character state");
+            RequireCharacterArray(state, "parentIds", context, "character state");
+        }
+
+        foreach (JsonObject state in characters["familyStates"]!.AsArray().OfType<JsonObject>())
+        {
+            RequireCharacterObject(state, "familyId", context, "family state");
+            RequireCharacterArray(state, "memberIds", context, "family state");
+        }
+
+        foreach (JsonObject state in characters["householdStates"]!.AsArray().OfType<JsonObject>())
+        {
+            RequireCharacterObject(state, "householdId", context, "household state");
+            RequireCharacterObject(state, "headCharacterId", context, "household state");
+            RequireCharacterArray(state, "memberIds", context, "household state");
+        }
+    }
+
+    private static void ValidateCharacterV2EntryShape(JsonObject characters, string context)
+    {
+        foreach (JsonObject definition in characters["characterDefinitions"]!.AsArray().OfType<JsonObject>())
+        {
+            RequireCharacterArray(definition, "flawIds", context, "character definition");
+            RequireCharacterNullableObject(definition, "cultureId", context, "character definition");
+            RequireCharacterNullableObject(definition, "originLocationId", context, "character definition");
+
+            JsonObject structuredName = RequireCharacterObject(
+                definition,
+                "structuredName",
+                context,
+                "character definition");
+            RequireCharacterObject(structuredName, "primaryNameKey", context, "structured character name");
+            RequireCharacterNullableObject(
+                structuredName,
+                "courtesyNameKey",
+                context,
+                "structured character name");
+
+            JsonObject contentOrigin = RequireCharacterObject(
+                definition,
+                "contentOrigin",
+                context,
+                "character definition");
+            RequireCharacterInteger(contentOrigin, "originKind", context, "character content origin");
+            RequireCharacterNullableInteger(
+                contentOrigin,
+                "historicalClassification",
+                context,
+                "character content origin");
+            RequireCharacterObject(contentOrigin, "recordId", context, "character content origin");
+            RequireCharacterNullableObject(contentOrigin, "owningPackId", context, "character content origin");
+            RequireCharacterArray(
+                contentOrigin,
+                "appliedOverridePackIds",
+                context,
+                "character content origin");
+            RequireCharacterArray(contentOrigin, "sourceIds", context, "character content origin");
+        }
+
+        foreach (JsonObject state in characters["characterStates"]!.AsArray().OfType<JsonObject>())
+        {
+            JsonArray parentLinks = RequireCharacterArray(state, "parentLinks", context, "character state");
+            foreach (JsonNode? node in parentLinks)
+            {
+                if (node is not JsonObject parentLink)
+                {
+                    throw MalformedCharacterData(context, "parent link");
+                }
+
+                RequireCharacterObject(parentLink, "parentCharacterId", context, "parent link");
+                RequireCharacterInteger(parentLink, "kind", context, "parent link");
+            }
+
+            JsonObject condition = RequireCharacterObject(state, "condition", context, "character state");
+            RequireCharacterInteger(condition, "vitalStatus", context, "character condition");
+            RequireCharacterInteger(condition, "healthStatus", context, "character condition");
+            RequireCharacterBoolean(condition, "isIncapacitated", context, "character condition");
+            RequireCharacterInteger(condition, "custodyStatus", context, "character condition");
+            RequireCharacterNullableObject(condition, "custodianId", context, "character condition");
+        }
+    }
+
+    private static void RejectLegacyCharacterV2Fields(JsonObject characters, string context)
+    {
+        foreach (JsonObject identity in characters["identityDefinitions"]!.AsArray().OfType<JsonObject>())
+        {
+            if (identity["kind"] is not JsonValue kindValue
+                || !kindValue.TryGetValue(out int kind)
+                || kind is < (int)CharacterIdentityKind.Ability or > (int)CharacterIdentityKind.Reputation)
+            {
+                throw new SaveCompatibilityException(
+                    $"{context} character contract v1 contains a non-v1 identity kind.");
+            }
+        }
+
+        string[] definitionFields =
+        [
+            "structuredName",
+            "contentOrigin",
+            "cultureId",
+            "originLocationId",
+            "flawIds",
+        ];
+        foreach (JsonObject definition in characters["characterDefinitions"]!.AsArray().OfType<JsonObject>())
+        {
+            if (definitionFields.Any(definition.ContainsKey))
+            {
+                throw new SaveCompatibilityException(
+                    $"{context} character contract v1 unexpectedly contains contract-v2 descriptor data.");
+            }
+        }
+
+        foreach (JsonObject state in characters["characterStates"]!.AsArray().OfType<JsonObject>())
+        {
+            if (state.ContainsKey("parentLinks") || state.ContainsKey("condition"))
+            {
+                throw new SaveCompatibilityException(
+                    $"{context} character contract v1 unexpectedly contains contract-v2 state data.");
+            }
+        }
+    }
+
+    private static void ValidateVersionedCharacterEntries(
+        JsonObject characters,
+        string context,
+        string property,
+        int expectedVersion,
+        IReadOnlyList<string> requiredV2Properties)
+    {
+        JsonArray entries = characters[property]!.AsArray();
+        for (int index = 0; index < entries.Count; index++)
+        {
+            if (entries[index] is not JsonObject entry
+                || entry["contractVersion"] is not JsonValue versionValue
+                || !versionValue.TryGetValue(out int version)
+                || version != expectedVersion
+                || requiredV2Properties.Any(required => entry[required] is null))
+            {
+                throw new SaveCompatibilityException(
+                    $"{context} contains missing, null, or unsupported character data at '{property}[{index}]'.");
+            }
+        }
+    }
+
+    private static void ValidateRelationshipSnapshotShape(JsonObject relationships, string context)
     {
         if (relationships["contractVersion"] is not JsonValue contractVersion
             || !contractVersion.TryGetValue(out int version)
             || version != RelationshipContractVersions.Snapshot
-            || relationships["subjects"] is not JsonArray)
+            || relationships["subjects"] is not JsonArray subjects
+            || subjects.Any(node => node is not JsonObject))
         {
             throw new SaveCompatibilityException(
-                "Current save schema contains missing, null, or unsupported relationship snapshot fields.");
+                $"{context} contains missing, null, or unsupported relationship snapshot fields.");
+        }
+
+        foreach (JsonObject subject in subjects.OfType<JsonObject>())
+        {
+            if (subject["detailedRelationships"] is not JsonArray detailedRelationships
+                || subject["archivedRelationships"] is not JsonArray archivedRelationships
+                || subject["distantHistory"] is not JsonObject)
+            {
+                throw MalformedRelationshipData(context);
+            }
+
+            foreach (JsonNode? node in detailedRelationships)
+            {
+                if (node is not JsonObject relationship
+                    || relationship["dimensions"] is not JsonObject
+                    || relationship["memories"] is not JsonArray memories
+                    || relationship["foldedMemories"] is not JsonObject)
+                {
+                    throw MalformedRelationshipData(context);
+                }
+
+                foreach (JsonNode? memoryNode in memories)
+                {
+                    if (memoryNode is not JsonObject memory
+                        || memory["witnessIds"] is not JsonArray
+                        || memory["appliedImpact"] is not JsonObject)
+                    {
+                        throw MalformedRelationshipData(context);
+                    }
+                }
+            }
+
+            foreach (JsonNode? node in archivedRelationships)
+            {
+                if (node is not JsonObject relationship
+                    || relationship["dimensions"] is not JsonObject
+                    || relationship["foldedMemories"] is not JsonObject)
+                {
+                    throw MalformedRelationshipData(context);
+                }
+            }
         }
     }
+
+    private static JsonObject RequireCharacterObject(
+        JsonObject owner,
+        string property,
+        string context,
+        string description)
+    {
+        if (owner[property] is JsonObject value)
+        {
+            return value;
+        }
+
+        throw MalformedCharacterData(context, description);
+    }
+
+    private static JsonArray RequireCharacterArray(
+        JsonObject owner,
+        string property,
+        string context,
+        string description)
+    {
+        if (owner[property] is JsonArray value)
+        {
+            return value;
+        }
+
+        throw MalformedCharacterData(context, description);
+    }
+
+    private static void RequireCharacterInteger(
+        JsonObject owner,
+        string property,
+        string context,
+        string description)
+    {
+        if (owner[property] is not JsonValue value || !value.TryGetValue(out int _))
+        {
+            throw MalformedCharacterData(context, description);
+        }
+    }
+
+    private static void RequireCharacterBoolean(
+        JsonObject owner,
+        string property,
+        string context,
+        string description)
+    {
+        if (owner[property] is not JsonValue value || !value.TryGetValue(out bool _))
+        {
+            throw MalformedCharacterData(context, description);
+        }
+    }
+
+    private static void RequireCharacterNullableInteger(
+        JsonObject owner,
+        string property,
+        string context,
+        string description)
+    {
+        if (!owner.ContainsKey(property)
+            || (owner[property] is not null
+                && (owner[property] is not JsonValue value || !value.TryGetValue(out int _))))
+        {
+            throw MalformedCharacterData(context, description);
+        }
+    }
+
+    private static void RequireCharacterNullableObject(
+        JsonObject owner,
+        string property,
+        string context,
+        string description)
+    {
+        if (!owner.ContainsKey(property)
+            || (owner[property] is not null && owner[property] is not JsonObject))
+        {
+            throw MalformedCharacterData(context, description);
+        }
+    }
+
+    private static SaveCompatibilityException MalformedCharacterData(string context, string description) =>
+        new(
+            $"{context} contains missing, null, or malformed required {description} data.");
+
+    private static SaveCompatibilityException MalformedRelationshipData(string context) =>
+        new(
+            $"{context} contains missing, null, or malformed required nested relationship data.");
 
     private static bool IsCurrentCharacterSystemVersion(JsonNode? node) =>
         node is JsonObject systemVersion
@@ -515,7 +911,7 @@ public sealed class SaveMigrationV3ToV4 : ISaveMigration
         }
 
         snapshot["characters"] = JsonSerializer.SerializeToNode(
-            CharacterWorldSnapshot.Empty,
+            CharacterWorldSnapshot.LegacyV1Empty,
             SimulationJson.CreateOptions());
         systemVersions.Add(new JsonObject
         {
@@ -561,8 +957,89 @@ public sealed class SaveMigrationV4ToV5 : ISaveMigration
         });
         WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(SimulationJson.CreateOptions())
             ?? throw new SaveCompatibilityException("Migrated relationship snapshot is empty.");
+        source["checksum"] = SimulationChecksum.ComputeForSaveSchema(migratedSnapshot, ToSchemaVersion).Value;
+        source["schemaVersion"] = ToSchemaVersion;
+        return source;
+    }
+}
+
+public sealed class SaveMigrationV5ToV6 : ISaveMigration
+{
+    public int FromSchemaVersion => 5;
+
+    public int ToSchemaVersion => 6;
+
+    public JsonObject Migrate(JsonObject source)
+    {
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(source, FromSchemaVersion);
+        if (source["snapshot"] is not JsonObject snapshot
+            || snapshot["characters"] is not JsonObject characterNode
+            || snapshot["systemVersions"] is not JsonArray systemVersions)
+        {
+            throw new SaveCompatibilityException("Schema 5 save is missing character or system-version data.");
+        }
+
+        CharacterWorldSnapshot legacy = characterNode.Deserialize<CharacterWorldSnapshot>(SimulationJson.CreateOptions())
+            ?? throw new SaveCompatibilityException("Schema 5 character snapshot is empty.");
+        CharacterWorldSnapshot migratedCharacters = new CharacterWorldSnapshot(
+            CharacterContractVersions.Snapshot,
+            legacy.IdentityDefinitions.Select(definition => definition with
+            {
+                ContractVersion = CharacterContractVersions.Definition,
+            }).ToArray(),
+            legacy.CharacterDefinitions.Select(definition => definition with
+            {
+                ContractVersion = CharacterContractVersions.Definition,
+                StructuredName = new StructuredCharacterName(definition.NameKey, null),
+                ContentOrigin = CharacterContentOrigin.LegacyUnknown(definition.Id),
+                CultureId = null,
+                OriginLocationId = null,
+                FlawIds = [],
+            }).ToArray(),
+            legacy.FamilyDefinitions.Select(definition => definition with
+            {
+                ContractVersion = CharacterContractVersions.Definition,
+            }).ToArray(),
+            legacy.HouseholdDefinitions.Select(definition => definition with
+            {
+                ContractVersion = CharacterContractVersions.Definition,
+            }).ToArray(),
+            legacy.CharacterStates.Select(state => state with
+            {
+                ContractVersion = CharacterContractVersions.State,
+                ParentLinks = state.ParentIds
+                    .Select(parentId => new CharacterParentLink(parentId, ParentChildLinkKind.UnspecifiedLegacy))
+                    .ToArray(),
+                Condition = CharacterConditionState.Default,
+            }).ToArray(),
+            legacy.FamilyStates.Select(state => state with
+            {
+                ContractVersion = CharacterContractVersions.State,
+            }).ToArray(),
+            legacy.HouseholdStates.Select(state => state with
+            {
+                ContractVersion = CharacterContractVersions.State,
+            }).ToArray()).Canonicalize();
+
+        snapshot["characters"] = JsonSerializer.SerializeToNode(
+            migratedCharacters,
+            SimulationJson.CreateOptions());
+
+        JsonObject characterVersion = systemVersions
+            .OfType<JsonObject>()
+            .SingleOrDefault(node => IsCharacterSystemVersion(node, CharacterContractVersions.LegacySnapshot))
+            ?? throw new SaveCompatibilityException(
+                "Schema 5 is missing required 'simulation.characters@1' system-version data.");
+        characterVersion["version"] = CharacterContractVersions.Snapshot;
+
+        WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(SimulationJson.CreateOptions())
+            ?? throw new SaveCompatibilityException("Migrated schema 6 snapshot is empty.");
         source["checksum"] = SimulationChecksum.Compute(migratedSnapshot).Value;
         source["schemaVersion"] = ToSchemaVersion;
         return source;
     }
+
+    private static bool IsCharacterSystemVersion(JsonObject node, int version) =>
+        node["systemId"]?.GetValue<string>() == "simulation.characters"
+        && node["version"]?.GetValue<int>() == version;
 }

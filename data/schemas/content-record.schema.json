@@ -55,6 +55,12 @@
       "pattern": "^[a-z][a-z0-9_.-]*:[a-z][a-z0-9_./-]*$",
       "maxLength": 160
     },
+    "nullableEntityId": {
+      "oneOf": [
+        { "$ref": "#/$defs/entityId" },
+        { "type": "null" }
+      ]
+    },
     "entityIdArray": {
       "type": "array",
       "uniqueItems": true,
@@ -70,7 +76,7 @@
         "day": { "type": "integer", "minimum": 1, "maximum": 31 }
       }
     },
-    "characterState": {
+    "legacyCharacterState": {
       "type": "object",
       "additionalProperties": false,
       "required": ["contractVersion", "characterId", "parentIds"],
@@ -80,7 +86,40 @@
         "parentIds": { "$ref": "#/$defs/entityIdArray" }
       }
     },
-    "familyState": {
+    "characterParentLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parentCharacterId", "kind"],
+      "properties": {
+        "parentCharacterId": { "$ref": "#/$defs/entityId" },
+        "kind": { "enum": ["unspecifiedLegacy", "biological", "legalAdoptive"] }
+      }
+    },
+    "characterCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vitalStatus", "healthStatus", "isIncapacitated", "custodyStatus", "custodianId"],
+      "properties": {
+        "vitalStatus": { "enum": ["alive", "dead"] },
+        "healthStatus": { "enum": ["healthy", "injured", "ill", "critical"] },
+        "isIncapacitated": { "type": "boolean" },
+        "custodyStatus": { "enum": ["free", "detained", "captive", "hostage"] },
+        "custodianId": { "$ref": "#/$defs/nullableEntityId" }
+      }
+    },
+    "currentCharacterState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractVersion", "characterId", "parentIds", "parentLinks", "condition"],
+      "properties": {
+        "contractVersion": { "const": 2 },
+        "characterId": { "$ref": "#/$defs/entityId" },
+        "parentIds": { "$ref": "#/$defs/entityIdArray" },
+        "parentLinks": { "type": "array", "items": { "$ref": "#/$defs/characterParentLink" } },
+        "condition": { "$ref": "#/$defs/characterCondition" }
+      }
+    },
+    "legacyFamilyState": {
       "type": "object",
       "additionalProperties": false,
       "required": ["contractVersion", "familyId", "memberIds"],
@@ -90,7 +129,17 @@
         "memberIds": { "$ref": "#/$defs/entityIdArray" }
       }
     },
-    "householdState": {
+    "currentFamilyState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractVersion", "familyId", "memberIds"],
+      "properties": {
+        "contractVersion": { "const": 2 },
+        "familyId": { "$ref": "#/$defs/entityId" },
+        "memberIds": { "$ref": "#/$defs/entityIdArray" }
+      }
+    },
+    "legacyHouseholdState": {
       "type": "object",
       "additionalProperties": false,
       "required": ["contractVersion", "householdId", "headCharacterId", "memberIds"],
@@ -101,7 +150,18 @@
         "memberIds": { "$ref": "#/$defs/entityIdArray" }
       }
     },
-    "characterWorldData": {
+    "currentHouseholdState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractVersion", "householdId", "headCharacterId", "memberIds"],
+      "properties": {
+        "contractVersion": { "const": 2 },
+        "householdId": { "$ref": "#/$defs/entityId" },
+        "headCharacterId": { "$ref": "#/$defs/entityId" },
+        "memberIds": { "$ref": "#/$defs/entityIdArray" }
+      }
+    },
+    "legacyCharacterWorldData": {
       "type": "object",
       "additionalProperties": false,
       "required": ["contractVersion", "identityDefinitionIds", "characterDefinitionIds", "familyDefinitionIds", "householdDefinitionIds", "characterStates", "familyStates", "householdStates", "references"],
@@ -111,13 +171,35 @@
         "characterDefinitionIds": { "$ref": "#/$defs/entityIdArray" },
         "familyDefinitionIds": { "$ref": "#/$defs/entityIdArray" },
         "householdDefinitionIds": { "$ref": "#/$defs/entityIdArray" },
-        "characterStates": { "type": "array", "items": { "$ref": "#/$defs/characterState" } },
-        "familyStates": { "type": "array", "items": { "$ref": "#/$defs/familyState" } },
-        "householdStates": { "type": "array", "items": { "$ref": "#/$defs/householdState" } },
+        "characterStates": { "type": "array", "items": { "$ref": "#/$defs/legacyCharacterState" } },
+        "familyStates": { "type": "array", "items": { "$ref": "#/$defs/legacyFamilyState" } },
+        "householdStates": { "type": "array", "items": { "$ref": "#/$defs/legacyHouseholdState" } },
         "references": { "$ref": "#/$defs/entityIdArray" }
       }
     },
-    "characterDefinitionData": {
+    "currentCharacterWorldData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractVersion", "identityDefinitionIds", "characterDefinitionIds", "familyDefinitionIds", "householdDefinitionIds", "characterStates", "familyStates", "householdStates", "references"],
+      "properties": {
+        "contractVersion": { "const": 2 },
+        "identityDefinitionIds": { "$ref": "#/$defs/entityIdArray" },
+        "characterDefinitionIds": { "$ref": "#/$defs/entityIdArray" },
+        "familyDefinitionIds": { "$ref": "#/$defs/entityIdArray" },
+        "householdDefinitionIds": { "$ref": "#/$defs/entityIdArray" },
+        "characterStates": { "type": "array", "items": { "$ref": "#/$defs/currentCharacterState" } },
+        "familyStates": { "type": "array", "items": { "$ref": "#/$defs/currentFamilyState" } },
+        "householdStates": { "type": "array", "items": { "$ref": "#/$defs/currentHouseholdState" } },
+        "references": { "$ref": "#/$defs/entityIdArray" }
+      }
+    },
+    "characterWorldData": {
+      "oneOf": [
+        { "$ref": "#/$defs/legacyCharacterWorldData" },
+        { "$ref": "#/$defs/currentCharacterWorldData" }
+      ]
+    },
+    "legacyCharacterDefinitionData": {
       "type": "object",
       "additionalProperties": false,
       "required": ["contractVersion", "nameKey", "birthDate", "abilityIds", "aptitudeIds", "traitIds", "ambitionIds", "reputationIds", "references"],
@@ -133,7 +215,34 @@
         "references": { "$ref": "#/$defs/entityIdArray" }
       }
     },
-    "namedCharacterDefinitionData": {
+    "currentCharacterDefinitionData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractVersion", "nameKey", "courtesyNameKey", "originKind", "cultureId", "originLocationId", "birthDate", "abilityIds", "aptitudeIds", "traitIds", "ambitionIds", "reputationIds", "flawIds", "references"],
+      "properties": {
+        "contractVersion": { "const": 2 },
+        "nameKey": { "$ref": "#/$defs/entityId" },
+        "courtesyNameKey": { "$ref": "#/$defs/nullableEntityId" },
+        "originKind": { "enum": ["authored", "custom"] },
+        "cultureId": { "$ref": "#/$defs/nullableEntityId" },
+        "originLocationId": { "$ref": "#/$defs/nullableEntityId" },
+        "birthDate": { "$ref": "#/$defs/campaignDate" },
+        "abilityIds": { "$ref": "#/$defs/entityIdArray" },
+        "aptitudeIds": { "$ref": "#/$defs/entityIdArray" },
+        "traitIds": { "$ref": "#/$defs/entityIdArray" },
+        "ambitionIds": { "$ref": "#/$defs/entityIdArray" },
+        "reputationIds": { "$ref": "#/$defs/entityIdArray" },
+        "flawIds": { "$ref": "#/$defs/entityIdArray" },
+        "references": { "$ref": "#/$defs/entityIdArray" }
+      }
+    },
+    "characterDefinitionData": {
+      "oneOf": [
+        { "$ref": "#/$defs/legacyCharacterDefinitionData" },
+        { "$ref": "#/$defs/currentCharacterDefinitionData" }
+      ]
+    },
+    "legacyNamedCharacterDefinitionData": {
       "type": "object",
       "additionalProperties": false,
       "required": ["contractVersion", "nameKey", "references"],
@@ -143,7 +252,23 @@
         "references": { "$ref": "#/$defs/entityIdArray" }
       }
     },
-    "characterIdentityDefinitionData": {
+    "currentNamedCharacterDefinitionData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractVersion", "nameKey", "references"],
+      "properties": {
+        "contractVersion": { "const": 2 },
+        "nameKey": { "$ref": "#/$defs/entityId" },
+        "references": { "$ref": "#/$defs/entityIdArray" }
+      }
+    },
+    "namedCharacterDefinitionData": {
+      "oneOf": [
+        { "$ref": "#/$defs/legacyNamedCharacterDefinitionData" },
+        { "$ref": "#/$defs/currentNamedCharacterDefinitionData" }
+      ]
+    },
+    "legacyCharacterIdentityDefinitionData": {
       "type": "object",
       "additionalProperties": false,
       "required": ["contractVersion", "kind", "nameKey", "references"],
@@ -153,6 +278,23 @@
         "nameKey": { "$ref": "#/$defs/entityId" },
         "references": { "$ref": "#/$defs/entityIdArray" }
       }
+    },
+    "currentCharacterIdentityDefinitionData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractVersion", "kind", "nameKey", "references"],
+      "properties": {
+        "contractVersion": { "const": 2 },
+        "kind": { "enum": ["ability", "aptitude", "trait", "ambition", "reputation", "flaw"] },
+        "nameKey": { "$ref": "#/$defs/entityId" },
+        "references": { "$ref": "#/$defs/entityIdArray" }
+      }
+    },
+    "characterIdentityDefinitionData": {
+      "oneOf": [
+        { "$ref": "#/$defs/legacyCharacterIdentityDefinitionData" },
+        { "$ref": "#/$defs/currentCharacterIdentityDefinitionData" }
+      ]
     }
   }
 }

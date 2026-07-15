@@ -18,18 +18,26 @@ public readonly record struct SimulationChecksum(string Value)
 
     internal static SimulationChecksum ComputeForSaveSchema(WorldSnapshot snapshot, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 4)
+        if (schemaVersion is < 1 or > 5)
         {
             throw new ArgumentOutOfRangeException(nameof(schemaVersion));
         }
 
         JsonObject canonical = JsonSerializer.SerializeToNode(Canonicalize(snapshot), CanonicalJson.Options)!.AsObject();
         // Schemas 1-4 predate relationships; schemas 1-3 predate characters;
-        // schemas 1-2 predate geography.
-        canonical.Remove("relationships");
+        // schemas 1-2 predate geography. Schemas 4-5 used character contract v1.
+        if (schemaVersion < 5)
+        {
+            canonical.Remove("relationships");
+        }
+
         if (schemaVersion < 4)
         {
             canonical.Remove("characters");
+        }
+        else
+        {
+            StripCharacterV2Fields(canonical);
         }
 
         if (schemaVersion < 3)
@@ -39,6 +47,35 @@ public readonly record struct SimulationChecksum(string Value)
 
         byte[] serialized = JsonSerializer.SerializeToUtf8Bytes(canonical, CanonicalJson.Options);
         return FromBytes(serialized);
+    }
+
+    private static void StripCharacterV2Fields(JsonObject canonical)
+    {
+        if (canonical["characters"] is not JsonObject characters)
+        {
+            return;
+        }
+
+        if (characters["characterDefinitions"] is JsonArray definitions)
+        {
+            foreach (JsonObject definition in definitions.OfType<JsonObject>())
+            {
+                definition.Remove("structuredName");
+                definition.Remove("contentOrigin");
+                definition.Remove("cultureId");
+                definition.Remove("originLocationId");
+                definition.Remove("flawIds");
+            }
+        }
+
+        if (characters["characterStates"] is JsonArray states)
+        {
+            foreach (JsonObject state in states.OfType<JsonObject>())
+            {
+                state.Remove("parentLinks");
+                state.Remove("condition");
+            }
+        }
     }
 
     private static WorldSnapshot Canonicalize(WorldSnapshot snapshot) => snapshot with

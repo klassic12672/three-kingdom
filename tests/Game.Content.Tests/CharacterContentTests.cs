@@ -23,6 +23,10 @@ public sealed class CharacterContentTests
     private static readonly EntityId TraitId = new("trait:fictional/patient_listener");
     private static readonly EntityId AmbitionId = new("ambition:fictional/restore_orchard");
     private static readonly EntityId ReputationId = new("reputation:fictional/fair_mediator");
+    private static readonly EntityId FlawId = new("flaw:fictional/overcautious");
+    private static readonly EntityId CourtesyNameKey = new("loc:fictional/ara_courtesy");
+    private static readonly EntityId CultureId = new("culture:fictional/riverfolk");
+    private static readonly EntityId OriginLocationId = new("locality:fictional/pine_crossing");
 
     private static readonly (EntityId Id, CharacterIdentityKind Kind, EntityId NameKey, string Korean, string English)[] Identities =
     [
@@ -60,8 +64,13 @@ public sealed class CharacterContentTests
 
         Assert.Equal(4, snapshot.CharacterDefinitions.Count);
         Assert.Equal(
-            Enum.GetValues<CharacterIdentityKind>().Order(),
+            Enum.GetValues<CharacterIdentityKind>().Where(kind => kind != CharacterIdentityKind.Flaw).Order(),
             snapshot.IdentityDefinitions.Select(definition => definition.Kind).Order());
+        Assert.Equal(CharacterContractVersions.Snapshot, snapshot.ContractVersion);
+        Assert.All(snapshot.CharacterDefinitions, definition =>
+            Assert.Equal(CharacterContractVersions.Definition, definition.ContractVersion));
+        Assert.All(snapshot.CharacterStates, state =>
+            Assert.Equal(CharacterContractVersions.State, state.ContractVersion));
 
         CharacterDefinition araDefinition = Assert.Single(
             snapshot.CharacterDefinitions,
@@ -75,6 +84,9 @@ public sealed class CharacterContentTests
         AuthoritativeCharacterProfile child = Assert.Single(world.Profiles, profile => profile.CharacterId == CharacterC);
         Assert.Equal(25, child.Age);
         Assert.Equal([CharacterA], child.ParentIds);
+        CharacterParentLink migratedParent = Assert.Single(child.ParentLinks);
+        Assert.Equal(ParentChildLinkKind.UnspecifiedLegacy, migratedParent.Kind);
+        Assert.Equal(CharacterConditionState.Default, child.Condition);
         Assert.Equal(FamilyId, child.FamilyId);
         Assert.Equal(MainHouseholdId, child.HouseholdId);
         AuthoritativeCharacterProfile branchMember = Assert.Single(world.Profiles, profile => profile.CharacterId == CharacterD);
@@ -94,6 +106,101 @@ public sealed class CharacterContentTests
         Assert.True(content.Registry.TryGetText(childNameKey, "en-US", out string? english));
         Assert.Equal("춘", korean);
         Assert.Equal("Chun", english);
+
+        Assert.Equal(CharacterOriginKind.Authored, araDefinition.ContentOrigin!.OriginKind);
+        Assert.Equal(CharacterHistoricalClassification.Fictional, araDefinition.ContentOrigin.HistoricalClassification);
+        Assert.Equal(BasePackId, araDefinition.ContentOrigin.OwningPackId);
+        Assert.Empty(araDefinition.ContentOrigin.SourceIds);
+    }
+
+    [Fact]
+    public void LoadsStrictVersionTwoDescriptorsConditionsTypedKinshipAndReferenceBoundary()
+    {
+        using ContentPackFixture fixture = new();
+        PackFiles files = WriteWorldPacks(
+            fixture,
+            definitions: CreateCurrentDefinitionRecords(),
+            worlds: [CreateCurrentWorldRecord(WorldId)],
+            localizationCsv: CreateCurrentLocalizationCsv());
+
+        ContentLoadResult content = new ContentPackLoader().Load(
+            [files.WorldManifest, files.BaseManifest],
+            "0.1.0",
+            fixture.Root);
+
+        Assert.False(content.Report.HasErrors);
+        CharacterWorldSnapshot snapshot = CharacterContentLoader.LoadSingleWorld(content.Registry);
+        CharacterDefinition ara = Assert.Single(
+            snapshot.CharacterDefinitions,
+            definition => definition.Id == CharacterA);
+        Assert.Equal(new StructuredCharacterName(ara.NameKey, CourtesyNameKey), ara.StructuredName);
+        Assert.Equal(CultureId, ara.CultureId);
+        Assert.Equal(OriginLocationId, ara.OriginLocationId);
+        Assert.Equal([FlawId], ara.FlawIds);
+        Assert.Equal(CharacterOriginKind.Custom, ara.ContentOrigin!.OriginKind);
+        Assert.Equal(BasePackId, ara.ContentOrigin.OwningPackId);
+
+        CharacterState child = Assert.Single(snapshot.CharacterStates, state => state.CharacterId == CharacterC);
+        CharacterParentLink parent = Assert.Single(child.ParentLinks!);
+        Assert.Equal(CharacterA, parent.ParentCharacterId);
+        Assert.Equal(ParentChildLinkKind.Biological, parent.Kind);
+        Assert.Equal(CharacterCustodyStatus.Captive, child.Condition!.CustodyStatus);
+        Assert.Equal(CharacterB, child.Condition.CustodianId);
+
+        Assert.True(content.Registry.TryGetText(CourtesyNameKey, "ko-KR", out string? korean));
+        Assert.True(content.Registry.TryGetText(CourtesyNameKey, "en-US", out string? english));
+        Assert.Equal("자명", korean);
+        Assert.Equal("Jamyeong", english);
+    }
+
+    [Theory]
+    [InlineData("missingCourtesyEnglish", "character.record")]
+    [InlineData("missingCultureRecord", "record.reference")]
+    [InlineData("nullCondition", "character.world")]
+    [InlineData("mismatchedParentLinks", "character.world")]
+    public void StrictVersionTwoFailuresAreControlledAndRejectTheOwningPack(
+        string mutation,
+        string expectedCode)
+    {
+        using ContentPackFixture fixture = new();
+        List<ContentRecord> definitions = CreateCurrentDefinitionRecords().ToList();
+        ContentRecord world = CreateCurrentWorldRecord(WorldId);
+        string localization = CreateCurrentLocalizationCsv(
+            omitEnglishKey: mutation == "missingCourtesyEnglish" ? CourtesyNameKey : null);
+        if (mutation == "missingCultureRecord")
+        {
+            definitions.RemoveAll(record => record.Id == CultureId);
+        }
+        else if (mutation is "nullCondition" or "mismatchedParentLinks")
+        {
+            JsonArray states = world.Data["characterStates"]!.AsArray();
+            JsonObject child = states.Single(node =>
+                node!["characterId"]!.GetValue<string>() == CharacterC.Value)!.AsObject();
+            if (mutation == "nullCondition")
+            {
+                child["condition"] = null;
+            }
+            else
+            {
+                child["parentLinks"] = new JsonArray();
+            }
+        }
+
+        PackFiles files = WriteWorldPacks(
+            fixture,
+            definitions: definitions,
+            worlds: [world],
+            localizationCsv: localization);
+        ContentLoadResult content = new ContentPackLoader().Load(
+            [files.WorldManifest, files.BaseManifest],
+            "0.1.0",
+            fixture.Root);
+
+        Assert.True(content.Report.HasErrors);
+        Assert.Contains(content.Report.Diagnostics, diagnostic => diagnostic.Code == expectedCode);
+        Assert.DoesNotContain(content.LoadOrder, pack => pack.Manifest.PackId == (expectedCode == "character.world"
+            ? WorldPackId
+            : BasePackId));
     }
 
     [Fact]
@@ -218,8 +325,8 @@ public sealed class CharacterContentTests
     {
         using ContentPackFixture fixture = new();
         IReadOnlyList<ContentRecord> definitions = CreateDefinitionRecords(
-            firstCharacterVersion: target == "definition" ? 2 : 1);
-        ContentRecord world = CreateWorldRecord(WorldId, contractVersion: target == "world" ? 2 : 1);
+            firstCharacterVersion: target == "definition" ? 3 : 1);
+        ContentRecord world = CreateWorldRecord(WorldId, contractVersion: target == "world" ? 3 : 1);
         PackFiles files = WriteWorldPacks(fixture, definitions: definitions, worlds: [world]);
         ContentLoadResult content = new ContentPackLoader().Load(
             [files.BaseManifest, files.WorldManifest],
@@ -312,6 +419,7 @@ public sealed class CharacterContentTests
             CharacterContentLoader.LoadWorld(content.Registry, WorldId).CharacterDefinitions,
             definition => definition.Id == CharacterA);
         Assert.Equal(new CampaignDate(130, 2, 10), preserved.BirthDate);
+        Assert.Empty(preserved.ContentOrigin!.AppliedOverridePackIds);
         Assert.Equal([AbilityId, AmbitionId, AptitudeId, ReputationId, TraitId],
             preserved.AbilityIds
                 .Concat(preserved.AmbitionIds)
@@ -534,7 +642,7 @@ public sealed class CharacterContentTests
         using ContentPackFixture fixture = new();
         EntityId invalidWorldId = new("character_world:river_stone");
         ContentRecord valid = CreateWorldRecord(WorldId);
-        ContentRecord invalid = CreateWorldRecord(invalidWorldId, contractVersion: 2, reverse: true);
+        ContentRecord invalid = CreateWorldRecord(invalidWorldId, contractVersion: 3, reverse: true);
         PackFiles files = WriteWorldPacks(fixture, worlds: [invalid, valid]);
 
         ContentLoadResult content = new ContentPackLoader().Load(
@@ -583,6 +691,8 @@ public sealed class CharacterContentTests
             CharacterContentLoader.LoadSingleWorld(first.Registry).CharacterDefinitions,
             definition => definition.Id == CharacterA);
         Assert.Equal(129, overridden.BirthDate.Year);
+        Assert.Equal(BasePackId, overridden.ContentOrigin!.OwningPackId);
+        Assert.Equal([modPackId], overridden.ContentOrigin.AppliedOverridePackIds);
         Assert.Equal(
             JsonSerializer.Serialize(CharacterContentLoader.LoadSingleWorld(first.Registry), ContentJson.CreateOptions()),
             JsonSerializer.Serialize(CharacterContentLoader.LoadSingleWorld(second.Registry), ContentJson.CreateOptions()));
@@ -654,6 +764,125 @@ public sealed class CharacterContentTests
         return records;
     }
 
+    private static IReadOnlyList<ContentRecord> CreateCurrentDefinitionRecords()
+    {
+        List<ContentRecord> records = Identities
+            .Select(identity => Record(
+                identity.Id,
+                "character_identity_definition",
+                Data(new
+                {
+                    contractVersion = 2,
+                    kind = identity.Kind,
+                    nameKey = identity.NameKey,
+                    references = Array.Empty<EntityId>(),
+                }),
+                identity.NameKey))
+            .ToList();
+        EntityId flawNameKey = new("loc:fictional/overcautious");
+        records.Add(Record(
+            FlawId,
+            "character_identity_definition",
+            Data(new
+            {
+                contractVersion = 2,
+                kind = CharacterIdentityKind.Flaw,
+                nameKey = flawNameKey,
+                references = Array.Empty<EntityId>(),
+            }),
+            flawNameKey));
+        records.AddRange(
+        [
+            CurrentCharacterRecord(
+                CharacterA,
+                new CampaignDate(130, 2, 10),
+                [AbilityId],
+                [AptitudeId],
+                [TraitId],
+                [AmbitionId],
+                [ReputationId],
+                [FlawId],
+                CourtesyNameKey,
+                CultureId,
+                OriginLocationId),
+            CurrentCharacterRecord(CharacterB, new CampaignDate(136, 7, 11), [], [], [], [], [], [], null, null, null),
+            CurrentCharacterRecord(CharacterC, new CampaignDate(166, 3, 5), [], [], [TraitId], [], [], [], null, null, null),
+            CurrentCharacterRecord(CharacterD, new CampaignDate(150, 9, 2), [], [AptitudeId], [], [], [], [], null, null, null),
+            CurrentDefinitionRecord(FamilyId, "family_definition"),
+            CurrentDefinitionRecord(MainHouseholdId, "household_definition"),
+            CurrentDefinitionRecord(BranchHouseholdId, "household_definition"),
+            ContentPackFixture.FictionalRecord(CultureId.Value),
+            ContentPackFixture.FictionalRecord(OriginLocationId.Value),
+        ]);
+        return records;
+    }
+
+    private static ContentRecord CurrentCharacterRecord(
+        EntityId id,
+        CampaignDate birthDate,
+        IReadOnlyList<EntityId> abilityIds,
+        IReadOnlyList<EntityId> aptitudeIds,
+        IReadOnlyList<EntityId> traitIds,
+        IReadOnlyList<EntityId> ambitionIds,
+        IReadOnlyList<EntityId> reputationIds,
+        IReadOnlyList<EntityId> flawIds,
+        EntityId? courtesyNameKey,
+        EntityId? cultureId,
+        EntityId? originLocationId)
+    {
+        EntityId nameKey = NamedDefinitions.Single(item => item.Id == id).NameKey;
+        EntityId[] references = abilityIds
+            .Concat(aptitudeIds)
+            .Concat(traitIds)
+            .Concat(ambitionIds)
+            .Concat(reputationIds)
+            .Concat(flawIds)
+            .Concat(cultureId is EntityId culture ? [culture] : [])
+            .Concat(originLocationId is EntityId origin ? [origin] : [])
+            .Distinct()
+            .Order()
+            .ToArray();
+        EntityId[] localizationKeys = courtesyNameKey is EntityId courtesy
+            ? [nameKey, courtesy]
+            : [nameKey];
+        return Record(
+            id,
+            "character_definition",
+            Data(new
+            {
+                contractVersion = 2,
+                nameKey,
+                courtesyNameKey,
+                originKind = CharacterOriginKind.Custom,
+                cultureId,
+                originLocationId,
+                birthDate,
+                abilityIds,
+                aptitudeIds,
+                traitIds,
+                ambitionIds,
+                reputationIds,
+                flawIds,
+                references,
+            }),
+            localizationKeys.Order().ToArray());
+    }
+
+    private static ContentRecord CurrentDefinitionRecord(EntityId id, string recordType)
+    {
+        EntityId nameKey = NamedDefinitions.Single(item => item.Id == id).NameKey;
+        return Record(
+            id,
+            recordType,
+            Data(new
+            {
+                contractVersion = 2,
+                nameKey,
+                references = Array.Empty<EntityId>(),
+            }),
+            nameKey);
+    }
+
     private static ContentRecord CharacterRecord(
         EntityId id,
         int contractVersion,
@@ -722,7 +951,7 @@ public sealed class CharacterContentTests
                 data = (JsonObject)source.Data.DeepClone();
                 if (mutation == "versionedCharacter")
                 {
-                    data["contractVersion"] = 2;
+                    data["contractVersion"] = 3;
                 }
                 else
                 {
@@ -740,7 +969,7 @@ public sealed class CharacterContentTests
                 source = definitions.Single(record => record.Id == FamilyId);
                 id = new EntityId("family:fictional/unselected_invalid");
                 data = (JsonObject)source.Data.DeepClone();
-                data["contractVersion"] = 2;
+                data["contractVersion"] = 3;
                 break;
             case "household":
                 source = definitions.Single(record => record.Id == MainHouseholdId);
@@ -780,7 +1009,7 @@ public sealed class CharacterContentTests
             reverse);
         EntityId[] familyIds = [FamilyId];
         EntityId[] householdIds = MaybeReverse([MainHouseholdId, BranchHouseholdId], reverse);
-        CharacterState[] characterStates = MaybeReverse<CharacterState>(
+        LegacyCharacterStateFixture[] characterStates = MaybeReverse<LegacyCharacterStateFixture>(
         [
             new(1, CharacterA, []),
             new(1, CharacterB, []),
@@ -814,6 +1043,57 @@ public sealed class CharacterContentTests
                 familyStates,
                 householdStates,
                 references = references.Order().ToArray(),
+            }));
+    }
+
+    private static ContentRecord CreateCurrentWorldRecord(EntityId id)
+    {
+        EntityId[] identityIds = Identities.Select(identity => identity.Id).Append(FlawId).Order().ToArray();
+        EntityId[] characterIds = [CharacterA, CharacterB, CharacterC, CharacterD];
+        EntityId[] familyIds = [FamilyId];
+        EntityId[] householdIds = [BranchHouseholdId, MainHouseholdId];
+        CharacterState[] characterStates =
+        [
+            new(2, CharacterA, [], [], CharacterConditionState.Default),
+            new(2, CharacterB, [], [], CharacterConditionState.Default),
+            new(2, CharacterC, [CharacterA], [new CharacterParentLink(CharacterA, ParentChildLinkKind.Biological)], new CharacterConditionState(
+                CharacterVitalStatus.Alive,
+                CharacterHealthStatus.Healthy,
+                false,
+                CharacterCustodyStatus.Captive,
+                CharacterB)),
+            new(2, CharacterD, [], [], CharacterConditionState.Default),
+        ];
+        FamilyState[] familyStates =
+        [
+            new(2, FamilyId, [CharacterA, CharacterB, CharacterC, CharacterD]),
+        ];
+        HouseholdState[] householdStates =
+        [
+            new(2, BranchHouseholdId, CharacterD, [CharacterD]),
+            new(2, MainHouseholdId, CharacterA, [CharacterA, CharacterB, CharacterC]),
+        ];
+        EntityId[] references = identityIds
+            .Concat(characterIds)
+            .Concat(familyIds)
+            .Concat(householdIds)
+            .Distinct()
+            .Order()
+            .ToArray();
+        return Record(
+            id,
+            "character_world",
+            Data(new
+            {
+                contractVersion = 2,
+                identityDefinitionIds = identityIds,
+                characterDefinitionIds = characterIds,
+                familyDefinitionIds = familyIds,
+                householdDefinitionIds = householdIds,
+                characterStates,
+                familyStates,
+                householdStates,
+                references,
             }));
     }
 
@@ -886,5 +1166,29 @@ public sealed class CharacterContentTests
         }
     }
 
+    private static string CreateCurrentLocalizationCsv(EntityId? omitEnglishKey = null)
+    {
+        StringBuilder csv = new(CreateLocalizationCsv(omitEnglishKey));
+        AddRows(new EntityId("loc:fictional/overcautious"), "지나친 신중함", "Overcautious");
+        AddRows(CourtesyNameKey, "자명", "Jamyeong");
+        return csv.ToString();
+
+        void AddRows(EntityId key, string korean, string english)
+        {
+            csv.Append(key.Value).Append(",ko-KR,").Append(korean)
+                .Append(",Fictional test name,,approved,,false\n");
+            if (key != omitEnglishKey)
+            {
+                csv.Append(key.Value).Append(",en-US,").Append(english)
+                    .Append(",Fictional test name,,approved,,false\n");
+            }
+        }
+    }
+
     private sealed record PackFiles(string BaseManifest, string WorldManifest);
+
+    private sealed record LegacyCharacterStateFixture(
+        int ContractVersion,
+        EntityId CharacterId,
+        IReadOnlyList<EntityId> ParentIds);
 }

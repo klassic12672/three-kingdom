@@ -25,7 +25,7 @@ public sealed class WorldState : IWorldQuery
         new("simulation.synthetic_entities", 1),
         new("simulation.command_events", 1),
         new("simulation.geography", 1),
-        new("simulation.characters", 1),
+        new("simulation.characters", CharacterContractVersions.Snapshot),
         new("simulation.relationships", 1),
     ];
 
@@ -150,7 +150,10 @@ public sealed class WorldState : IWorldQuery
             throw new SaveCompatibilityException($"Unsupported world snapshot contract version {snapshot.ContractVersion}.");
         }
 
-        ValidateSystemVersions(snapshot.SystemVersions, snapshot.Characters, snapshot.Relationships);
+        CharacterWorldSnapshot characters = ValidateSystemVersions(
+            snapshot.SystemVersions,
+            snapshot.Characters,
+            snapshot.Relationships);
         ValidatePendingCommands(snapshot.PendingCommands);
 
         WorldState world = new(
@@ -158,7 +161,7 @@ public sealed class WorldState : IWorldQuery
             snapshot.RootSeed,
             snapshot.RandomStreams,
             snapshot.Geography,
-            snapshot.Characters,
+            characters,
             snapshot.Relationships)
         {
             lastEventDate = snapshot.LastEventDate,
@@ -382,7 +385,7 @@ public sealed class WorldState : IWorldQuery
         return entity;
     }
 
-    private static void ValidateSystemVersions(
+    private static CharacterWorldSnapshot ValidateSystemVersions(
         IReadOnlyList<SystemVersion> versions,
         CharacterWorldSnapshot characters,
         RelationshipWorldSnapshot relationships)
@@ -402,72 +405,80 @@ public sealed class WorldState : IWorldQuery
             throw new SaveCompatibilityException("Snapshot relationship state is missing.");
         }
 
-        string[] expected = CurrentSystemVersions
+        string[] expectedCore = CurrentSystemVersions
+            .Where(version => version.SystemId is not "simulation.characters" and not "simulation.relationships")
             .Select(version => $"{version.SystemId}@{version.Version}")
             .Order(StringComparer.Ordinal)
             .ToArray();
-        string[] actual = versions
+        string[] actualCore = versions
+            .Where(version => version.SystemId is not "simulation.characters" and not "simulation.relationships")
             .Select(version => $"{version.SystemId}@{version.Version}")
             .Order(StringComparer.Ordinal)
             .ToArray();
-        string[] legacyExpected = expected
-            .Where(version => !StringComparer.Ordinal.Equals(version, "simulation.relationships@1"))
-            .ToArray();
-        if (legacyExpected.SequenceEqual(actual, StringComparer.Ordinal))
+        if (!expectedCore.SequenceEqual(actualCore, StringComparer.Ordinal))
         {
-            if (IsCompleteEmptyRelationshipSnapshot(relationships))
-            {
-                return;
-            }
-
             throw new SaveCompatibilityException(
-                "A legacy snapshot without 'simulation.relationships@1' must contain a complete, valid, empty relationship snapshot.");
+                $"Snapshot core system versions are incompatible. Expected [{string.Join(", ", expectedCore)}], "
+                + $"found [{string.Join(", ", actualCore)}].");
         }
 
-        string[] characterLegacyExpected = expected
-            .Where(version => !StringComparer.Ordinal.Equals(version, "simulation.characters@1"))
+        SystemVersion[] characterVersions = versions
+            .Where(version => StringComparer.Ordinal.Equals(version.SystemId, "simulation.characters"))
             .ToArray();
-        if (characterLegacyExpected.SequenceEqual(actual, StringComparer.Ordinal))
+        CharacterWorldSnapshot normalizedCharacters;
+        if (characterVersions.Length == 1
+            && characterVersions[0].Version == CharacterContractVersions.Snapshot)
         {
-            if (IsCompleteEmptyCharacterSnapshot(characters)
-                && IsCompleteEmptyRelationshipSnapshot(relationships))
+            if (characters.ContractVersion != CharacterContractVersions.Snapshot)
             {
-                return;
+                throw new SaveCompatibilityException(
+                    $"Snapshot declares 'simulation.characters@{CharacterContractVersions.Snapshot}' but contains "
+                    + $"character contract {characters.ContractVersion}.");
             }
 
-            throw new SaveCompatibilityException(
-                "A legacy snapshot without 'simulation.characters@1' must contain a complete, valid, empty character snapshot.");
+            normalizedCharacters = characters;
         }
-
-        string[] oldestExpected = legacyExpected
-            .Where(version => !StringComparer.Ordinal.Equals(version, "simulation.characters@1"))
-            .ToArray();
-        if (oldestExpected.SequenceEqual(actual, StringComparer.Ordinal))
+        else if (characterVersions.Length == 0
+            || (characterVersions.Length == 1
+                && characterVersions[0].Version == CharacterContractVersions.LegacySnapshot))
         {
             if (!IsCompleteEmptyCharacterSnapshot(characters))
             {
                 throw new SaveCompatibilityException(
-                    "A legacy snapshot without 'simulation.characters@1' must contain a complete, valid, empty character snapshot.");
+                    "A legacy snapshot without current 'simulation.characters@2' data must contain a complete, valid, empty character snapshot.");
             }
 
+            normalizedCharacters = CharacterWorldSnapshot.Empty;
+        }
+        else
+        {
+            throw new SaveCompatibilityException(
+                $"Snapshot character system version is incompatible. Expected 'simulation.characters@{CharacterContractVersions.Snapshot}'.");
+        }
+
+        SystemVersion[] relationshipVersions = versions
+            .Where(version => StringComparer.Ordinal.Equals(version.SystemId, "simulation.relationships"))
+            .ToArray();
+        if (relationshipVersions.Length == 0)
+        {
             if (!IsCompleteEmptyRelationshipSnapshot(relationships))
             {
                 throw new SaveCompatibilityException(
                     "A legacy snapshot without 'simulation.relationships@1' must contain a complete, valid, empty relationship snapshot.");
             }
-
-            return;
         }
-
-        if (!expected.SequenceEqual(actual, StringComparer.Ordinal))
+        else if (relationshipVersions.Length != 1
+            || relationshipVersions[0].Version != RelationshipContractVersions.Snapshot)
         {
             throw new SaveCompatibilityException(
-                $"Snapshot system versions are incompatible. Expected [{string.Join(", ", expected)}], found [{string.Join(", ", actual)}].");
+                $"Snapshot relationship system version is incompatible. Expected 'simulation.relationships@{RelationshipContractVersions.Snapshot}'.");
         }
+
+        return normalizedCharacters;
     }
 
     private static bool IsCompleteEmptyCharacterSnapshot(CharacterWorldSnapshot characters) =>
-        characters.ContractVersion == CharacterContractVersions.Snapshot
+        characters.ContractVersion is CharacterContractVersions.LegacySnapshot or CharacterContractVersions.Snapshot
         && characters.IdentityDefinitions is { Count: 0 }
         && characters.CharacterDefinitions is { Count: 0 }
         && characters.FamilyDefinitions is { Count: 0 }

@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — SP-04A and SP-04B exact-SHA hosted verified; later packages pending |
+| Status | Active — SP-04A/SP-04B exact-SHA hosted verified; SP-04C0 locally verified; later packages pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -141,6 +141,38 @@ The repeatable fictional fixture contained 1,000 characters, 16,000 detailed dir
 Focused local results were 54 relationship-filtered Simulation.Core tests, 57 save-filtered Simulation.Core tests, 6 Game.Application tests, and 1 architecture-filtered repository test. `./scripts/validate.sh` retained 1,295 records, 2,820 translations, and registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` passed 158 Simulation.Core, 66 Game.Content, 6 Game.Application, and 18 repository tests. The authoritative ten-year/1,000-entity soak checksum is now `8430e2054d15fdb9a6e0c54a88b20de3b34dbca7ba80030b30676041773e7155` because newly captured worlds include the authoritative relationship subsystem. `git diff --check` and `git lfs fsck` also passed locally.
 
 Exact-SHA hosted verification at `ff7420fbefb5dcb7d42dcff82746d61c39d02b7a` passed the same complete 158/66/6/18 suites on macOS arm64 and Windows x64, plus validation, build, import, native export, automated smoke, manifests, artifact upload, archive integrity, and executable-architecture inspection. The soak checksum is established by its exact-source golden assertion plus both complete hosted Simulation.Core suite passes; it was not printed by CI. The local wall-clock measurements above remain local Apple Silicon evidence and are not relabeled as hosted performance. See the [SP-04B-H evidence report](../evidence/SP-04B-EXACT-SHA-ff7420f.md).
+
+## Active package: SP-04C0 descriptor, agency, and typed kinship
+
+SP-04C0 is locally verified in the current uncommitted working tree. It advances the character snapshot, definition, state, and authoritative-query contracts to version 2 and registers `simulation.characters@2`. Character definitions now retain the schema-5 `nameKey` while requiring a matching structured primary name, optional courtesy name, explicit content origin and owning/override-pack lineage, historical classification, source IDs, optional culture and origin IDs, and typed flaws. Character state retains schema-5 `parentIds` while requiring matching biological, legal-adoptive, or unspecified-legacy parent links plus explicit vital, health, incapacity, custody, and custodian state. The authoritative profile returns defensive typed parent and child links and the complete descriptor/condition state.
+
+Strict authored version-1 records remain accepted and normalize to runtime version 2 without rewriting source packs. Explicit version-2 authoring adds courtesy names, flaws, origin kind, culture/origin references, typed kinship, and condition state; the published JSON schema exposes closed v1/v2 payloads. Original record ownership is preserved through canonical override lineage, and an invalid overriding pack rolls back both record data and lineage. Korean and English text are required for primary and courtesy names. Non-fictional v2 authored characters require source evidence; fictional v2 characters use custom origin, while source-less fictional v1 records retain a narrowly grandfathered authored classification.
+
+Save schema 6 requires character contract v2 and `simulation.characters@2`. The authenticated 5→6 migration first verifies the literal schema-5 checksum/shape, then maps retained names to structured names, adds legacy-unknown provenance, empty flaws, default condition, and `UnspecifiedLegacy` parent links. It never guesses biological kinship. Schema-5 relationship state is preserved, the source file remains byte-identical, and the complete 1→2→3→4→5→6 chain remains forward-only. Contract-v2 fields injected into a v1 historical save are rejected even though the v1 checksum projection omits those fields.
+
+This package adds no character mutation command/event, retinue/resource/employment model, marriage/romance, birth/death resolution, succession, UI, battle integration, historical roster, or shipped content. `CharacterOriginKind.Generated` exists as a versioned runtime value for later work but is not accepted by the authored v2 content boundary. Therefore the full SP-04 acceptance criteria remain unchecked and SP-05 remains blocked.
+
+### SP-04C0 verification matrix
+
+| ID | Observable package criterion | Required evidence | Closeout classification |
+|---|---|---|---|
+| C01 | M2/SP-04 are Active; SP-01/SP-02/SP-03 and SP-04A/B dependencies are satisfied; scope stays inside C0 | Source-of-truth and package-boundary review | Local pass |
+| C02 | Version-2 structured names, content lineage, classification, culture/origin, flaws, condition, and typed parent/child links are explicit and defensively queried | Contract review and focused simulation tests | Local pass |
+| C03 | Runtime rejects null/unsupported/non-canonical descriptor, origin, flaw, condition, custody, and kinship state, including missing custodians and impossible dead/critical combinations | Malformed-state and cross-field validation tests | Local pass |
+| C04 | Biological, legal-adoptive, and unspecified-legacy links persist distinctly; retained `parentIds` agree exactly; child links are indexed without inventing consent or spouse semantics | Focused kinship, persistence, and query tests | Local pass |
+| C05 | Strict authored v1/v2 payloads normalize to canonical runtime v2; bilingual courtesy names, typed flaws, origin rules, culture/location references, and exact metadata are enforced | Content-loader and published-schema tests | Local pass |
+| C06 | Owning-pack and canonical override lineage survive valid overrides, remain input-order deterministic, and roll back atomically with an invalid pack | Content integration and shuffled-input tests | Local pass |
+| C07 | Current schema-6 saves require complete v2 character and v1 relationship state and recover from missing/null/unsupported/mistyped input without rewriting candidates | Current-save, recovery, and source-byte tests | Local pass |
+| C08 | A history-backed schema-5 fixture authenticates before migration; 5→6 and 1→6 preserve prior data and map legacy parent IDs only to `UnspecifiedLegacy` | Frozen checksum, migration, corruption, and byte-preservation tests | Local pass; schema-1/2 field compatibility remains unverified |
+| C09 | Canonical checksums are input-order invariant, mutation-sensitive, and cover every new field; the 10-year/1,000-entity golden is updated | Checksum and soak tests | Local pass |
+| C10 | A 1,000-character construction/query measurement records correctness without a brittle wall-clock threshold | Detailed focused test on local Apple Silicon macOS | Local macOS pass (non-threshold) |
+| C11 | Repository validation, complete tests, diff check, and LFS check pass on the integrated tree | Local repository gates | Local pass |
+| C12 | No command/event, historical roster, shipped content, UI, platform, marriage, birth/death resolution, or succession behavior enters C0 | Diff and architecture review | Local pass |
+| C13 | The same accepted revision passes deterministic validation on hosted macOS arm64 and Windows x64 | Exact-SHA clean-checkout hosted evidence | Pending; no commit or hosted action authorized |
+
+Local verification on 2026-07-15 used macOS 26.5.1 build 25F80 on arm64 and .NET SDK 10.0.301. `./scripts/validate.sh` retained 1,295 records and 2,820 translations with registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` passed 204 Simulation.Core, 71 Game.Content, 6 Game.Application, and 18 repository tests. Focused character construction/validation passed 41 tests; save/recovery passed 82 tests. The 1,000-character fixture constructed in 31.241 ms and performed 1,000 profile lookups plus one household lookup in 6.811 ms. The authoritative ten-year/1,000-entity checksum is `37504979fcaa25789cc9e12af7084c351d115c1195054e062ca7f7ea6ba943dd`. `git diff --check` and `git lfs fsck` passed locally.
+
+These results prove only an uncommitted local working tree. They are not clean-checkout, exact-SHA, hosted, cross-platform, physical-Windows, signing, or release evidence. No files were staged or committed, no remote action ran, and no historical SP-04A/B evidence was relabeled.
 
 ## Edge cases and failure handling
 

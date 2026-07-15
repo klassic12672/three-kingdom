@@ -69,6 +69,7 @@ public sealed class ContentPackLoader
         PropagateInvalidDependencies(drafts, invalidPacks, report);
         ordered = ResolveLoadOrder(drafts, invalidPacks, report);
         Dictionary<EntityId, ContentRecord> records = [];
+        Dictionary<EntityId, ContentRecordLineage> recordLineage = [];
         Dictionary<string, LocalizationEntry> localization = new(StringComparer.Ordinal);
         Dictionary<EntityId, GlossaryEntry> glossary = [];
         Dictionary<EntityId, SourceReference> sources = [];
@@ -89,16 +90,18 @@ public sealed class ContentPackLoader
 
             int before = report.ErrorCount;
             Dictionary<EntityId, ContentRecord> candidateRecords = new(records);
+            Dictionary<EntityId, ContentRecordLineage> candidateRecordLineage = new(recordLineage);
             Dictionary<string, LocalizationEntry> candidateLocalization = new(localization, StringComparer.Ordinal);
             Dictionary<EntityId, GlossaryEntry> candidateGlossary = new(glossary);
             Dictionary<EntityId, SourceReference> candidateSources = new(sources);
             Dictionary<EntityId, AssetProvenance> candidateAssets = new(assets);
-            ApplyPack(draft, candidateRecords, candidateLocalization, candidateGlossary, candidateSources, candidateAssets, report);
+            ApplyPack(draft, candidateRecords, candidateRecordLineage, candidateLocalization, candidateGlossary, candidateSources, candidateAssets, report);
             if (report.ErrorCount == before)
             {
                 LoadedContentPack candidatePack = new(draft.Manifest, draft.ManifestPath, draft.Checksum);
                 ContentRegistry candidateRegistry = new(
                     candidateRecords.Values,
+                    candidateRecordLineage,
                     candidateLocalization.Values,
                     candidateGlossary.Values,
                     candidateSources.Values,
@@ -118,6 +121,7 @@ public sealed class ContentPackLoader
             }
 
             records = candidateRecords;
+            recordLineage = candidateRecordLineage;
             localization = candidateLocalization;
             glossary = candidateGlossary;
             sources = candidateSources;
@@ -126,7 +130,7 @@ public sealed class ContentPackLoader
         }
 
         ValidateRegistry(records, localization, sources, assets, loadedPacks, report);
-        ContentRegistry registry = new(records.Values, localization.Values, glossary.Values, sources.Values, assets.Values, loadedPacks);
+        ContentRegistry registry = new(records.Values, recordLineage, localization.Values, glossary.Values, sources.Values, assets.Values, loadedPacks);
         foreach (NormalizedContentRecord scenario in registry.Records.Where(record => record.RecordType == "geography_scenario"))
         {
             try
@@ -781,6 +785,7 @@ public sealed class ContentPackLoader
     private static void ApplyPack(
         PackDraft draft,
         IDictionary<EntityId, ContentRecord> records,
+        IDictionary<EntityId, ContentRecordLineage> recordLineage,
         IDictionary<string, LocalizationEntry> localization,
         IDictionary<EntityId, GlossaryEntry> glossary,
         IDictionary<EntityId, SourceReference> sources,
@@ -789,7 +794,11 @@ public sealed class ContentPackLoader
     {
         foreach (ContentRecord record in draft.Records.OrderBy(item => item.Id))
         {
-            if (!records.TryAdd(record.Id, record))
+            if (records.TryAdd(record.Id, record))
+            {
+                recordLineage.Add(record.Id, new ContentRecordLineage(draft.Manifest.PackId, []));
+            }
+            else
             {
                 report.Error("record.implicit_override", draft.ManifestPath, "$.records", record.Id, "Duplicate records cannot implicitly replace earlier packs.", "Move changed fields into an explicit override document.");
             }
@@ -806,6 +815,8 @@ public sealed class ContentPackLoader
             try
             {
                 records[contentOverride.TargetId] = ApplyOverride(target, contentOverride);
+                recordLineage[contentOverride.TargetId] = recordLineage[contentOverride.TargetId]
+                    .AddOverride(draft.Manifest.PackId);
             }
             catch (Exception exception) when (exception is InvalidDataException
                 or JsonException

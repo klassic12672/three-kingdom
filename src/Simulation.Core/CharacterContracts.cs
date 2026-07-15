@@ -4,20 +4,122 @@ namespace Simulation.Core;
 
 public static class CharacterContractVersions
 {
-    public const int Snapshot = 1;
-    public const int Definition = 1;
-    public const int State = 1;
-    public const int AuthoritativeQuery = 1;
+    public const int LegacySnapshot = 1;
+    public const int LegacyDefinition = 1;
+    public const int LegacyState = 1;
+    public const int Snapshot = 2;
+    public const int Definition = 2;
+    public const int State = 2;
+    public const int AuthoritativeQuery = 2;
 }
 
 public enum CharacterIdentityKind
 {
-    Ability,
-    Aptitude,
-    Trait,
-    Ambition,
-    Reputation,
+    Ability = 0,
+    Aptitude = 1,
+    Trait = 2,
+    Ambition = 3,
+    Reputation = 4,
+    Flaw = 5,
 }
+
+public enum CharacterOriginKind
+{
+    LegacyUnknown = 0,
+    Authored = 1,
+    Custom = 2,
+    Generated = 3,
+}
+
+public enum CharacterHistoricalClassification
+{
+    Historical = 0,
+    Disputed = 1,
+    Inferred = 2,
+    Romance = 3,
+    Fictional = 4,
+}
+
+public enum ParentChildLinkKind
+{
+    UnspecifiedLegacy = 0,
+    Biological = 1,
+    LegalAdoptive = 2,
+}
+
+public enum CharacterVitalStatus
+{
+    Alive = 0,
+    Dead = 1,
+}
+
+public enum CharacterHealthStatus
+{
+    Healthy = 0,
+    Injured = 1,
+    Ill = 2,
+    Critical = 3,
+}
+
+public enum CharacterCustodyStatus
+{
+    Free = 0,
+    Detained = 1,
+    Captive = 2,
+    Hostage = 3,
+}
+
+public sealed record StructuredCharacterName(
+    EntityId PrimaryNameKey,
+    EntityId? CourtesyNameKey);
+
+public sealed record CharacterContentOrigin(
+    CharacterOriginKind OriginKind,
+    CharacterHistoricalClassification? HistoricalClassification,
+    EntityId RecordId,
+    EntityId? OwningPackId,
+    IReadOnlyList<EntityId> AppliedOverridePackIds,
+    IReadOnlyList<EntityId> SourceIds)
+{
+    public static CharacterContentOrigin LegacyUnknown(EntityId recordId) => new(
+        CharacterOriginKind.LegacyUnknown,
+        null,
+        recordId,
+        null,
+        [],
+        []);
+
+    public CharacterContentOrigin Canonicalize() => this with
+    {
+        AppliedOverridePackIds = AppliedOverridePackIds is null
+            ? null!
+            : AppliedOverridePackIds.Order().ToArray(),
+        SourceIds = SourceIds is null ? null! : SourceIds.Order().ToArray(),
+    };
+}
+
+public sealed record CharacterConditionState(
+    CharacterVitalStatus VitalStatus,
+    CharacterHealthStatus HealthStatus,
+    bool IsIncapacitated,
+    CharacterCustodyStatus CustodyStatus,
+    EntityId? CustodianId)
+{
+    public static CharacterConditionState Default { get; } = new(
+        CharacterVitalStatus.Alive,
+        CharacterHealthStatus.Healthy,
+        IsIncapacitated: false,
+        CharacterCustodyStatus.Free,
+        null);
+}
+
+public sealed record CharacterParentLink(
+    EntityId ParentCharacterId,
+    ParentChildLinkKind Kind);
+
+public sealed record CharacterChildLink(
+    EntityId ChildCharacterId,
+    ParentChildLinkKind Kind);
 
 public sealed record CharacterIdentityDefinition(
     int ContractVersion,
@@ -34,7 +136,12 @@ public sealed record CharacterDefinition(
     IReadOnlyList<EntityId> AptitudeIds,
     IReadOnlyList<EntityId> TraitIds,
     IReadOnlyList<EntityId> AmbitionIds,
-    IReadOnlyList<EntityId> ReputationIds)
+    IReadOnlyList<EntityId> ReputationIds,
+    StructuredCharacterName? StructuredName = null,
+    CharacterContentOrigin? ContentOrigin = null,
+    EntityId? CultureId = null,
+    EntityId? OriginLocationId = null,
+    IReadOnlyList<EntityId>? FlawIds = null)
 {
     public CharacterDefinition Canonicalize() => this with
     {
@@ -43,6 +150,8 @@ public sealed record CharacterDefinition(
         TraitIds = TraitIds.Order().ToArray(),
         AmbitionIds = AmbitionIds.Order().ToArray(),
         ReputationIds = ReputationIds.Order().ToArray(),
+        FlawIds = FlawIds is null ? null : FlawIds.Order().ToArray(),
+        ContentOrigin = ContentOrigin?.Canonicalize(),
     };
 }
 
@@ -59,11 +168,18 @@ public sealed record HouseholdDefinition(
 public sealed record CharacterState(
     int ContractVersion,
     EntityId CharacterId,
-    IReadOnlyList<EntityId> ParentIds)
+    IReadOnlyList<EntityId> ParentIds,
+    IReadOnlyList<CharacterParentLink>? ParentLinks = null,
+    CharacterConditionState? Condition = null)
 {
     public CharacterState Canonicalize() => this with
     {
         ParentIds = ParentIds.Order().ToArray(),
+        ParentLinks = ParentLinks is null
+            ? null
+            : ParentLinks.OrderBy(link => link.ParentCharacterId)
+                .ThenBy(link => link.Kind)
+                .ToArray(),
     };
 }
 
@@ -110,6 +226,16 @@ public sealed record CharacterWorldSnapshot(
         [],
         []);
 
+    internal static CharacterWorldSnapshot LegacyV1Empty { get; } = new(
+        CharacterContractVersions.LegacySnapshot,
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        []);
+
     public CharacterWorldSnapshot Canonicalize() => this with
     {
         IdentityDefinitions = IdentityDefinitions.OrderBy(item => item.Id).ToArray(),
@@ -144,7 +270,15 @@ public sealed record AuthoritativeCharacterProfile(
     IReadOnlyList<EntityId> AptitudeIds,
     IReadOnlyList<EntityId> TraitIds,
     IReadOnlyList<EntityId> AmbitionIds,
-    IReadOnlyList<EntityId> ReputationIds);
+    IReadOnlyList<EntityId> ReputationIds,
+    StructuredCharacterName StructuredName,
+    CharacterContentOrigin ContentOrigin,
+    EntityId? CultureId,
+    EntityId? OriginLocationId,
+    IReadOnlyList<EntityId> FlawIds,
+    CharacterConditionState Condition,
+    IReadOnlyList<CharacterParentLink> ParentLinks,
+    IReadOnlyList<CharacterChildLink> ChildLinks);
 
 public sealed record AuthoritativeHouseholdView(
     int ContractVersion,

@@ -12,6 +12,7 @@ public sealed class ContentRegistry
 
     internal ContentRegistry(
         IEnumerable<ContentRecord> records,
+        IReadOnlyDictionary<EntityId, ContentRecordLineage> recordLineage,
         IEnumerable<LocalizationEntry> localization,
         IEnumerable<GlossaryEntry> glossary,
         IEnumerable<SourceReference> sources,
@@ -27,6 +28,10 @@ public sealed class ContentRegistry
                 record.SourceIds.ToArray(),
                 record.LocalizationKeys.ToArray(),
                 record.ReleaseMarked,
+                recordLineage.TryGetValue(record.Id, out ContentRecordLineage? lineage)
+                    ? lineage.OwningPackId
+                    : throw new InvalidDataException($"Content record '{record.Id}' has no owning-pack lineage."),
+                lineage.AppliedOverridePackIds.Order().ToArray(),
                 System.Text.Json.JsonSerializer.SerializeToElement(record.Data, ContentJson.CreateOptions())))
             .ToFrozenDictionary(record => record.Id);
         this.localization = localization.ToFrozenDictionary(entry => (entry.Key, entry.Locale));

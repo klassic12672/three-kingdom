@@ -42,7 +42,7 @@ public static class CharacterContentLoader
                 break;
             default:
                 throw new InvalidDataException(
-                    $"Record '{recordId}' is not an SP-04A typed character record.");
+                    $"Record '{recordId}' is not an SP-04 typed character record.");
         }
     }
 
@@ -51,39 +51,16 @@ public static class CharacterContentLoader
         ArgumentNullException.ThrowIfNull(registry);
 
         NormalizedContentRecord worldRecord = GetRecord(registry, scenarioId, "character_world");
-        CharacterWorldData world = ReadWorldData(worldRecord);
-
-        CharacterIdentityDefinition[] identityDefinitions = world.IdentityDefinitionIds
-            .Select(id => LoadIdentityDefinition(registry, id))
-            .ToArray();
-        CharacterDefinition[] characterDefinitions = world.CharacterDefinitionIds
-            .Select(id => LoadCharacterDefinition(registry, id))
-            .ToArray();
-        FamilyDefinition[] familyDefinitions = world.FamilyDefinitionIds
-            .Select(id => LoadFamilyDefinition(registry, id))
-            .ToArray();
-        HouseholdDefinition[] householdDefinitions = world.HouseholdDefinitionIds
-            .Select(id => LoadHouseholdDefinition(registry, id))
-            .ToArray();
-        CharacterState[] characterStates = world.CharacterStates
-            .Select(data => CreateCharacterState(data, worldRecord))
-            .ToArray();
-        FamilyState[] familyStates = world.FamilyStates
-            .Select(data => CreateFamilyState(data, worldRecord))
-            .ToArray();
-        HouseholdState[] householdStates = world.HouseholdStates
-            .Select(data => CreateHouseholdState(data, worldRecord))
-            .ToArray();
-
+        NormalizedCharacterWorldData world = ReadWorldData(worldRecord);
         CharacterWorldSnapshot snapshot = new(
             CharacterContractVersions.Snapshot,
-            identityDefinitions,
-            characterDefinitions,
-            familyDefinitions,
-            householdDefinitions,
-            characterStates,
-            familyStates,
-            householdStates);
+            world.IdentityDefinitionIds.Select(id => LoadIdentityDefinition(registry, id)).ToArray(),
+            world.CharacterDefinitionIds.Select(id => LoadCharacterDefinition(registry, id)).ToArray(),
+            world.FamilyDefinitionIds.Select(id => LoadFamilyDefinition(registry, id)).ToArray(),
+            world.HouseholdDefinitionIds.Select(id => LoadHouseholdDefinition(registry, id)).ToArray(),
+            world.CharacterStates,
+            world.FamilyStates,
+            world.HouseholdStates);
         ValidateTypedReferences(snapshot, worldRecord);
         return snapshot.Canonicalize();
     }
@@ -104,100 +81,194 @@ public static class CharacterContentLoader
         };
     }
 
-    private static CharacterWorldData ReadWorldData(NormalizedContentRecord worldRecord)
+    private static NormalizedCharacterWorldData ReadWorldData(NormalizedContentRecord worldRecord)
     {
-        CharacterWorldData world = Deserialize<CharacterWorldData>(worldRecord);
-        RequireVersion(world.ContractVersion, CharacterContractVersions.Snapshot, worldRecord, "world");
-        RequireList(world.IdentityDefinitionIds, worldRecord, "identityDefinitionIds");
-        RequireList(world.CharacterDefinitionIds, worldRecord, "characterDefinitionIds");
-        RequireList(world.FamilyDefinitionIds, worldRecord, "familyDefinitionIds");
-        RequireList(world.HouseholdDefinitionIds, worldRecord, "householdDefinitionIds");
-        RequireList(world.CharacterStates, worldRecord, "characterStates");
-        RequireList(world.FamilyStates, worldRecord, "familyStates");
-        RequireList(world.HouseholdStates, worldRecord, "householdStates");
-        RequireList(world.References, worldRecord, "references");
-        foreach (CharacterStateData state in world.CharacterStates)
+        int version = ReadContractVersion(worldRecord, "world");
+        return version switch
         {
-            RequireVersion(state.ContractVersion, CharacterContractVersions.State, worldRecord, "character state");
+            CharacterContractVersions.LegacySnapshot => NormalizeLegacyWorld(
+                Deserialize<LegacyCharacterWorldData>(worldRecord),
+                worldRecord),
+            CharacterContractVersions.Snapshot => NormalizeCurrentWorld(
+                Deserialize<CurrentCharacterWorldData>(worldRecord),
+                worldRecord),
+            _ => throw UnsupportedVersion(worldRecord, "world", version),
+        };
+    }
+
+    private static NormalizedCharacterWorldData NormalizeLegacyWorld(
+        LegacyCharacterWorldData world,
+        NormalizedContentRecord worldRecord)
+    {
+        RequireWorldLists(world, worldRecord);
+        foreach (LegacyCharacterStateData state in world.CharacterStates)
+        {
+            RequireVersion(state.ContractVersion, CharacterContractVersions.LegacyState, worldRecord, "character state");
             RequireList(state.ParentIds, worldRecord, "characterStates[].parentIds");
         }
 
-        foreach (FamilyStateData state in world.FamilyStates)
-        {
-            RequireVersion(state.ContractVersion, CharacterContractVersions.State, worldRecord, "family state");
-            RequireList(state.MemberIds, worldRecord, "familyStates[].memberIds");
-        }
+        ValidateCommonWorldStates(world.FamilyStates, world.HouseholdStates, CharacterContractVersions.LegacyState, worldRecord);
+        CharacterState[] characters = world.CharacterStates.Select(state => new CharacterState(
+            CharacterContractVersions.State,
+            state.CharacterId,
+            state.ParentIds,
+            state.ParentIds.Select(parentId => new CharacterParentLink(
+                parentId,
+                ParentChildLinkKind.UnspecifiedLegacy)).ToArray(),
+            CharacterConditionState.Default)).ToArray();
+        FamilyState[] families = world.FamilyStates.Select(state => new FamilyState(
+            CharacterContractVersions.State,
+            state.FamilyId,
+            state.MemberIds)).ToArray();
+        HouseholdState[] households = world.HouseholdStates.Select(state => new HouseholdState(
+            CharacterContractVersions.State,
+            state.HouseholdId,
+            state.HeadCharacterId,
+            state.MemberIds)).ToArray();
 
-        foreach (HouseholdStateData state in world.HouseholdStates)
-        {
-            RequireVersion(state.ContractVersion, CharacterContractVersions.State, worldRecord, "household state");
-            RequireList(state.MemberIds, worldRecord, "householdStates[].memberIds");
-        }
-
-        RequireMetadata(
+        RequireWorldMetadata(
             worldRecord,
-            null,
             world.References,
-            world.IdentityDefinitionIds
-                .Concat(world.CharacterDefinitionIds)
-                .Concat(world.FamilyDefinitionIds)
-                .Concat(world.HouseholdDefinitionIds)
-                .Concat(world.CharacterStates.SelectMany(state => state.ParentIds.Append(state.CharacterId)))
-                .Concat(world.FamilyStates.SelectMany(state => state.MemberIds.Append(state.FamilyId)))
-                .Concat(world.HouseholdStates.SelectMany(state =>
-                    state.MemberIds.Append(state.HeadCharacterId).Append(state.HouseholdId))));
-        return world;
+            world.IdentityDefinitionIds,
+            world.CharacterDefinitionIds,
+            world.FamilyDefinitionIds,
+            world.HouseholdDefinitionIds,
+            characters,
+            families,
+            households);
+        return new(
+            world.IdentityDefinitionIds,
+            world.CharacterDefinitionIds,
+            world.FamilyDefinitionIds,
+            world.HouseholdDefinitionIds,
+            characters,
+            families,
+            households);
+    }
+
+    private static NormalizedCharacterWorldData NormalizeCurrentWorld(
+        CurrentCharacterWorldData world,
+        NormalizedContentRecord worldRecord)
+    {
+        RequireWorldLists(world, worldRecord);
+        foreach (CurrentCharacterStateData state in world.CharacterStates)
+        {
+            RequireVersion(state.ContractVersion, CharacterContractVersions.State, worldRecord, "character state");
+            RequireList(state.ParentIds, worldRecord, "characterStates[].parentIds");
+            RequireList(state.ParentLinks, worldRecord, "characterStates[].parentLinks");
+            RequireCanonicalIds(state.ParentIds, worldRecord, "characterStates[].parentIds");
+            EntityId[] linkedParentIds = state.ParentLinks.Select(link => link.ParentCharacterId).ToArray();
+            RequireCanonicalIds(linkedParentIds, worldRecord, "characterStates[].parentLinks");
+            if (!state.ParentIds.SequenceEqual(linkedParentIds))
+            {
+                throw new InvalidDataException(
+                    $"Character record '{worldRecord.Id}' parentIds must exactly equal parentLinks IDs.");
+            }
+
+            if (state.ParentLinks.Any(link => !Enum.IsDefined(link.Kind)))
+            {
+                throw new InvalidDataException(
+                    $"Character record '{worldRecord.Id}' has an invalid parent-link kind.");
+            }
+
+            ValidateCondition(state.Condition, worldRecord);
+        }
+
+        ValidateCommonWorldStates(world.FamilyStates, world.HouseholdStates, CharacterContractVersions.State, worldRecord);
+        CharacterState[] characters = world.CharacterStates.Select(state => new CharacterState(
+            CharacterContractVersions.State,
+            state.CharacterId,
+            state.ParentIds,
+            state.ParentLinks.Select(link => new CharacterParentLink(link.ParentCharacterId, link.Kind)).ToArray(),
+            new CharacterConditionState(
+                state.Condition!.VitalStatus,
+                state.Condition.HealthStatus,
+                state.Condition.IsIncapacitated,
+                state.Condition.CustodyStatus,
+                state.Condition.CustodianId))).ToArray();
+        FamilyState[] families = world.FamilyStates.Select(state => new FamilyState(
+            CharacterContractVersions.State,
+            state.FamilyId,
+            state.MemberIds)).ToArray();
+        HouseholdState[] households = world.HouseholdStates.Select(state => new HouseholdState(
+            CharacterContractVersions.State,
+            state.HouseholdId,
+            state.HeadCharacterId,
+            state.MemberIds)).ToArray();
+
+        RequireWorldMetadata(
+            worldRecord,
+            world.References,
+            world.IdentityDefinitionIds,
+            world.CharacterDefinitionIds,
+            world.FamilyDefinitionIds,
+            world.HouseholdDefinitionIds,
+            characters,
+            families,
+            households);
+        return new(
+            world.IdentityDefinitionIds,
+            world.CharacterDefinitionIds,
+            world.FamilyDefinitionIds,
+            world.HouseholdDefinitionIds,
+            characters,
+            families,
+            households);
     }
 
     private static CharacterIdentityDefinition LoadIdentityDefinition(ContentRegistry registry, EntityId id)
     {
         NormalizedContentRecord record = GetRecord(registry, id, "character_identity_definition");
         CharacterIdentityDefinitionData data = Deserialize<CharacterIdentityDefinitionData>(record);
-        RequireVersion(data.ContractVersion, CharacterContractVersions.Definition, record);
+        RequireSupportedDefinitionVersion(data.ContractVersion, record);
         RequireList(data.References, record, "references");
-        RequireMetadata(record, data.NameKey, data.References, []);
-        if (!Enum.IsDefined(data.Kind))
+        RequireMetadata(record, [data.NameKey], data.References, []);
+        if (!Enum.IsDefined(data.Kind)
+            || (data.ContractVersion == CharacterContractVersions.LegacyDefinition
+                && data.Kind == CharacterIdentityKind.Flaw))
         {
             throw new InvalidDataException($"Character identity definition '{record.Id}' has an invalid kind.");
         }
 
-        RequireBilingualName(registry, record, data.NameKey);
-        return new CharacterIdentityDefinition(data.ContractVersion, record.Id, data.Kind, data.NameKey);
+        RequireBilingualName(registry, record, data.NameKey, "nameKey");
+        return new CharacterIdentityDefinition(
+            CharacterContractVersions.Definition,
+            record.Id,
+            data.Kind,
+            data.NameKey);
     }
 
     private static CharacterDefinition LoadCharacterDefinition(ContentRegistry registry, EntityId id)
     {
         NormalizedContentRecord record = GetRecord(registry, id, "character_definition");
-        CharacterDefinitionData data = Deserialize<CharacterDefinitionData>(record);
-        RequireVersion(data.ContractVersion, CharacterContractVersions.Definition, record);
-        RequireList(data.AbilityIds, record, "abilityIds");
-        RequireList(data.AptitudeIds, record, "aptitudeIds");
-        RequireList(data.TraitIds, record, "traitIds");
-        RequireList(data.AmbitionIds, record, "ambitionIds");
-        RequireList(data.ReputationIds, record, "reputationIds");
-        RequireList(data.References, record, "references");
-        RequireCanonicalIds(data.AbilityIds, record, "abilityIds");
-        RequireCanonicalIds(data.AptitudeIds, record, "aptitudeIds");
-        RequireCanonicalIds(data.TraitIds, record, "traitIds");
-        RequireCanonicalIds(data.AmbitionIds, record, "ambitionIds");
-        RequireCanonicalIds(data.ReputationIds, record, "reputationIds");
+        int version = ReadContractVersion(record);
+        return version switch
+        {
+            CharacterContractVersions.LegacyDefinition => LoadLegacyCharacterDefinition(registry, record),
+            CharacterContractVersions.Definition => LoadCurrentCharacterDefinition(registry, record),
+            _ => throw UnsupportedVersion(record, "definition", version),
+        };
+    }
+
+    private static CharacterDefinition LoadLegacyCharacterDefinition(
+        ContentRegistry registry,
+        NormalizedContentRecord record)
+    {
+        LegacyCharacterDefinitionData data = Deserialize<LegacyCharacterDefinitionData>(record);
+        ValidateCharacterDefinitionLists(record, data);
         RequireMetadata(
             record,
-            data.NameKey,
+            [data.NameKey],
             data.References,
             data.AbilityIds
                 .Concat(data.AptitudeIds)
                 .Concat(data.TraitIds)
                 .Concat(data.AmbitionIds)
                 .Concat(data.ReputationIds));
-        if (!data.BirthDate.IsValid)
-        {
-            throw new InvalidDataException($"Character definition '{record.Id}' has an invalid birthDate.");
-        }
-
-        RequireBilingualName(registry, record, data.NameKey);
+        RequireValidBirthDate(record, data.BirthDate);
+        RequireBilingualName(registry, record, data.NameKey, "nameKey");
         return new CharacterDefinition(
-            data.ContractVersion,
+            CharacterContractVersions.Definition,
             record.Id,
             data.NameKey,
             data.BirthDate,
@@ -205,50 +276,84 @@ public static class CharacterContentLoader
             data.AptitudeIds,
             data.TraitIds,
             data.AmbitionIds,
-            data.ReputationIds);
+            data.ReputationIds,
+            new StructuredCharacterName(data.NameKey, null),
+            CreateOrigin(record, CharacterOriginKind.Authored),
+            null,
+            null,
+            []);
+    }
+
+    private static CharacterDefinition LoadCurrentCharacterDefinition(
+        ContentRegistry registry,
+        NormalizedContentRecord record)
+    {
+        CurrentCharacterDefinitionData data = Deserialize<CurrentCharacterDefinitionData>(record);
+        ValidateCharacterDefinitionLists(record, data);
+        RequireList(data.FlawIds, record, "flawIds");
+        RequireCanonicalIds(data.FlawIds, record, "flawIds");
+        ValidateExplicitOrigin(record, data.OriginKind);
+
+        EntityId[] nameKeys = data.CourtesyNameKey is EntityId courtesyNameKey
+            ? [data.NameKey, courtesyNameKey]
+            : [data.NameKey];
+        IEnumerable<EntityId> consumedReferences = data.AbilityIds
+            .Concat(data.AptitudeIds)
+            .Concat(data.TraitIds)
+            .Concat(data.AmbitionIds)
+            .Concat(data.ReputationIds)
+            .Concat(data.FlawIds)
+            .Concat(data.CultureId is EntityId cultureId ? [cultureId] : [])
+            .Concat(data.OriginLocationId is EntityId originId ? [originId] : []);
+        RequireMetadata(record, nameKeys, data.References, consumedReferences);
+        RequireValidBirthDate(record, data.BirthDate);
+        RequireBilingualName(registry, record, data.NameKey, "nameKey");
+        if (data.CourtesyNameKey is EntityId courtesy)
+        {
+            RequireBilingualName(registry, record, courtesy, "courtesyNameKey");
+        }
+
+        // Culture and origin location currently have no dedicated SP-04 content definitions.
+        // Requiring loaded stable records keeps the boundary typed by ID without inventing a new subsystem.
+        RequireLoadedReference(registry, record, data.CultureId, "cultureId");
+        RequireLoadedReference(registry, record, data.OriginLocationId, "originLocationId");
+        return new CharacterDefinition(
+            CharacterContractVersions.Definition,
+            record.Id,
+            data.NameKey,
+            data.BirthDate,
+            data.AbilityIds,
+            data.AptitudeIds,
+            data.TraitIds,
+            data.AmbitionIds,
+            data.ReputationIds,
+            new StructuredCharacterName(data.NameKey, data.CourtesyNameKey),
+            CreateOrigin(record, data.OriginKind),
+            data.CultureId,
+            data.OriginLocationId,
+            data.FlawIds);
     }
 
     private static FamilyDefinition LoadFamilyDefinition(ContentRegistry registry, EntityId id)
     {
         NormalizedContentRecord record = GetRecord(registry, id, "family_definition");
-        FamilyDefinitionData data = Deserialize<FamilyDefinitionData>(record);
-        RequireVersion(data.ContractVersion, CharacterContractVersions.Definition, record);
+        NamedCharacterDefinitionData data = Deserialize<NamedCharacterDefinitionData>(record);
+        RequireSupportedDefinitionVersion(data.ContractVersion, record);
         RequireList(data.References, record, "references");
-        RequireMetadata(record, data.NameKey, data.References, []);
-        RequireBilingualName(registry, record, data.NameKey);
-        return new FamilyDefinition(data.ContractVersion, record.Id, data.NameKey);
+        RequireMetadata(record, [data.NameKey], data.References, []);
+        RequireBilingualName(registry, record, data.NameKey, "nameKey");
+        return new FamilyDefinition(CharacterContractVersions.Definition, record.Id, data.NameKey);
     }
 
     private static HouseholdDefinition LoadHouseholdDefinition(ContentRegistry registry, EntityId id)
     {
         NormalizedContentRecord record = GetRecord(registry, id, "household_definition");
-        HouseholdDefinitionData data = Deserialize<HouseholdDefinitionData>(record);
-        RequireVersion(data.ContractVersion, CharacterContractVersions.Definition, record);
+        NamedCharacterDefinitionData data = Deserialize<NamedCharacterDefinitionData>(record);
+        RequireSupportedDefinitionVersion(data.ContractVersion, record);
         RequireList(data.References, record, "references");
-        RequireMetadata(record, data.NameKey, data.References, []);
-        RequireBilingualName(registry, record, data.NameKey);
-        return new HouseholdDefinition(data.ContractVersion, record.Id, data.NameKey);
-    }
-
-    private static CharacterState CreateCharacterState(CharacterStateData data, NormalizedContentRecord worldRecord)
-    {
-        RequireVersion(data.ContractVersion, CharacterContractVersions.State, worldRecord, "character state");
-        RequireList(data.ParentIds, worldRecord, "characterStates[].parentIds");
-        return new CharacterState(data.ContractVersion, data.CharacterId, data.ParentIds);
-    }
-
-    private static FamilyState CreateFamilyState(FamilyStateData data, NormalizedContentRecord worldRecord)
-    {
-        RequireVersion(data.ContractVersion, CharacterContractVersions.State, worldRecord, "family state");
-        RequireList(data.MemberIds, worldRecord, "familyStates[].memberIds");
-        return new FamilyState(data.ContractVersion, data.FamilyId, data.MemberIds);
-    }
-
-    private static HouseholdState CreateHouseholdState(HouseholdStateData data, NormalizedContentRecord worldRecord)
-    {
-        RequireVersion(data.ContractVersion, CharacterContractVersions.State, worldRecord, "household state");
-        RequireList(data.MemberIds, worldRecord, "householdStates[].memberIds");
-        return new HouseholdState(data.ContractVersion, data.HouseholdId, data.HeadCharacterId, data.MemberIds);
+        RequireMetadata(record, [data.NameKey], data.References, []);
+        RequireBilingualName(registry, record, data.NameKey, "nameKey");
+        return new HouseholdDefinition(CharacterContractVersions.Definition, record.Id, data.NameKey);
     }
 
     private static void ValidateTypedReferences(CharacterWorldSnapshot snapshot, NormalizedContentRecord worldRecord)
@@ -267,14 +372,20 @@ public static class CharacterContentLoader
             RequireIdentityKind(definition, definition.TraitIds, CharacterIdentityKind.Trait, identities);
             RequireIdentityKind(definition, definition.AmbitionIds, CharacterIdentityKind.Ambition, identities);
             RequireIdentityKind(definition, definition.ReputationIds, CharacterIdentityKind.Reputation, identities);
+            RequireIdentityKind(definition, definition.FlawIds!, CharacterIdentityKind.Flaw, identities);
         }
 
         foreach (CharacterState state in snapshot.CharacterStates)
         {
             RequireSelected(state.CharacterId, characterIds, worldRecord, "character state");
-            foreach (EntityId parentId in state.ParentIds)
+            foreach (CharacterParentLink parentLink in state.ParentLinks!)
             {
-                RequireSelected(parentId, characterIds, worldRecord, "parent");
+                RequireSelected(parentLink.ParentCharacterId, characterIds, worldRecord, "parent");
+            }
+
+            if (state.Condition!.CustodianId is EntityId custodianId)
+            {
+                RequireSelected(custodianId, characterIds, worldRecord, "custodian");
             }
         }
 
@@ -333,25 +444,84 @@ public static class CharacterContentLoader
         }
     }
 
+    private static void ValidateCharacterDefinitionLists(
+        NormalizedContentRecord record,
+        ILegacyCharacterDefinitionData data)
+    {
+        RequireList(data.AbilityIds, record, "abilityIds");
+        RequireList(data.AptitudeIds, record, "aptitudeIds");
+        RequireList(data.TraitIds, record, "traitIds");
+        RequireList(data.AmbitionIds, record, "ambitionIds");
+        RequireList(data.ReputationIds, record, "reputationIds");
+        RequireList(data.References, record, "references");
+        RequireCanonicalIds(data.AbilityIds, record, "abilityIds");
+        RequireCanonicalIds(data.AptitudeIds, record, "aptitudeIds");
+        RequireCanonicalIds(data.TraitIds, record, "traitIds");
+        RequireCanonicalIds(data.AmbitionIds, record, "ambitionIds");
+        RequireCanonicalIds(data.ReputationIds, record, "reputationIds");
+    }
+
+    private static void ValidateExplicitOrigin(NormalizedContentRecord record, CharacterOriginKind originKind)
+    {
+        if (originKind is CharacterOriginKind.LegacyUnknown or CharacterOriginKind.Generated
+            || !Enum.IsDefined(originKind))
+        {
+            throw new InvalidDataException(
+                $"Character definition '{record.Id}' has invalid authored originKind '{originKind}'.");
+        }
+
+        if (record.ContentTag == ContentTag.Fictional && originKind != CharacterOriginKind.Custom)
+        {
+            throw new InvalidDataException(
+                $"Fictional v2 character definition '{record.Id}' must use custom originKind.");
+        }
+
+        if (record.ContentTag != ContentTag.Fictional
+            && (originKind != CharacterOriginKind.Authored || record.SourceIds.Count == 0))
+        {
+            throw new InvalidDataException(
+                $"Non-fictional v2 character definition '{record.Id}' requires authored originKind and source evidence.");
+        }
+    }
+
+    private static CharacterContentOrigin CreateOrigin(
+        NormalizedContentRecord record,
+        CharacterOriginKind originKind) => new CharacterContentOrigin(
+            originKind,
+            record.ContentTag switch
+            {
+                ContentTag.Historical => CharacterHistoricalClassification.Historical,
+                ContentTag.Disputed => CharacterHistoricalClassification.Disputed,
+                ContentTag.Inferred => CharacterHistoricalClassification.Inferred,
+                ContentTag.Romance => CharacterHistoricalClassification.Romance,
+                ContentTag.Fictional => CharacterHistoricalClassification.Fictional,
+                _ => throw new InvalidDataException($"Character record '{record.Id}' has an invalid content tag."),
+            },
+            record.Id,
+            record.OwningPackId,
+            record.AppliedOverridePackIds,
+            record.SourceIds).Canonicalize();
+
     private static void RequireBilingualName(
         ContentRegistry registry,
         NormalizedContentRecord record,
-        EntityId nameKey)
+        EntityId nameKey,
+        string property)
     {
         if (!registry.TryGetText(nameKey, "ko-KR", out string? korean) || string.IsNullOrWhiteSpace(korean))
         {
-            throw new InvalidDataException($"Character record '{record.Id}' nameKey '{nameKey}' lacks ko-KR text.");
+            throw new InvalidDataException($"Character record '{record.Id}' {property} '{nameKey}' lacks ko-KR text.");
         }
 
         if (!registry.TryGetText(nameKey, "en-US", out string? english) || string.IsNullOrWhiteSpace(english))
         {
-            throw new InvalidDataException($"Character record '{record.Id}' nameKey '{nameKey}' lacks en-US text.");
+            throw new InvalidDataException($"Character record '{record.Id}' {property} '{nameKey}' lacks en-US text.");
         }
     }
 
     private static void RequireMetadata(
         NormalizedContentRecord record,
-        EntityId? nameKey,
+        IEnumerable<EntityId> nameKeys,
         IReadOnlyList<EntityId> declaredReferences,
         IEnumerable<EntityId> consumedReferences)
     {
@@ -363,13 +533,110 @@ public static class CharacterContentLoader
                 + $"Expected [{string.Join(", ", expectedReferences)}], found [{string.Join(", ", declaredReferences)}].");
         }
 
-        EntityId[] expectedLocalizationKeys = nameKey is EntityId key ? [key] : [];
+        EntityId[] expectedLocalizationKeys = nameKeys.Distinct().Order().ToArray();
         if (!record.LocalizationKeys.SequenceEqual(expectedLocalizationKeys))
         {
             throw new InvalidDataException(
                 $"Character record '{record.Id}' localizationKeys must canonically equal "
                 + $"[{string.Join(", ", expectedLocalizationKeys)}].");
         }
+    }
+
+    private static void RequireWorldMetadata(
+        NormalizedContentRecord worldRecord,
+        IReadOnlyList<EntityId> declaredReferences,
+        IReadOnlyList<EntityId> identityDefinitionIds,
+        IReadOnlyList<EntityId> characterDefinitionIds,
+        IReadOnlyList<EntityId> familyDefinitionIds,
+        IReadOnlyList<EntityId> householdDefinitionIds,
+        IReadOnlyList<CharacterState> characterStates,
+        IReadOnlyList<FamilyState> familyStates,
+        IReadOnlyList<HouseholdState> householdStates)
+    {
+        RequireMetadata(
+            worldRecord,
+            [],
+            declaredReferences,
+            identityDefinitionIds
+                .Concat(characterDefinitionIds)
+                .Concat(familyDefinitionIds)
+                .Concat(householdDefinitionIds)
+                .Concat(characterStates.SelectMany(state => state.ParentLinks!
+                    .Select(link => link.ParentCharacterId)
+                    .Append(state.CharacterId)
+                    .Concat(state.Condition!.CustodianId is EntityId custodian ? [custodian] : [])))
+                .Concat(familyStates.SelectMany(state => state.MemberIds.Append(state.FamilyId)))
+                .Concat(householdStates.SelectMany(state =>
+                    state.MemberIds.Append(state.HeadCharacterId).Append(state.HouseholdId))));
+    }
+
+    private static void RequireLoadedReference(
+        ContentRegistry registry,
+        NormalizedContentRecord record,
+        EntityId? referenceId,
+        string property)
+    {
+        if (referenceId is EntityId id && !registry.TryGet(id, out _))
+        {
+            throw new InvalidDataException(
+                $"Character definition '{record.Id}' {property} references missing content record '{id}'.");
+        }
+    }
+
+    private static void RequireValidBirthDate(NormalizedContentRecord record, CampaignDate birthDate)
+    {
+        if (!birthDate.IsValid)
+        {
+            throw new InvalidDataException($"Character definition '{record.Id}' has an invalid birthDate.");
+        }
+    }
+
+    private static void ValidateCondition(
+        CharacterConditionData? condition,
+        NormalizedContentRecord record)
+    {
+        if (condition is null)
+        {
+            throw new InvalidDataException($"Character record '{record.Id}' has missing or null condition data.");
+        }
+
+        if (!Enum.IsDefined(condition.VitalStatus)
+            || !Enum.IsDefined(condition.HealthStatus)
+            || !Enum.IsDefined(condition.CustodyStatus))
+        {
+            throw new InvalidDataException($"Character record '{record.Id}' has invalid condition data.");
+        }
+    }
+
+    private static void ValidateCommonWorldStates(
+        IReadOnlyList<FamilyStateData> familyStates,
+        IReadOnlyList<HouseholdStateData> householdStates,
+        int expectedVersion,
+        NormalizedContentRecord worldRecord)
+    {
+        foreach (FamilyStateData state in familyStates)
+        {
+            RequireVersion(state.ContractVersion, expectedVersion, worldRecord, "family state");
+            RequireList(state.MemberIds, worldRecord, "familyStates[].memberIds");
+        }
+
+        foreach (HouseholdStateData state in householdStates)
+        {
+            RequireVersion(state.ContractVersion, expectedVersion, worldRecord, "household state");
+            RequireList(state.MemberIds, worldRecord, "householdStates[].memberIds");
+        }
+    }
+
+    private static void RequireWorldLists(ICharacterWorldData world, NormalizedContentRecord worldRecord)
+    {
+        RequireList(world.IdentityDefinitionIds, worldRecord, "identityDefinitionIds");
+        RequireList(world.CharacterDefinitionIds, worldRecord, "characterDefinitionIds");
+        RequireList(world.FamilyDefinitionIds, worldRecord, "familyDefinitionIds");
+        RequireList(world.HouseholdDefinitionIds, worldRecord, "householdDefinitionIds");
+        RequireUntypedList(world.CharacterStatesUntyped, worldRecord, "characterStates");
+        RequireList(world.FamilyStates, worldRecord, "familyStates");
+        RequireList(world.HouseholdStates, worldRecord, "householdStates");
+        RequireList(world.References, worldRecord, "references");
     }
 
     private static NormalizedContentRecord GetRecord(ContentRegistry registry, EntityId id, string expectedType)
@@ -401,11 +668,38 @@ public static class CharacterContentLoader
         }
     }
 
+    private static int ReadContractVersion(NormalizedContentRecord record, string contractKind = "definition")
+    {
+        if (!record.Data.TryGetProperty("contractVersion", out JsonElement version)
+            || !version.TryGetInt32(out int value))
+        {
+            throw new InvalidDataException(
+                $"Character record '{record.Id}' has a malformed {contractKind} contractVersion.");
+        }
+
+        return value;
+    }
+
+    private static InvalidDataException UnsupportedVersion(
+        NormalizedContentRecord record,
+        string contractKind,
+        int actual) => new(
+            $"Character record '{record.Id}' uses unsupported {contractKind} version {actual}; expected "
+            + $"{CharacterContractVersions.LegacySnapshot} or {CharacterContractVersions.Snapshot}.");
+
+    private static void RequireSupportedDefinitionVersion(int actual, NormalizedContentRecord record)
+    {
+        if (actual is not (CharacterContractVersions.LegacyDefinition or CharacterContractVersions.Definition))
+        {
+            throw UnsupportedVersion(record, "definition", actual);
+        }
+    }
+
     private static void RequireVersion(
         int actual,
         int expected,
         NormalizedContentRecord record,
-        string contractKind = "definition")
+        string contractKind)
     {
         if (actual != expected)
         {
@@ -417,6 +711,17 @@ public static class CharacterContentLoader
     private static void RequireList<T>(IReadOnlyList<T>? items, NormalizedContentRecord record, string property)
     {
         if (items is null || items.Any(item => item is null))
+        {
+            throw new InvalidDataException($"Character record '{record.Id}' has missing or null '{property}' data.");
+        }
+    }
+
+    private static void RequireUntypedList(
+        System.Collections.IEnumerable? items,
+        NormalizedContentRecord record,
+        string property)
+    {
+        if (items is null || items.Cast<object?>().Any(item => item is null))
         {
             throw new InvalidDataException($"Character record '{record.Id}' has missing or null '{property}' data.");
         }
@@ -434,16 +739,54 @@ public static class CharacterContentLoader
         }
     }
 
-    private sealed record CharacterWorldData(
+    private interface ICharacterWorldData
+    {
+        IReadOnlyList<EntityId> IdentityDefinitionIds { get; }
+        IReadOnlyList<EntityId> CharacterDefinitionIds { get; }
+        IReadOnlyList<EntityId> FamilyDefinitionIds { get; }
+        IReadOnlyList<EntityId> HouseholdDefinitionIds { get; }
+        System.Collections.IEnumerable CharacterStatesUntyped { get; }
+        IReadOnlyList<FamilyStateData> FamilyStates { get; }
+        IReadOnlyList<HouseholdStateData> HouseholdStates { get; }
+        IReadOnlyList<EntityId> References { get; }
+    }
+
+    private sealed record LegacyCharacterWorldData(
         [property: JsonRequired] int ContractVersion,
         [property: JsonRequired] IReadOnlyList<EntityId> IdentityDefinitionIds,
         [property: JsonRequired] IReadOnlyList<EntityId> CharacterDefinitionIds,
         [property: JsonRequired] IReadOnlyList<EntityId> FamilyDefinitionIds,
         [property: JsonRequired] IReadOnlyList<EntityId> HouseholdDefinitionIds,
-        [property: JsonRequired] IReadOnlyList<CharacterStateData> CharacterStates,
+        [property: JsonRequired] IReadOnlyList<LegacyCharacterStateData> CharacterStates,
         [property: JsonRequired] IReadOnlyList<FamilyStateData> FamilyStates,
         [property: JsonRequired] IReadOnlyList<HouseholdStateData> HouseholdStates,
-        [property: JsonRequired] IReadOnlyList<EntityId> References);
+        [property: JsonRequired] IReadOnlyList<EntityId> References) : ICharacterWorldData
+    {
+        public System.Collections.IEnumerable CharacterStatesUntyped => CharacterStates;
+    }
+
+    private sealed record CurrentCharacterWorldData(
+        [property: JsonRequired] int ContractVersion,
+        [property: JsonRequired] IReadOnlyList<EntityId> IdentityDefinitionIds,
+        [property: JsonRequired] IReadOnlyList<EntityId> CharacterDefinitionIds,
+        [property: JsonRequired] IReadOnlyList<EntityId> FamilyDefinitionIds,
+        [property: JsonRequired] IReadOnlyList<EntityId> HouseholdDefinitionIds,
+        [property: JsonRequired] IReadOnlyList<CurrentCharacterStateData> CharacterStates,
+        [property: JsonRequired] IReadOnlyList<FamilyStateData> FamilyStates,
+        [property: JsonRequired] IReadOnlyList<HouseholdStateData> HouseholdStates,
+        [property: JsonRequired] IReadOnlyList<EntityId> References) : ICharacterWorldData
+    {
+        public System.Collections.IEnumerable CharacterStatesUntyped => CharacterStates;
+    }
+
+    private sealed record NormalizedCharacterWorldData(
+        IReadOnlyList<EntityId> IdentityDefinitionIds,
+        IReadOnlyList<EntityId> CharacterDefinitionIds,
+        IReadOnlyList<EntityId> FamilyDefinitionIds,
+        IReadOnlyList<EntityId> HouseholdDefinitionIds,
+        IReadOnlyList<CharacterState> CharacterStates,
+        IReadOnlyList<FamilyState> FamilyStates,
+        IReadOnlyList<HouseholdState> HouseholdStates);
 
     private sealed record CharacterIdentityDefinitionData(
         [property: JsonRequired] int ContractVersion,
@@ -451,7 +794,19 @@ public static class CharacterContentLoader
         [property: JsonRequired] EntityId NameKey,
         [property: JsonRequired] IReadOnlyList<EntityId> References);
 
-    private sealed record CharacterDefinitionData(
+    private interface ILegacyCharacterDefinitionData
+    {
+        EntityId NameKey { get; }
+        CampaignDate BirthDate { get; }
+        IReadOnlyList<EntityId> AbilityIds { get; }
+        IReadOnlyList<EntityId> AptitudeIds { get; }
+        IReadOnlyList<EntityId> TraitIds { get; }
+        IReadOnlyList<EntityId> AmbitionIds { get; }
+        IReadOnlyList<EntityId> ReputationIds { get; }
+        IReadOnlyList<EntityId> References { get; }
+    }
+
+    private sealed record LegacyCharacterDefinitionData(
         [property: JsonRequired] int ContractVersion,
         [property: JsonRequired] EntityId NameKey,
         [property: JsonRequired] CampaignDate BirthDate,
@@ -460,22 +815,51 @@ public static class CharacterContentLoader
         [property: JsonRequired] IReadOnlyList<EntityId> TraitIds,
         [property: JsonRequired] IReadOnlyList<EntityId> AmbitionIds,
         [property: JsonRequired] IReadOnlyList<EntityId> ReputationIds,
-        [property: JsonRequired] IReadOnlyList<EntityId> References);
+        [property: JsonRequired] IReadOnlyList<EntityId> References) : ILegacyCharacterDefinitionData;
 
-    private sealed record FamilyDefinitionData(
+    private sealed record CurrentCharacterDefinitionData(
+        [property: JsonRequired] int ContractVersion,
+        [property: JsonRequired] EntityId NameKey,
+        [property: JsonRequired] EntityId? CourtesyNameKey,
+        [property: JsonRequired] CharacterOriginKind OriginKind,
+        [property: JsonRequired] EntityId? CultureId,
+        [property: JsonRequired] EntityId? OriginLocationId,
+        [property: JsonRequired] CampaignDate BirthDate,
+        [property: JsonRequired] IReadOnlyList<EntityId> AbilityIds,
+        [property: JsonRequired] IReadOnlyList<EntityId> AptitudeIds,
+        [property: JsonRequired] IReadOnlyList<EntityId> TraitIds,
+        [property: JsonRequired] IReadOnlyList<EntityId> AmbitionIds,
+        [property: JsonRequired] IReadOnlyList<EntityId> ReputationIds,
+        [property: JsonRequired] IReadOnlyList<EntityId> FlawIds,
+        [property: JsonRequired] IReadOnlyList<EntityId> References) : ILegacyCharacterDefinitionData;
+
+    private sealed record NamedCharacterDefinitionData(
         [property: JsonRequired] int ContractVersion,
         [property: JsonRequired] EntityId NameKey,
         [property: JsonRequired] IReadOnlyList<EntityId> References);
 
-    private sealed record HouseholdDefinitionData(
-        [property: JsonRequired] int ContractVersion,
-        [property: JsonRequired] EntityId NameKey,
-        [property: JsonRequired] IReadOnlyList<EntityId> References);
-
-    private sealed record CharacterStateData(
+    private sealed record LegacyCharacterStateData(
         [property: JsonRequired] int ContractVersion,
         [property: JsonRequired] EntityId CharacterId,
         [property: JsonRequired] IReadOnlyList<EntityId> ParentIds);
+
+    private sealed record CurrentCharacterStateData(
+        [property: JsonRequired] int ContractVersion,
+        [property: JsonRequired] EntityId CharacterId,
+        [property: JsonRequired] IReadOnlyList<EntityId> ParentIds,
+        [property: JsonRequired] IReadOnlyList<CharacterParentLinkData> ParentLinks,
+        [property: JsonRequired] CharacterConditionData? Condition);
+
+    private sealed record CharacterParentLinkData(
+        [property: JsonRequired] EntityId ParentCharacterId,
+        [property: JsonRequired] ParentChildLinkKind Kind);
+
+    private sealed record CharacterConditionData(
+        [property: JsonRequired] CharacterVitalStatus VitalStatus,
+        [property: JsonRequired] CharacterHealthStatus HealthStatus,
+        [property: JsonRequired] bool IsIncapacitated,
+        [property: JsonRequired] CharacterCustodyStatus CustodyStatus,
+        [property: JsonRequired] EntityId? CustodianId);
 
     private sealed record FamilyStateData(
         [property: JsonRequired] int ContractVersion,

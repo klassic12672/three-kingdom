@@ -1,21 +1,21 @@
 # Character, Family, and Household Foundation
 
-SP-04A establishes the first deterministic character-world slice and has accepted exact-SHA hosted macOS arm64/Windows x64 evidence at `eaa3aaf3a0687a231d2a3441e5be4954e905e9ea`. SP-04B-L adds the bounded relationship/memory kernel and has passing [exact-SHA hosted macOS arm64/Windows x64 evidence](evidence/SP-04B-EXACT-SHA-ff7420f.md) at `ff7420fbefb5dcb7d42dcff82746d61c39d02b7a`. SP-04 remains Active and is not complete.
+SP-04A establishes the first deterministic character-world slice and has accepted exact-SHA hosted macOS arm64/Windows x64 evidence at `eaa3aaf3a0687a231d2a3441e5be4954e905e9ea`. SP-04B-L adds the bounded relationship/memory kernel and has passing [exact-SHA hosted macOS arm64/Windows x64 evidence](evidence/SP-04B-EXACT-SHA-ff7420f.md) at `ff7420fbefb5dcb7d42dcff82746d61c39d02b7a`. SP-04C0 advances character descriptor, agency, and typed-kinship contracts and is locally verified only in the current uncommitted tree. SP-04 remains Active and is not complete.
 
 ## Package boundary
 
-The package provides versioned character, family, household, and identity definitions; immutable scenario state; read-only queries; content loading; and save persistence. It deliberately adds no character mutation commands or events. Relationships, memories, marriage, births, death, inheritance, succession, simulation tiers, battle integration, historical rosters, and UI remain deferred.
+The current character packages provide versioned character, family, household, identity, relationship, and memory state; deterministic read-only queries; v1/v2 authored-content loading; and save persistence. C0 deliberately adds no new mutation command/event. Retinues, personal resources, employment history, marriage, romance, birth/death resolution, inheritance, succession, battle integration, historical rosters, shipped character content, and UI remain deferred.
 
 ## Contracts and queries
 
-All character contracts are in `Simulation.Core` and use version 1:
+Character snapshot, definition, state, and authoritative-query contracts are version 2 in `Simulation.Core`:
 
 | Contract | Purpose |
 |---|---|
-| `CharacterIdentityDefinition` | Stable ability, aptitude, trait, ambition, or reputation ID plus localization key |
-| `CharacterDefinition` | Stable character identity, localized name key, birth date, and typed identity-definition references |
+| `CharacterIdentityDefinition` | Stable ability, aptitude, trait, flaw, ambition, or reputation ID plus localization key |
+| `CharacterDefinition` | Stable identity, retained primary `nameKey`, structured primary/courtesy names, content origin/lineage, optional culture/origin, birth date, and typed identity references |
 | `FamilyDefinition`, `HouseholdDefinition` | Stable localized family and household identities |
-| `CharacterState` | Parent references |
+| `CharacterState` | Retained parent IDs, matching typed biological/legal-adoptive/legacy parent links, and vital/health/incapacity/custody condition |
 | `FamilyState` | Family membership |
 | `HouseholdState` | Household membership and head |
 | `CharacterWorldSnapshot` | Canonical authoritative subsystem snapshot |
@@ -23,17 +23,20 @@ All character contracts are in `Simulation.Core` and use version 1:
 
 `WorldState.Characters` is the authoritative `CharacterWorldState`; `IWorldQuery.Characters` exposes it through `IAuthoritativeCharacterWorldQuery`. These results are deliberately named as authoritative and unfiltered. The SP-04 names `CharacterProfile` and `HouseholdView` remain reserved for later observer-aware, player-knowledge-filtered queries in `Game.Application`.
 
-Authoritative profiles derive parent and child lists, nullable family and household membership, and age from the campaign date. Age calculation uses `CampaignDate` only and changes deterministically on the birthday. Family and household membership are separate: a person may share one without sharing the other.
+Authoritative profiles return the structured descriptor, condition, typed parent/child links, retained parent/child ID lists, nullable family and household membership, and age derived from the campaign date. Age calculation uses `CampaignDate` only and changes deterministically on the birthday. Family and household membership are separate: a person may share one without sharing the other. Every nested collection is a defensive copy.
 
 ## Determinism and validation
 
-Top-level definition and state input order is normalized by stable `EntityId` order. Nested identity, parent, family-member, and household-member lists must already be unique and ordinal-canonical in authoritative state. Captured snapshots and query results are defensive copies.
+Top-level definition and state input order is normalized by stable `EntityId` order. Nested identity, flaw, parent-link, provenance-lineage, source, family-member, and household-member lists must already be unique and ordinal-canonical in authoritative state. Captured snapshots and query results are defensive copies.
 
 Construction rejects:
 
 - unsupported snapshot, definition, or state versions;
 - invalid or duplicate global definition IDs and duplicate states;
-- missing or mistyped ability, aptitude, trait, ambition, and reputation definitions;
+- missing or mistyped ability, aptitude, trait, flaw, ambition, and reputation definitions;
+- null/mismatched structured names, invalid origin/classification/pack lineage, and invalid culture/origin IDs;
+- null, mismatched, duplicate, non-canonical, or invalid typed parent links;
+- invalid vital/health/incapacity/custody combinations, self-custody, and missing custodians;
 - dangling, self-referential, cyclic, or chronologically impossible parentage;
 - characters born after the current campaign date;
 - dangling or duplicate family and household members;
@@ -51,17 +54,19 @@ Construction rejects:
 - `household_definition`
 - `character_identity_definition`
 
-The published content-record schema defines closed version-1 payloads for all five types. The loader requires the same contract versions, unique ordinal-canonical per-kind identity lists, exact canonical agreement between typed references and `data.references`, exact declaration of consumed name keys in `localizationKeys`, and non-empty `ko-KR` and `en-US` text. Every typed record authored or overridden by a candidate pack is validated even when no world selects it; the complete post-override envelope is checked before candidate-registry construction, and mistyped reference values produce diagnostics. Resolved-world graph validation separately checks selected types, references, and state. Null nested parent/member lists produce deterministic owning-world diagnostics. Invalid candidates roll back without changing the earlier registry. The pre-existing generic `character` record and built-in pack are unchanged.
+The published content-record schema defines closed version-1 and version-2 payloads for all five types. Version 1 remains accepted and normalizes to runtime v2; its parent IDs become `UnspecifiedLegacy`, never biological. Version 2 adds courtesy names, authored/custom origin, optional culture/location references, flaws, typed parent links, condition, and custodian references. The loader requires unique canonical per-kind IDs, exact agreement between consumed references and `data.references`, exact name-key declaration in `localizationKeys`, and non-empty `ko-KR` and `en-US` text for primary and courtesy names. Non-fictional v2 records require authored origin and sources; fictional v2 records require custom origin.
+
+Normalized records retain the original owning pack and a canonical list of applied override packs. Every typed record authored or overridden by a candidate pack is validated even when no world selects it; resolved-world graph validation separately checks selected types, references, state, condition, and kinship. Invalid candidates roll back record data and lineage together. Culture and origin currently require loaded stable records but do not invent a separate C0 culture/location subsystem. The pre-existing generic `character` record, built-in pack, and shipped content are unchanged.
 
 Registry construction validates age-independent character-world structure using the latest selected birth date. The real campaign start date remains authoritative when `WorldState` is created, because `character_world` does not itself own a scenario date.
 
-Automated coverage uses only fictional, test-owned content: four characters, one family, two independent households, one parent/child relationship, five identity-definition kinds, and Korean/English names. No historical assertion or shipped content was added.
+Automated coverage uses only fictional, test-owned content: four characters, one family, two independent households, typed parentage/custody, all six identity-definition kinds, structured/courtesy names, and Korean/English localization. No historical assertion or shipped content was added.
 
 ## Persistence and compatibility
 
-`WorldSnapshot` contract version remains 1 and now has an additive default-empty `Characters` property. Newly captured state registers `simulation.characters@1`, and `SimulationChecksum` canonicalizes the character snapshot.
+`WorldSnapshot` contract version remains 1 through additive subsystem properties. Newly captured state registers `simulation.characters@2`, and `SimulationChecksum` canonicalizes every character descriptor, condition, and typed-link field.
 
-`SaveEnvelope` schema 4 adds the character subsystem. Current saves must explicitly contain the complete character snapshot plus `simulation.characters@1`; omission, null, partial state, and a missing version are rejected before DTO deserialization. The raw-shape boundary also rejects malformed required envelope/world data. For legacy schemas it validates common canonicalized snapshot collections before deserialization, keeps geography absent in schemas 1 and 2, requires the schema-3 geography shape, and keeps character state absent through schema 3. Explicit-null legacy data therefore becomes a controlled compatibility diagnostic, allowing autosave recovery to continue to the newest valid generation without changing any candidate source. Schema 3 is authenticated against its repository-history-backed checksum contract; schema-1/2 fixtures and checksum shapes are synthetic/inferred from migration contracts and remain field-unverified. Migration 3→4 rejects pre-existing character data, injects `CharacterWorldSnapshot.Empty`, registers the system version, and computes the schema-4 checksum. The full 1→2→3→4 chain remains forward-only and never rewrites the source save. Character validation and recognized nonfatal DTO-construction failures are normalized to save-compatibility diagnostics. A legacy standalone version-1 `WorldSnapshot` may omit `simulation.characters@1` only when its complete character snapshot is valid and empty; partial-null and nonempty cases fail deliberately, and capturing restored empty state writes the current system version.
+Current `SaveEnvelope` schema 6 requires a complete v2 character snapshot, `simulation.characters@2`, and the existing v1 relationship snapshot/version. Omission, null, partial state, unsupported nested versions, and a missing system version are rejected before DTO use. Schema 5 is authenticated against a literal history-backed nonempty fixture before 5→6 adds structured names, legacy-unknown origin, empty flaws, default condition, and `UnspecifiedLegacy` links. Schema-5 relationships and all retained character/family/household data are preserved. Injected v2 fields are forbidden in the historical v1 shape, and migration never rewrites the source file. The complete 1→2→3→4→5→6 chain remains forward-only; schema-1/2 field compatibility remains explicitly unverified. Legacy standalone snapshots may omit/currently predate the character system only when their complete character state is valid and empty; restored captures write v2.
 
 ## Verification
 
@@ -92,6 +97,12 @@ The pre-remediation candidate remains disqualified because `GeographyTests.Pathf
 - `git lfs fsck`.
 
 These are local macOS results from an uncommitted tree, not clean-checkout, same-revision hosted, or cross-platform evidence. Nothing was staged or committed. Subsequent exact-SHA hosted macOS arm64/Windows x64 verification passed at `eaa3aaf3a0687a231d2a3441e5be4954e905e9ea`; that later evidence does not relabel the historical working-tree results. Physical Windows packaged-save evidence remains an M4 gate, and production signing remains an SP-15 gate. No push or hosted action was authorized.
+
+## SP-04C0 local verification
+
+The current uncommitted C0 tree passed `./scripts/validate.sh` and `./scripts/test.sh Release`: 204 Simulation.Core, 71 Game.Content, 6 Game.Application, and 18 repository tests. Focused coverage includes 41 character tests and 82 save/recovery tests. Validation retained 1,295 records, 2,820 translations, and registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. The schema-5 frozen checksum is `4ef74d59d48b7415cc86a40eca98ca3ac3fdafe5c0a5047bdb3b1ff3d5f3ea14`; the current ten-year/1,000-entity soak checksum is `37504979fcaa25789cc9e12af7084c351d115c1195054e062ca7f7ea6ba943dd`.
+
+On local Apple Silicon macOS, the v2 fixture constructed 1,000 characters and one household in 31.241 ms, then performed 1,000 profile lookups and one household lookup in 6.811 ms. The test asserts shape and correctness, not a wall-clock threshold. `git diff --check` and `git lfs fsck` also passed. These results are local working-tree evidence only: no staging, commit, clean-checkout, hosted macOS/Windows, physical Windows, signing, or release action was authorized or performed. The complete C0 verification matrix and package limits are recorded in the [SP-04 plan](plans/SP-04-characters-family-marriage-succession.md).
 
 ## SP-04B-L relationship and memory kernel
 

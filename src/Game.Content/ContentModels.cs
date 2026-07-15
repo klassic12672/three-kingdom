@@ -176,4 +176,20 @@ public sealed record NormalizedContentRecord(
     IReadOnlyList<EntityId> SourceIds,
     IReadOnlyList<EntityId> LocalizationKeys,
     bool ReleaseMarked,
+    EntityId OwningPackId,
+    IReadOnlyList<EntityId> AppliedOverridePackIds,
     System.Text.Json.JsonElement Data);
+
+internal sealed record ContentRecordLineage(
+    EntityId OwningPackId,
+    IReadOnlyList<EntityId> AppliedOverridePackIds)
+{
+    public ContentRecordLineage AddOverride(EntityId packId) => this with
+    {
+        AppliedOverridePackIds = AppliedOverridePackIds
+            .Append(packId)
+            .Distinct()
+            .Order()
+            .ToArray(),
+    };
+}

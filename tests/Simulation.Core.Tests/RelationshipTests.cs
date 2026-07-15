@@ -1221,20 +1221,31 @@ public sealed class RelationshipTests
         IReadOnlyDictionary<EntityId, CampaignDate> births,
         CampaignDate currentDate)
     {
-        CharacterDefinition[] definitions = ids.Select(id => new CharacterDefinition(
-            CharacterContractVersions.Definition,
-            id,
-            new EntityId($"loc:{id.Value.Replace(':', '/')}/name"),
-            births.TryGetValue(id, out CampaignDate birth) ? birth : new CampaignDate(150, 1, 1),
-            [],
-            [],
-            [],
-            [],
-            [])).ToArray();
+        CharacterDefinition[] definitions = ids.Select(id =>
+        {
+            EntityId nameKey = new($"loc:{id.Value.Replace(':', '/')}/name");
+            return new CharacterDefinition(
+                CharacterContractVersions.Definition,
+                id,
+                nameKey,
+                births.TryGetValue(id, out CampaignDate birth) ? birth : new CampaignDate(150, 1, 1),
+                [],
+                [],
+                [],
+                [],
+                [],
+                new StructuredCharacterName(nameKey, null),
+                CharacterContentOrigin.LegacyUnknown(id),
+                null,
+                null,
+                []);
+        }).ToArray();
         CharacterState[] states = ids.Select(id => new CharacterState(
             CharacterContractVersions.State,
             id,
-            [])).ToArray();
+            [],
+            [],
+            CharacterConditionState.Default)).ToArray();
         return new CharacterWorldState(
             new CharacterWorldSnapshot(
                 CharacterContractVersions.Snapshot,
