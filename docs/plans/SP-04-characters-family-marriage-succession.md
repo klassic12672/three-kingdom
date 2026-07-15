@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2 exact-SHA hosted verified; later packages pending |
+| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2 exact-SHA hosted verified; SP-04C3 local pass/hosted pending; later packages pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -263,6 +263,43 @@ The implementation remained uncommitted at this local documentation point. Those
 Subsequent exact-SHA evidence does not relabel the historical local measurements. Accepted revision `e2d9590afc409da30aef86226a8d90a0023fbda3` passed hosted macOS arm64 and Windows x64 validation, two complete 280/71/6/18 suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and static artifact verification. See the [SP-04C2 exact-SHA report](../evidence/SP-04C2-EXACT-SHA-e2d9590.md). Physical Windows remains an M4 gate, signing/Steam remain SP-15 gates, and the full SP-04 three-second budget remains unmet.
 
 Opaque character-owned estate holdings are reserved for SP-04C3 so SP-04 can establish inheritance and succession inputs without circularly importing SP-06. SP-06 will later own geography, production, taxation, land grants, and estate economic value. Household/family/faction/court treasuries, debt, currency, commodities, income, spending, prices, relationship effects, marriage/romance, lifecycle, inheritance/succession, content, UI, battle, and AI remain outside C2. Every full SP-04 acceptance criterion below therefore remains unchecked, and SP-05 remains blocked.
+
+## Active package: SP-04C3 opaque character-estate holdings
+
+SP-04C3 implements the estate input half of workstream 3 as a separate version-1, default-empty, state-only subsystem registered as `simulation.character_estate_holdings@1`. SP-01/SP-02/SP-03 and SP-04A/B/C0/C1/C2 dependencies are satisfied. Independent architecture review approved the separate boundary without an ADR because it preserves deterministic pure-.NET ownership, stable namespaced identity, forward-only persistence, and SP-06's ownership of physical/economic estate meaning.
+
+Each `CharacterEstateHoldingState` contains only `EstateId` and `OwnerCharacterId`. `estate:` IDs are globally unique and independent of the owner; separately reconstructed ownership can therefore change without changing estate identity. Persisted owners must be existing characters born by the snapshot date, but dead, incapacitated, captive, or hostage owners remain valid. Holdings are canonical by estate ID, queries and snapshots are defensive, and the accepted workload bound is exactly 64 holdings per character. SP-04F must handle a succession candidate that would exceed this bound explicitly and atomically. C3 adds no command/event, mutator, transfer history, automatic cleanup, or inheritance behavior.
+
+Save schema 9 requires the complete estate snapshot and system registration. The frozen literal 319,764-byte schema-8 fixture was generated from the exact accepted SP-04C2 source/API at `e2d9590afc409da30aef86226a8d90a0023fbda3`; its authoritative stored checksum is `ba485b0efc67e7cff38cf6de4b4536dbda2191ee87f5577ff1ee2d1d0031424f`, and its file SHA-256 is `6419cd00b10697fe04b2f1e32bca8cfdc59b3cfb02f50091113e8735afa55428`. It retains two characters, nonempty relationship/career state, two wealth accounts, 128 ledger entries, two folded histories, and 65 resource command/event diagnostics. The authenticated 8→9 migration rejects injected future estate state, adds only the empty estate snapshot/system version, preserves the complete pre-C3 snapshot, envelope metadata, manifests, diagnostics, and source bytes, then computes the schema-9 checksum.
+
+### SP-04C3 verification matrix
+
+| ID | Observable package criterion | Required evidence | Closeout classification |
+|---|---|---|---|
+| C301 | M2/SP-04 are Active; dependencies through accepted C2 `e2d9590` are satisfied; the separate C3 boundary requires no ADR | Source-of-truth and architecture review | Local pass |
+| C302 | Version-1 snapshot/state/query contracts contain only owner-independent `EstateId` and `OwnerCharacterId`; empty is the default | Contract and API tests | Local pass |
+| C303 | Estate IDs are valid, `estate:`-namespaced, globally unique, immutable across owner replacement, and never silently reused | Invalid-ID, namespace, duplicate, and stable-identity tests | Local pass |
+| C304 | Owners exist and are born by the snapshot date; dead/incapacitated/captive owners remain valid; 64 succeeds and 65 fails | Lifecycle, malformed-owner, and boundary tests | Local pass; F owns succession-overflow resolution |
+| C305 | Dead-owner holdings persist and remain queryable across restore/save/load until later inheritance resolution | Nonempty current-schema round trip | Local pass |
+| C306 | Input order cannot affect snapshot/JSON/checksum; owner or estate changes affect checksum; returned collections are defensive | Shuffle, checksum, copy, and reconstruction tests | Local pass |
+| C307 | C3 exposes no runtime mutation, command/event, ownership history, or automatic dead-owner cleanup | Reflection/API and complete-diff review | Local pass |
+| C308 | Schema 9 requires complete estate state and exactly one compatible system registration; nonempty checksum/restore/save/load works | Raw-shape, standalone, and round-trip tests | Local pass |
+| C309 | Literal exact-C2 schema 8 authenticates before migration and preserves the complete pre-C3 snapshot, envelope metadata, diagnostics, and source bytes | Frozen fixture, full normalized equality, and byte-preservation tests | Local pass; schema-1/2 field compatibility remains unverified |
+| C310 | Schema 8 rejects injected C3 data; current missing/partial/duplicate/dangling/wrong-namespace estate data fails without changing source bytes | Future-injection, semantic-corruption, and recovery tests | Local pass |
+| C311 | The complete 1→9 migration chain and frozen historical checksums remain valid | Historical migration/corruption tests | Local pass |
+| C312 | Stable owner-independent estate identities support later F ownership changes while leaving all physical/economic meaning to SP-06 | Contract seam and architecture review | Local pass |
+| C313 | No geography, acreage, control, grants, claims, value, yield, rent, tax, production, treasury, household/family/faction/court ownership, content, UI, battle, or AI enters C3 | Complete diff and dependency review | Local pass |
+| C314 | A 1,000-character/8,000-holding fixture records construction, owner queries, snapshot, checksum, save, and load without a brittle threshold | Raw local Apple Silicon macOS measurement | Local macOS pass; full three-second SP-04 budget remains unmet/unproven |
+| C315 | Repository validation, complete tests, touched-file formatting, diff, and LFS gates pass | Local repository gates | Local pass |
+| C316 | The same accepted revision passes deterministic validation and complete suites on hosted macOS arm64 and Windows x64 | Exact-SHA clean-checkout hosted evidence | Pending |
+
+The final focused 154-test slice passed. On Apple Silicon macOS, the 1,000-character/8,000-holding fixture measured 68.607 ms construction, 751.881 ms for 1,000 owner queries plus snapshot JSON serialization, 21.056 ms checksum, 325.787 ms save, and 210.018 ms load. The estate JSON contained 1,016,034 characters; the compressed save was 37,677 bytes with checksum `c033184371cf80b022a174acc5fa799345fa5eca9a89feec90f75b8a4c5bc83a`. These raw measurements carry correctness assertions but no wall-clock threshold and do not satisfy or waive the full SP-04 three-second budget.
+
+Adversarial verification identified a read-only owner-query eligibility coupling and missing complete checksum/migration assertions. The final tree applies birth eligibility only while validating persisted owners, proves shuffled and changed owner/identity checksum behavior, rejects semantic save corruption without changing source bytes, and compares the complete normalized pre-C3 world during migration. Architecture and verification re-review report no open code finding.
+
+Local integrated verification on 2026-07-15 used Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retained 1,295 records and 2,820 translations with registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` built with zero warnings and passed 312 Simulation.Core, 71 Game.Content, 6 Game.Application, and 18 repository tests. The ten-year/1,000-entity headless soak completed with checksum `798a96c57375fb3012c55175195430604a66a658fdf786d7fd0f0ba4e96cce9b`. Touched-file formatting, `git diff --check`, and `git lfs fsck` passed. These results remain local package evidence until the immutable accepted revision passes hosted macOS arm64 and Windows x64.
+
+Physical/economic estate records, geography, production, taxation, grants, marriage/romance, lifecycle mutation, inheritance/succession resolution, content, UI, battle, and AI remain deferred. Every full SP-04 acceptance criterion below remains unchecked, the full three-second budget remains unmet, and SP-05 remains blocked.
 
 ## Edge cases and failure handling
 

@@ -18,7 +18,7 @@ public readonly record struct SimulationChecksum(string Value)
 
     internal static SimulationChecksum ComputeForSaveSchema(WorldSnapshot snapshot, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 7)
+        if (schemaVersion is < 1 or > 8)
         {
             throw new ArgumentOutOfRangeException(nameof(schemaVersion));
         }
@@ -27,9 +27,15 @@ public readonly record struct SimulationChecksum(string Value)
         // Schemas 1-4 predate relationships; schemas 1-3 predate characters;
         // schemas 1-2 predate geography. Schemas 4-5 used character contract v1,
         // schemas 5-6 used relationship contract v1, and all historical schemas
-        // schemas 1-6 predate the separate career world, and all historical
-        // schemas predate the separate character-resource world.
-        canonical.Remove("characterResources");
+        // schemas 1-6 predate the separate career world, schemas 1-7 predate
+        // character resources, and all historical schemas predate the separate
+        // character-estate-holding world.
+        canonical.Remove("characterEstateHoldings");
+        if (schemaVersion < 8)
+        {
+            canonical.Remove("characterResources");
+        }
+
         if (schemaVersion < 7)
         {
             canonical.Remove("careers");
@@ -161,9 +167,16 @@ public readonly record struct SimulationChecksum(string Value)
             {
                 versions.RemoveAt(index);
             }
+            else if (schemaVersion < 8
+                && StringComparer.Ordinal.Equals(
+                    systemId,
+                    CharacterResourceSystem.SystemId))
+            {
+                versions.RemoveAt(index);
+            }
             else if (StringComparer.Ordinal.Equals(
                 systemId,
-                CharacterResourceSystem.SystemId))
+                CharacterEstateHoldingSystem.SystemId))
             {
                 versions.RemoveAt(index);
             }
@@ -189,6 +202,7 @@ public readonly record struct SimulationChecksum(string Value)
         Relationships = CanonicalizeRelationships(snapshot.Relationships),
         Careers = snapshot.Careers.Canonicalize(),
         CharacterResources = snapshot.CharacterResources.Canonicalize(),
+        CharacterEstateHoldings = snapshot.CharacterEstateHoldings.Canonicalize(),
     };
 
     private static RelationshipWorldSnapshot CanonicalizeRelationships(RelationshipWorldSnapshot snapshot) =>

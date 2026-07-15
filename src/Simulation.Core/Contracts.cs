@@ -195,4 +195,7 @@ public sealed record WorldSnapshot(
 
     public CharacterResourceWorldSnapshot CharacterResources { get; init; } =
         CharacterResourceWorldSnapshot.Empty;
+
+    public CharacterEstateHoldingWorldSnapshot CharacterEstateHoldings { get; init; } =
+        CharacterEstateHoldingWorldSnapshot.Empty;
 }

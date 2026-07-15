@@ -18,6 +18,8 @@ public interface IWorldQuery
 
     IAuthoritativeCharacterResourceWorldQuery CharacterResources { get; }
 
+    IAuthoritativeCharacterEstateHoldingWorldQuery CharacterEstateHoldings { get; }
+
     bool TryGetEntity(EntityId id, [NotNullWhen(true)] out SyntheticEntitySnapshot? entity);
 }
 
@@ -33,6 +35,7 @@ public sealed class WorldState : IWorldQuery
         new("simulation.relationships", RelationshipContractVersions.Snapshot),
         new("simulation.character_careers", CareerContractVersions.Snapshot),
         new(CharacterResourceSystem.SystemId, CharacterResourceSystem.Version),
+        new(CharacterEstateHoldingSystem.SystemId, CharacterEstateHoldingSystem.Version),
     ];
 
     private readonly SortedDictionary<EntityId, SyntheticEntitySnapshot> entities = [];
@@ -50,7 +53,8 @@ public sealed class WorldState : IWorldQuery
         CharacterWorldSnapshot characters,
         RelationshipWorldSnapshot relationships,
         CareerWorldSnapshot careers,
-        CharacterResourceWorldSnapshot characterResources)
+        CharacterResourceWorldSnapshot characterResources,
+        CharacterEstateHoldingWorldSnapshot characterEstateHoldings)
     {
         if (!calendar.Date.IsValid || calendar.TurnIndex < 0)
         {
@@ -68,6 +72,10 @@ public sealed class WorldState : IWorldQuery
             characterResources,
             Characters,
             calendar);
+        CharacterEstateHoldings = new CharacterEstateHoldingWorldState(
+            characterEstateHoldings,
+            Characters,
+            calendar.Date);
     }
 
     public CampaignCalendar Calendar { get; private set; }
@@ -86,6 +94,8 @@ public sealed class WorldState : IWorldQuery
 
     public CharacterResourceWorldState CharacterResources { get; }
 
+    public CharacterEstateHoldingWorldState CharacterEstateHoldings { get; }
+
     IGeographicWorldQuery IWorldQuery.Geography => Geography;
 
     IAuthoritativeCharacterWorldQuery IWorldQuery.Characters => Characters;
@@ -95,6 +105,9 @@ public sealed class WorldState : IWorldQuery
     IAuthoritativeCareerWorldQuery IWorldQuery.Careers => Careers;
 
     IAuthoritativeCharacterResourceWorldQuery IWorldQuery.CharacterResources => CharacterResources;
+
+    IAuthoritativeCharacterEstateHoldingWorldQuery IWorldQuery.CharacterEstateHoldings =>
+        CharacterEstateHoldings;
 
     public IReadOnlyList<SyntheticEntitySnapshot> Entities => entities.Values.Select(CloneEntity).ToArray();
 
@@ -110,7 +123,8 @@ public sealed class WorldState : IWorldQuery
             CharacterWorldSnapshot.Empty,
             RelationshipWorldSnapshot.Empty,
             CareerWorldSnapshot.Empty,
-            CharacterResourceWorldSnapshot.Empty);
+            CharacterResourceWorldSnapshot.Empty,
+            CharacterEstateHoldingWorldSnapshot.Empty);
 
     public static WorldState Create(
         CampaignDate startDate,
@@ -125,7 +139,8 @@ public sealed class WorldState : IWorldQuery
             characters,
             RelationshipWorldSnapshot.Empty,
             CareerWorldSnapshot.Empty,
-            CharacterResourceWorldSnapshot.Empty);
+            CharacterResourceWorldSnapshot.Empty,
+            CharacterEstateHoldingWorldSnapshot.Empty);
 
     public static WorldState Create(
         CampaignDate startDate,
@@ -141,7 +156,8 @@ public sealed class WorldState : IWorldQuery
             characters,
             relationships,
             CareerWorldSnapshot.Empty,
-            CharacterResourceWorldSnapshot.Empty);
+            CharacterResourceWorldSnapshot.Empty,
+            CharacterEstateHoldingWorldSnapshot.Empty);
 
     public static WorldState Create(
         CampaignDate startDate,
@@ -158,7 +174,8 @@ public sealed class WorldState : IWorldQuery
             characters,
             relationships,
             careers,
-            CharacterResourceWorldSnapshot.Empty);
+            CharacterResourceWorldSnapshot.Empty,
+            CharacterEstateHoldingWorldSnapshot.Empty);
 
     public static WorldState Create(
         CampaignDate startDate,
@@ -168,7 +185,27 @@ public sealed class WorldState : IWorldQuery
         CharacterWorldSnapshot characters,
         RelationshipWorldSnapshot relationships,
         CareerWorldSnapshot careers,
-        CharacterResourceWorldSnapshot characterResources)
+        CharacterResourceWorldSnapshot characterResources) => Create(
+            startDate,
+            seed,
+            initialEntities,
+            geography,
+            characters,
+            relationships,
+            careers,
+            characterResources,
+            CharacterEstateHoldingWorldSnapshot.Empty);
+
+    public static WorldState Create(
+        CampaignDate startDate,
+        ulong seed,
+        IEnumerable<SyntheticEntitySnapshot> initialEntities,
+        GeographicWorldSnapshot geography,
+        CharacterWorldSnapshot characters,
+        RelationshipWorldSnapshot relationships,
+        CareerWorldSnapshot careers,
+        CharacterResourceWorldSnapshot characterResources,
+        CharacterEstateHoldingWorldSnapshot characterEstateHoldings)
     {
         WorldState world = new(
             new CampaignCalendar(startDate, 0),
@@ -178,7 +215,8 @@ public sealed class WorldState : IWorldQuery
             characters,
             relationships,
             careers,
-            characterResources);
+            characterResources,
+            characterEstateHoldings);
         foreach (SyntheticEntitySnapshot entity in initialEntities.OrderBy(item => item.Id))
         {
             SyntheticEntitySnapshot canonical = ValidateEntity(entity).Canonicalize();
@@ -203,6 +241,7 @@ public sealed class WorldState : IWorldQuery
             || snapshot.Relationships is null
             || snapshot.Careers is null
             || snapshot.CharacterResources is null
+            || snapshot.CharacterEstateHoldings is null
             || snapshot.Entities.Any(entity => entity is null)
             || snapshot.PendingCommands.Any(command => command is null))
         {
@@ -214,12 +253,13 @@ public sealed class WorldState : IWorldQuery
             throw new SaveCompatibilityException($"Unsupported world snapshot contract version {snapshot.ContractVersion}.");
         }
 
-        (CharacterWorldSnapshot characters, CareerWorldSnapshot careers, CharacterResourceWorldSnapshot characterResources) = ValidateSystemVersions(
+        (CharacterWorldSnapshot characters, CareerWorldSnapshot careers, CharacterResourceWorldSnapshot characterResources, CharacterEstateHoldingWorldSnapshot characterEstateHoldings) = ValidateSystemVersions(
             snapshot.SystemVersions,
             snapshot.Characters,
             snapshot.Relationships,
             snapshot.Careers,
-            snapshot.CharacterResources);
+            snapshot.CharacterResources,
+            snapshot.CharacterEstateHoldings);
         ValidatePendingCommands(snapshot.PendingCommands);
 
         WorldState world = new(
@@ -230,7 +270,8 @@ public sealed class WorldState : IWorldQuery
             characters,
             snapshot.Relationships,
             careers,
-            characterResources)
+            characterResources,
+            characterEstateHoldings)
         {
             lastEventDate = snapshot.LastEventDate,
             lastEventPhase = snapshot.LastEventPhase,
@@ -281,6 +322,7 @@ public sealed class WorldState : IWorldQuery
         Relationships = Relationships.CaptureSnapshot(),
         Careers = Careers.CaptureSnapshot(),
         CharacterResources = CharacterResources.CaptureSnapshot(),
+        CharacterEstateHoldings = CharacterEstateHoldings.CaptureSnapshot(),
     };
 
     internal void Enqueue(CampaignCommand command)
@@ -697,12 +739,14 @@ public sealed class WorldState : IWorldQuery
     private static (
         CharacterWorldSnapshot Characters,
         CareerWorldSnapshot Careers,
-        CharacterResourceWorldSnapshot CharacterResources) ValidateSystemVersions(
+        CharacterResourceWorldSnapshot CharacterResources,
+        CharacterEstateHoldingWorldSnapshot CharacterEstateHoldings) ValidateSystemVersions(
         IReadOnlyList<SystemVersion> versions,
         CharacterWorldSnapshot characters,
         RelationshipWorldSnapshot relationships,
         CareerWorldSnapshot careers,
-        CharacterResourceWorldSnapshot characterResources)
+        CharacterResourceWorldSnapshot characterResources,
+        CharacterEstateHoldingWorldSnapshot characterEstateHoldings)
     {
         if (versions is null || versions.Any(version => version is null))
         {
@@ -729,11 +773,17 @@ public sealed class WorldState : IWorldQuery
             throw new SaveCompatibilityException("Snapshot character-resource state is missing.");
         }
 
+        if (characterEstateHoldings is null)
+        {
+            throw new SaveCompatibilityException("Snapshot character-estate-holding state is missing.");
+        }
+
         string[] expectedCore = CurrentSystemVersions
             .Where(version => version.SystemId is not "simulation.characters"
                 and not "simulation.relationships"
                 and not "simulation.character_careers"
-                and not CharacterResourceSystem.SystemId)
+                and not CharacterResourceSystem.SystemId
+                and not CharacterEstateHoldingSystem.SystemId)
             .Select(version => $"{version.SystemId}@{version.Version}")
             .Order(StringComparer.Ordinal)
             .ToArray();
@@ -741,7 +791,8 @@ public sealed class WorldState : IWorldQuery
             .Where(version => version.SystemId is not "simulation.characters"
                 and not "simulation.relationships"
                 and not "simulation.character_careers"
-                and not CharacterResourceSystem.SystemId)
+                and not CharacterResourceSystem.SystemId
+                and not CharacterEstateHoldingSystem.SystemId)
             .Select(version => $"{version.SystemId}@{version.Version}")
             .Order(StringComparer.Ordinal)
             .ToArray();
@@ -870,7 +921,45 @@ public sealed class WorldState : IWorldQuery
                 $"Snapshot character-resource system version is incompatible. Expected '{CharacterResourceSystem.SystemId}@{CharacterResourceSystem.Version}'.");
         }
 
-        return (normalizedCharacters, normalizedCareers, normalizedCharacterResources);
+        SystemVersion[] characterEstateHoldingVersions = versions
+            .Where(version => StringComparer.Ordinal.Equals(
+                version.SystemId,
+                CharacterEstateHoldingSystem.SystemId))
+            .ToArray();
+        CharacterEstateHoldingWorldSnapshot normalizedCharacterEstateHoldings;
+        if (characterEstateHoldingVersions.Length == 1
+            && characterEstateHoldingVersions[0].Version == CharacterEstateHoldingSystem.Version)
+        {
+            if (characterEstateHoldings.ContractVersion
+                != CharacterEstateHoldingContractVersions.Snapshot)
+            {
+                throw new SaveCompatibilityException(
+                    $"Snapshot declares '{CharacterEstateHoldingSystem.SystemId}@{CharacterEstateHoldingSystem.Version}' but contains character-estate-holding contract {characterEstateHoldings.ContractVersion}.");
+            }
+
+            normalizedCharacterEstateHoldings = characterEstateHoldings;
+        }
+        else if (characterEstateHoldingVersions.Length == 0)
+        {
+            if (!IsCompleteEmptyCharacterEstateHoldingSnapshot(characterEstateHoldings))
+            {
+                throw new SaveCompatibilityException(
+                    "A legacy snapshot without current character-estate-holding data must contain a complete, valid, empty character-estate-holding snapshot.");
+            }
+
+            normalizedCharacterEstateHoldings = CharacterEstateHoldingWorldSnapshot.Empty;
+        }
+        else
+        {
+            throw new SaveCompatibilityException(
+                $"Snapshot character-estate-holding system version is incompatible. Expected '{CharacterEstateHoldingSystem.SystemId}@{CharacterEstateHoldingSystem.Version}'.");
+        }
+
+        return (
+            normalizedCharacters,
+            normalizedCareers,
+            normalizedCharacterResources,
+            normalizedCharacterEstateHoldings);
     }
 
     private static bool IsCompleteEmptyCharacterSnapshot(CharacterWorldSnapshot characters) =>
@@ -903,6 +992,12 @@ public sealed class WorldState : IWorldQuery
         && characterResources.Accounts is { Count: 0 }
         && characterResources.LedgerEntries is { Count: 0 }
         && characterResources.History is { Count: 0 };
+
+    private static bool IsCompleteEmptyCharacterEstateHoldingSnapshot(
+        CharacterEstateHoldingWorldSnapshot characterEstateHoldings) =>
+        characterEstateHoldings.ContractVersion
+            == CharacterEstateHoldingContractVersions.Snapshot
+        && characterEstateHoldings.Holdings is { Count: 0 };
 
     private static void ValidatePendingCommands(IReadOnlyList<CampaignCommand> commands)
     {
