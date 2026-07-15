@@ -40,6 +40,7 @@ public sealed class SaveSchemaRegistry
             new SaveMigrationV18ToV19(),
             new SaveMigrationV19ToV20(),
             new SaveMigrationV20ToV21(),
+            new SaveMigrationV21ToV22(),
         ]).ToArray();
         if (registered.Any(item => item.ToSchemaVersion != item.FromSchemaVersion + 1))
         {
@@ -109,7 +110,7 @@ public sealed class SaveSchemaRegistry
 
     internal static void ValidateHistoricalSourceChecksum(JsonObject source, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 20)
+        if (schemaVersion is < 1 or > 21)
         {
             throw new SaveCompatibilityException($"Save schema {schemaVersion} has no historical checksum contract.");
         }
@@ -254,7 +255,7 @@ public sealed class SaveSchemaRegistry
                 $"Schema {schemaVersion} unexpectedly contains schema 10 character-marriage data.");
         }
 
-        if (schemaVersion is >= 10 and <= 20)
+        if (schemaVersion is >= 10 and <= 21)
         {
             ValidateCharacterMarriageSnapshotShape(
                 RequireHistoricalObject(
@@ -363,9 +364,13 @@ public sealed class SaveSchemaRegistry
             {
                 RejectE6Discriminators(source, "save payload");
             }
-            else
+            else if (schemaVersion == 20)
             {
                 RejectF0Discriminators(source, "save payload");
+            }
+            else
+            {
+                RejectF1Discriminators(source, "save payload");
             }
         }
 
@@ -757,6 +762,7 @@ public sealed class SaveSchemaRegistry
         ValidateCharacterPregnancySnapshotShape(
             characterPregnancies,
             "Current save schema");
+        ValidateCurrentCharacterDeathDiagnostics(source["diagnosticEvents"]);
 
         if (snapshot["systemVersions"] is not JsonArray systemVersions
             || !systemVersions.Any(IsCurrentCharacterSystemVersion))
@@ -807,6 +813,53 @@ public sealed class SaveSchemaRegistry
                 $"Current save schema is missing required '{CharacterPregnancySystem.SystemId}@{CharacterPregnancySystem.Version}' system-version data.");
         }
     }
+
+    private static void ValidateCurrentCharacterDeathDiagnostics(JsonNode? node)
+    {
+        if (node is JsonArray array)
+        {
+            foreach (JsonNode? item in array)
+            {
+                ValidateCurrentCharacterDeathDiagnostics(item);
+            }
+
+            return;
+        }
+
+        if (node is not JsonObject value)
+        {
+            return;
+        }
+
+        if (value["$type"]?.GetValue<string>() == "character_death_resolved.v1")
+        {
+            if (value["death"] is not JsonObject death
+                || !HasVersion(death, CharacterConditionContractVersions.Death)
+                || death["careerChanges"] is not JsonObject careerChanges
+                || !HasVersion(careerChanges, CareerContractVersions.DeathChange)
+                || careerChanges["invalidatedProposals"] is not JsonArray invalidatedProposals
+                || careerChanges["endedRetinueMemberships"] is not JsonArray endedMemberships
+                || careerChanges["endedPatronageBonds"] is not JsonArray endedBonds
+                || careerChanges["endedEmploymentTenures"] is not JsonArray endedTenures
+                || !ContainsOnlyCurrentCareerStateRecords(invalidatedProposals)
+                || !ContainsOnlyCurrentCareerStateRecords(endedMemberships)
+                || !ContainsOnlyCurrentCareerStateRecords(endedBonds)
+                || !ContainsOnlyCurrentCareerStateRecords(endedTenures))
+            {
+                throw new SaveCompatibilityException(
+                    "Current save schema contains incomplete or unsupported character-career death diagnostics.");
+            }
+        }
+
+        foreach ((_, JsonNode? child) in value)
+        {
+            ValidateCurrentCharacterDeathDiagnostics(child);
+        }
+    }
+
+    private static bool ContainsOnlyCurrentCareerStateRecords(JsonArray records) =>
+        records.All(item => item is JsonObject record
+            && HasVersion(record, CareerContractVersions.State));
 
     private static void ValidateCharacterPregnancySnapshotShape(
         JsonObject characterPregnancies,
@@ -1972,6 +2025,65 @@ public sealed class SaveSchemaRegistry
             throw new SaveCompatibilityException(
                 $"Save schema 20 unexpectedly contains schema 21 character-death data in {description}.");
         }
+    }
+
+    private static void RejectF1Discriminators(JsonNode node, string description)
+    {
+        if (ContainsF1PropertyOrVersion(node) || ContainsF1CareerEndReason(node))
+        {
+            throw new SaveCompatibilityException(
+                $"Save schema 21 unexpectedly contains schema 22 career-death data in {description}.");
+        }
+    }
+
+    private static bool ContainsF1PropertyOrVersion(JsonNode? node)
+    {
+        if (node is JsonObject value)
+        {
+            if (value.ContainsKey("careerChanges")
+                || value.ContainsKey("endedRetinueMemberships")
+                || value.ContainsKey("endedPatronageBonds")
+                || value.ContainsKey("endedEmploymentTenures")
+                || value["$type"]?.GetValue<string>() == "character_death_resolved.v1"
+                    && value["death"] is JsonObject death
+                    && (death["contractVersion"]?.GetValue<int>() != 1
+                        || death.ContainsKey("invalidatedProposals")))
+            {
+                return true;
+            }
+
+            return value.Any(property => ContainsF1PropertyOrVersion(property.Value));
+        }
+
+        return node is JsonArray array && array.Any(ContainsF1PropertyOrVersion);
+    }
+
+    private static bool ContainsF1CareerEndReason(JsonNode? node)
+    {
+        if (node is JsonObject value)
+        {
+            if ((value.ContainsKey("membershipId")
+                    || value.ContainsKey("bondId")
+                    || value.ContainsKey("tenureId"))
+                && value["endReason"] is JsonValue reason
+                && (reason.TryGetValue(out int numeric)
+                        && numeric is >= (int)CareerServiceEndReason.LeaderDied
+                            and <= (int)CareerServiceEndReason.EmployerDied
+                    || reason.TryGetValue(out string? text)
+                        && text is "LeaderDied"
+                            or "MemberDied"
+                            or "PatronDied"
+                            or "BeneficiaryDied"
+                            or "EmployeeDied"
+                            or "EmployerDied"))
+            {
+                return true;
+            }
+
+            return value.Any(property => ContainsF1CareerEndReason(property.Value));
+        }
+
+        return node is JsonArray array && array.Any(ContainsF1CareerEndReason);
     }
 
     private static bool ContainsD1Discriminator(JsonNode? node)
@@ -3332,5 +3444,69 @@ public sealed class SaveMigrationV20ToV21 : ISaveMigration
         source["checksum"] = SimulationChecksum.Compute(snapshot).Value;
         source["schemaVersion"] = ToSchemaVersion;
         return source;
+    }
+}
+
+public sealed class SaveMigrationV21ToV22 : ISaveMigration
+{
+    public int FromSchemaVersion => 21;
+
+    public int ToSchemaVersion => 22;
+
+    public JsonObject Migrate(JsonObject source)
+    {
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(source, FromSchemaVersion);
+        UpgradeCharacterDeathChanges(source["diagnosticEvents"]);
+        WorldSnapshot snapshot = (source["snapshot"] as JsonObject)?.Deserialize<WorldSnapshot>(
+            SimulationJson.CreateOptions())
+            ?? throw new SaveCompatibilityException(
+                "Schema 21 save is missing its authoritative snapshot.");
+        source["checksum"] = SimulationChecksum.Compute(snapshot).Value;
+        source["schemaVersion"] = ToSchemaVersion;
+        return source;
+    }
+
+    private static void UpgradeCharacterDeathChanges(JsonNode? node)
+    {
+        if (node is JsonArray array)
+        {
+            foreach (JsonNode? item in array)
+            {
+                UpgradeCharacterDeathChanges(item);
+            }
+
+            return;
+        }
+
+        if (node is not JsonObject value)
+        {
+            return;
+        }
+
+        if (value["$type"]?.GetValue<string>() == "character_death_resolved.v1")
+        {
+            if (value["death"] is not JsonObject death
+                || death["contractVersion"]?.GetValue<int>() != 1
+                || death.ContainsKey("careerChanges"))
+            {
+                throw new SaveCompatibilityException(
+                    "Schema 21 character-death diagnostics contain unsupported death-change data.");
+            }
+
+            death["contractVersion"] = CharacterConditionContractVersions.Death;
+            death["careerChanges"] = new JsonObject
+            {
+                ["contractVersion"] = CareerContractVersions.DeathChange,
+                ["invalidatedProposals"] = new JsonArray(),
+                ["endedRetinueMemberships"] = new JsonArray(),
+                ["endedPatronageBonds"] = new JsonArray(),
+                ["endedEmploymentTenures"] = new JsonArray(),
+            };
+        }
+
+        foreach ((_, JsonNode? child) in value.ToArray())
+        {
+            UpgradeCharacterDeathChanges(child);
+        }
     }
 }

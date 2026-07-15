@@ -29,10 +29,10 @@ public sealed class CharacterDeathSchemaMigrationTests
 
         JsonObject migrated = new SaveSchemaRegistry().MigrateToCurrent(frozen);
 
-        Assert.Equal(21, migrated["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(SaveEnvelope.CurrentSchemaVersion, migrated["schemaVersion"]!.GetValue<int>());
         Assert.Equal(FrozenChecksum, migrated["checksum"]!.GetValue<string>());
         JsonObject expected = (JsonObject)original.DeepClone();
-        expected["schemaVersion"] = 21;
+        expected["schemaVersion"] = SaveEnvelope.CurrentSchemaVersion;
         Assert.True(JsonNode.DeepEquals(expected, migrated));
         Assert.True(JsonNode.DeepEquals(original, frozen));
         Assert.Equal(sourceBytes, File.ReadAllBytes(path));

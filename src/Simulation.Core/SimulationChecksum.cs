@@ -18,7 +18,7 @@ public readonly record struct SimulationChecksum(string Value)
 
     internal static SimulationChecksum ComputeForSaveSchema(WorldSnapshot snapshot, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 20)
+        if (schemaVersion is < 1 or > 21)
         {
             throw new ArgumentOutOfRangeException(nameof(schemaVersion));
         }
@@ -47,7 +47,9 @@ public readonly record struct SimulationChecksum(string Value)
         // Schema 19 is the exact E5 world shape and predates runtime
         // character-v3 education attainments. Schema 20 is the exact E6
         // world shape and differs from schema 21 only in registered public
-        // death vocabulary.
+        // death vocabulary. Schema 21 is the exact F0 world shape and differs
+        // from schema 22 only in embedded career-death closure evidence and
+        // death-specific career service-end vocabulary.
         if (schemaVersion < 18)
         {
             canonical.Remove("characterPregnancies");

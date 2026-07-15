@@ -688,6 +688,7 @@ public sealed class WorldState : IWorldQuery
             marriage.MarriagePlan,
             relationship,
             null,
+            null,
             null);
     }
 
@@ -729,6 +730,13 @@ public sealed class WorldState : IWorldQuery
             authoritativeTurnIndex,
             commandId,
             eventId);
+        CharacterCareerDeathPlan career = Careers.PrepareCharacterDeath(
+            action.CharacterId,
+            character.CharacterPlan.Candidate,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
         CharacterDeathChange death = new(
             CharacterConditionContractVersions.Death,
             CharacterConditionIds.DeriveDeathId(eventId, action.CharacterId),
@@ -736,6 +744,7 @@ public sealed class WorldState : IWorldQuery
             marriage.Changes,
             guardianship.EndedGuardianships,
             pregnancy.RemovedPregnancies,
+            career.Changes,
             resolutionDate,
             authoritativeTurnIndex,
             commandId,
@@ -750,7 +759,8 @@ public sealed class WorldState : IWorldQuery
             marriage.MarriagePlan,
             null,
             guardianship.GuardianshipPlan,
-            pregnancy.PregnancyPlan);
+            pregnancy.PregnancyPlan,
+            career.CareerPlan);
     }
 
     private void ValidateCharacterDeathBlockers(EntityId characterId)
@@ -775,33 +785,6 @@ public sealed class WorldState : IWorldQuery
                 $"Character-death target '{characterId}' is the current custodian of another character.");
         }
 
-        bool activeProposal = Careers.Proposals.Any(item =>
-            item.Status == CareerProposalStatus.Active
-            && (item.ProposerCharacterId == characterId
-                || item.RecipientCharacterId == characterId
-                || item.Principal.Kind == ServicePrincipalKind.Character
-                    && item.Principal.PrincipalId == characterId));
-        bool retainedRetinue = Careers.Retinues.Any(item =>
-            item.LeaderCharacterId == characterId);
-        bool activeMembership = Careers.RetinueMemberships.Any(item => item.IsActive
-            && (item.LeaderCharacterId == characterId
-                || item.MemberCharacterId == characterId));
-        bool activePatronage = Careers.PatronageBonds.Any(item => item.IsActive
-            && (item.PatronCharacterId == characterId
-                || item.BeneficiaryCharacterId == characterId));
-        bool activeEmployment = Careers.EmploymentTenures.Any(item => item.IsActive
-            && (item.EmployeeCharacterId == characterId
-                || item.Employer.Kind == ServicePrincipalKind.Character
-                    && item.Employer.PrincipalId == characterId));
-        if (activeProposal
-            || retainedRetinue
-            || activeMembership
-            || activePatronage
-            || activeEmployment)
-        {
-            throw new SimulationValidationException(
-                $"Character-death target '{characterId}' has an active or retained career/retinue obligation requiring a later lifecycle package.");
-        }
     }
 
     internal CharacterFamilyAggregatePlan PrepareCharacterFamilyAction(
@@ -1345,6 +1328,11 @@ public sealed class WorldState : IWorldQuery
             CharacterPregnancies.ApplyPrepared(aggregate.PregnancyPlan);
         }
 
+        if (aggregate.CareerPlan is not null)
+        {
+            Careers.ApplyPrepared(aggregate.CareerPlan);
+        }
+
         if (aggregate.RelationshipPlan is not null)
         {
             Relationships.ApplyPrepared(aggregate.RelationshipPlan);
@@ -1675,6 +1663,7 @@ public sealed class WorldState : IWorldQuery
                     && outcome.Death.MarriageChanges is not null
                     && outcome.Death.EndedGuardianships is not null
                     && outcome.Death.RemovedPregnancies is not null
+                    && outcome.Death.CareerChanges is not null
                     && outcome.Death.ConditionChange.CharacterId == action.CharacterId:
                 AddCharacterDeath(affected, outcome.Death, eventId);
                 break;
@@ -1700,7 +1689,7 @@ public sealed class WorldState : IWorldQuery
             if (payload.Outcome is CharacterDeathResolvedOutcome)
             {
                 throw new SimulationValidationException(
-                    "Character-death outcomes cannot contain a relationship consequence in SP-04F0.");
+                    "Character-death outcomes cannot contain a relationship consequence.");
             }
 
             if (eventId is not EntityId sourceEventId || !sourceEventId.IsValid)
@@ -1786,7 +1775,153 @@ public sealed class WorldState : IWorldQuery
             affected.Add(pregnancy.OtherBiologicalParentCharacterId);
             affected.Add(pregnancy.SourceUnionId);
         }
+
+
+        AddCharacterCareerDeathChanges(
+            affected,
+            death.CareerChanges,
+            change.CharacterId,
+            death.ResolutionDate,
+            death.ResolutionTurnIndex,
+            death.SourceCommandId);
     }
+
+    private static void AddCharacterCareerDeathChanges(
+        ISet<EntityId> affected,
+        CharacterCareerDeathChangeSet changes,
+        EntityId characterId,
+        CampaignDate resolutionDate,
+        long resolutionTurnIndex,
+        EntityId sourceCommandId)
+    {
+        if (changes.ContractVersion != CareerContractVersions.DeathChange
+            || changes.InvalidatedProposals is null
+            || changes.EndedRetinueMemberships is null
+            || changes.EndedPatronageBonds is null
+            || changes.EndedEmploymentTenures is null
+            || !IsCanonicalUnique(changes.InvalidatedProposals, item => item.ProposalId)
+            || !IsCanonicalUnique(changes.EndedRetinueMemberships, item => item.MembershipId)
+            || !IsCanonicalUnique(changes.EndedPatronageBonds, item => item.BondId)
+            || !IsCanonicalUnique(changes.EndedEmploymentTenures, item => item.TenureId))
+        {
+            throw new SimulationValidationException(
+                "Character-career death changes are incomplete, unsupported, or noncanonical.");
+        }
+
+        foreach (CareerProposalState proposal in changes.InvalidatedProposals)
+        {
+            if (proposal is null
+                || proposal.ContractVersion != CareerContractVersions.State
+                || proposal.Status != CareerProposalStatus.Invalidated
+                || proposal.ResolutionDate != resolutionDate
+                || proposal.ResolutionTurnIndex != resolutionTurnIndex
+                || proposal.ResolutionCommandId != sourceCommandId
+                || proposal.ProposerCharacterId != characterId
+                    && proposal.RecipientCharacterId != characterId
+                    && (proposal.Principal.Kind != ServicePrincipalKind.Character
+                        || proposal.Principal.PrincipalId != characterId))
+            {
+                throw new SimulationValidationException(
+                    "Character-death invalidated-proposal evidence is invalid.");
+            }
+
+            AddProposal(affected, proposal);
+        }
+
+        foreach (RetinueMembershipState membership in changes.EndedRetinueMemberships)
+        {
+            if (membership is null)
+            {
+                throw new SimulationValidationException(
+                    "Character-death retinue-membership evidence cannot contain null.");
+            }
+
+            CareerServiceEndReason expectedReason = membership.LeaderCharacterId == characterId
+                ? CareerServiceEndReason.LeaderDied
+                : CareerServiceEndReason.MemberDied;
+            if (membership.ContractVersion != CareerContractVersions.State
+                || membership.LeaderCharacterId != characterId
+                    && membership.MemberCharacterId != characterId
+                || membership.EndDate != resolutionDate
+                || membership.EndTurnIndex != resolutionTurnIndex
+                || membership.EndCommandId != sourceCommandId
+                || membership.EndReason != expectedReason)
+            {
+                throw new SimulationValidationException(
+                    "Character-death retinue-membership evidence is invalid.");
+            }
+
+            affected.Add(membership.MembershipId);
+            affected.Add(membership.RetinueId);
+            affected.Add(membership.LeaderCharacterId);
+            affected.Add(membership.MemberCharacterId);
+        }
+
+        foreach (PatronageBondState bond in changes.EndedPatronageBonds)
+        {
+            if (bond is null)
+            {
+                throw new SimulationValidationException(
+                    "Character-death patronage-bond evidence cannot contain null.");
+            }
+
+            CareerServiceEndReason expectedReason = bond.PatronCharacterId == characterId
+                ? CareerServiceEndReason.PatronDied
+                : CareerServiceEndReason.BeneficiaryDied;
+            if (bond.ContractVersion != CareerContractVersions.State
+                || bond.PatronCharacterId != characterId
+                    && bond.BeneficiaryCharacterId != characterId
+                || bond.EndDate != resolutionDate
+                || bond.EndTurnIndex != resolutionTurnIndex
+                || bond.EndCommandId != sourceCommandId
+                || bond.EndReason != expectedReason)
+            {
+                throw new SimulationValidationException(
+                    "Character-death patronage-bond evidence is invalid.");
+            }
+
+            affected.Add(bond.BondId);
+            affected.Add(bond.PatronCharacterId);
+            affected.Add(bond.BeneficiaryCharacterId);
+        }
+
+        foreach (EmploymentTenure tenure in changes.EndedEmploymentTenures)
+        {
+            if (tenure is null)
+            {
+                throw new SimulationValidationException(
+                    "Character-death employment-tenure evidence cannot contain null.");
+            }
+
+            CareerServiceEndReason expectedReason = tenure.EmployeeCharacterId == characterId
+                ? CareerServiceEndReason.EmployeeDied
+                : CareerServiceEndReason.EmployerDied;
+            if (tenure.ContractVersion != CareerContractVersions.State
+                || tenure.EmployeeCharacterId != characterId
+                    && (tenure.Employer.Kind != ServicePrincipalKind.Character
+                        || tenure.Employer.PrincipalId != characterId)
+                || tenure.EndDate != resolutionDate
+                || tenure.EndTurnIndex != resolutionTurnIndex
+                || tenure.EndCommandId != sourceCommandId
+                || tenure.EndReason != expectedReason)
+            {
+                throw new SimulationValidationException(
+                    "Character-death employment-tenure evidence is invalid.");
+            }
+
+            affected.Add(tenure.TenureId);
+            affected.Add(tenure.EmployeeCharacterId);
+            affected.Add(tenure.Employer.PrincipalId);
+            affected.Add(tenure.RoleId);
+        }
+    }
+
+    private static bool IsCanonicalUnique<T>(
+        IReadOnlyList<T> records,
+        Func<T, EntityId> id)
+        where T : class => records.All(item => item is not null)
+        && records.Select(id).SequenceEqual(records.Select(id).Order())
+        && records.Select(id).Distinct().Count() == records.Count;
 
     internal static EntityId[] GetCharacterFamilyActionAffectedIds(
         CharacterFamilyActionResolvedEventPayload payload)
@@ -2851,7 +2986,8 @@ internal sealed record CharacterConditionAggregatePlan(
     CharacterMarriageWorldUpdatePlan MarriagePlan,
     RelationshipWorldUpdatePlan? RelationshipPlan,
     CharacterGuardianshipWorldUpdatePlan? GuardianshipPlan,
-    CharacterPregnancyWorldUpdatePlan? PregnancyPlan);
+    CharacterPregnancyWorldUpdatePlan? PregnancyPlan,
+    CharacterCareerWorldUpdatePlan? CareerPlan);
 
 internal sealed record CharacterFamilyAggregatePlan(
     CharacterFamilyActionResolvedEventPayload ResolvedPayload,

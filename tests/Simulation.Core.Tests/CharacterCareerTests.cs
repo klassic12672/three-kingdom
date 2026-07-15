@@ -1359,6 +1359,366 @@ public sealed class CharacterCareerTests
             options));
     }
 
+    [Fact]
+    public void F102_F106_DeathPlannerClosesEveryCareerRoleAndPreservesRetinueIdentity()
+    {
+        Assert.Equal(0, (int)CareerServiceEndReason.MemberLeft);
+        Assert.Equal(1, (int)CareerServiceEndReason.PatronEnded);
+        Assert.Equal(2, (int)CareerServiceEndReason.BeneficiaryEnded);
+        Assert.Equal(3, (int)CareerServiceEndReason.EmployeeLeft);
+        Assert.Equal(4, (int)CareerServiceEndReason.EmployerEnded);
+        Assert.Equal(5, (int)CareerServiceEndReason.LeaderDied);
+        Assert.Equal(6, (int)CareerServiceEndReason.MemberDied);
+        Assert.Equal(7, (int)CareerServiceEndReason.PatronDied);
+        Assert.Equal(8, (int)CareerServiceEndReason.BeneficiaryDied);
+        Assert.Equal(9, (int)CareerServiceEndReason.EmployeeDied);
+        Assert.Equal(10, (int)CareerServiceEndReason.EmployerDied);
+
+        EntityId target = Character(1);
+        CharacterWorldState currentCharacters = CreateCharacters(10);
+        CharacterCareerWorldState state = NewState(currentCharacters);
+        AcceptRetinue(state, target, Character(2), "death-leader");
+        AcceptRetinue(state, Character(3), target, "death-member");
+        AcceptPatronage(state, target, Character(4), "death-patron");
+        AcceptPatronage(state, Character(5), target, "death-beneficiary");
+        AcceptEmployment(state, target, Character(6), Role, "death-employer");
+        AcceptEmployment(
+            state,
+            Character(7),
+            target,
+            new EntityId("role:career/death_employee"),
+            "death-employee");
+        CareerProposalState householdEmployment = Assert.IsType<CareerProposalCreatedOutcome>(Apply(
+            state,
+            Character(0),
+            new EmploymentOfferAction(
+                Character(9),
+                new ServicePrincipalReference(ServicePrincipalKind.Household, Household),
+                new EntityId("role:career/death_household_control")),
+            "death-household-control-create").Payload.Outcome).Proposal;
+        _ = Apply(
+            state,
+            Character(9),
+            new RespondToEmploymentOfferAction(
+                householdEmployment.ProposalId,
+                CareerProposalResponse.Accept),
+            "death-household-control-accept");
+        _ = Apply(
+            state,
+            target,
+            new RetinueInviteAction(Character(8)),
+            "death-proposer");
+        _ = Apply(
+            state,
+            Character(9),
+            new PatronageOfferAction(target),
+            "death-recipient");
+        _ = Apply(
+            state,
+            target,
+            new EmploymentOfferAction(
+                Character(8),
+                new ServicePrincipalReference(ServicePrincipalKind.Character, target),
+                new EntityId("role:career/death_principal")),
+            "death-principal");
+        string sourceBefore = Serialize(state.CaptureSnapshot());
+        string retinuesBefore = Serialize(state.Retinues);
+        CharacterWorldState candidateCharacters = CreateCharacters(
+            10,
+            new Dictionary<EntityId, CharacterConditionState>
+            {
+                [target] = DeadCondition(),
+            });
+        EntityId commandId = new("command:career/death-batch");
+        EntityId eventId = CharacterConditionIds.DeriveActionEventId(Date, commandId);
+
+        CharacterCareerDeathPlan plan = state.PrepareCharacterDeath(
+            target,
+            candidateCharacters,
+            Date,
+            Calendar.TurnIndex,
+            commandId,
+            eventId);
+
+        Assert.Equal(sourceBefore, Serialize(state.CaptureSnapshot()));
+        Assert.Equal(CareerContractVersions.DeathChange, plan.Changes.ContractVersion);
+        Assert.Equal(3, plan.Changes.InvalidatedProposals.Count);
+        Assert.All(
+            plan.Changes.InvalidatedProposals,
+            item =>
+            {
+                Assert.Equal(CareerProposalStatus.Invalidated, item.Status);
+                Assert.Equal(Date, item.ResolutionDate);
+                Assert.Equal(Calendar.TurnIndex, item.ResolutionTurnIndex);
+                Assert.Equal(commandId, item.ResolutionCommandId);
+            });
+        Assert.Equal(
+            [CareerServiceEndReason.LeaderDied, CareerServiceEndReason.MemberDied],
+            plan.Changes.EndedRetinueMemberships.Select(item => item.EndReason).Order().ToArray());
+        Assert.Equal(
+            [CareerServiceEndReason.PatronDied, CareerServiceEndReason.BeneficiaryDied],
+            plan.Changes.EndedPatronageBonds.Select(item => item.EndReason).Order().ToArray());
+        Assert.Equal(
+            [CareerServiceEndReason.EmployeeDied, CareerServiceEndReason.EmployerDied],
+            plan.Changes.EndedEmploymentTenures.Select(item => item.EndReason).Order().ToArray());
+        Assert.All(
+            plan.Changes.EndedRetinueMemberships,
+            item => AssertCareerDeathCoordinates(item.EndDate, item.EndTurnIndex, item.EndCommandId, commandId));
+        Assert.All(
+            plan.Changes.EndedPatronageBonds,
+            item => AssertCareerDeathCoordinates(item.EndDate, item.EndTurnIndex, item.EndCommandId, commandId));
+        Assert.All(
+            plan.Changes.EndedEmploymentTenures,
+            item => AssertCareerDeathCoordinates(item.EndDate, item.EndTurnIndex, item.EndCommandId, commandId));
+
+        CareerWorldSnapshot candidate = plan.CareerPlan.Candidate.CaptureSnapshot();
+        Assert.Equal(retinuesBefore, Serialize(candidate.Retinues));
+        Assert.Equal(2, candidate.RetinueMemberships.Count);
+        Assert.DoesNotContain(candidate.RetinueMemberships, item => item.IsActive);
+        Assert.DoesNotContain(candidate.PatronageBonds, item => item.IsActive);
+        EmploymentTenure householdControl = Assert.Single(
+            candidate.EmploymentTenures,
+            item => item.IsActive);
+        Assert.Equal(ServicePrincipalKind.Household, householdControl.Employer.Kind);
+        Assert.Equal(Household, householdControl.Employer.PrincipalId);
+        Assert.DoesNotContain(candidate.Proposals, item =>
+            item.Status == CareerProposalStatus.Active
+            && (item.ProposerCharacterId == target
+                || item.RecipientCharacterId == target
+                || item.Principal.Kind == ServicePrincipalKind.Character
+                    && item.Principal.PrincipalId == target));
+        IList<CareerProposalState> readOnly = Assert.IsAssignableFrom<IList<CareerProposalState>>(
+            plan.Changes.InvalidatedProposals);
+        Assert.Throws<NotSupportedException>(() => readOnly[0] = readOnly[0]);
+
+        string json = Serialize(plan.Changes);
+        CharacterCareerDeathChangeSet restored = JsonSerializer.Deserialize<
+            CharacterCareerDeathChangeSet>(json, SimulationJson.CreateOptions())!;
+        Assert.Equal(json, Serialize(restored));
+    }
+
+    [Fact]
+    public void F108_DeathBatchNormalizesRetentionOnceAndKeepsCompleteEventEvidence()
+    {
+        EntityId target = Character(1);
+        CharacterWorldState currentCharacters = CreateCharacters(67);
+        List<RetinueState> retinues = [];
+        List<RetinueMembershipState> memberships = [];
+        for (int index = 0; index <= CareerLimits.CompletedRecordsPerCategoryPerCharacter; index++)
+        {
+            EntityId leader = Character(index + 2);
+            EntityId retinueId = CareerIds.DeriveRetinueId(leader);
+            EntityId sourceProposalId = new($"career_proposal:test/death-retention-{index:D2}");
+            retinues.Add(new RetinueState(
+                CareerContractVersions.State,
+                retinueId,
+                leader));
+            RetinueMembershipState membership = new(
+                CareerContractVersions.State,
+                CareerIds.DeriveRetinueMembershipId(sourceProposalId),
+                retinueId,
+                leader,
+                target,
+                sourceProposalId,
+                Date.AddDays(-100),
+                1,
+                null,
+                null,
+                null,
+                null);
+            if (index < CareerLimits.CompletedRecordsPerCategoryPerCharacter)
+            {
+                membership = membership with
+                {
+                    EndDate = Date.AddDays(-90 + index),
+                    EndTurnIndex = 2,
+                    EndCommandId = new EntityId($"command:career/death-retention-end-{index:D2}"),
+                    EndReason = CareerServiceEndReason.MemberLeft,
+                };
+            }
+
+            memberships.Add(membership);
+        }
+
+        CharacterCareerWorldState state = new(
+            new CareerWorldSnapshot(
+                CareerContractVersions.Snapshot,
+                [],
+                retinues.OrderBy(item => item.RetinueId).ToArray(),
+                memberships.OrderBy(item => item.MembershipId).ToArray(),
+                [],
+                [],
+                [],
+                []),
+            currentCharacters,
+            Calendar);
+        CharacterWorldState candidateCharacters = CreateCharacters(
+            67,
+            new Dictionary<EntityId, CharacterConditionState>
+            {
+                [target] = DeadCondition(),
+            });
+        EntityId commandId = new("command:career/death-retention");
+        CharacterCareerDeathPlan plan = state.PrepareCharacterDeath(
+            target,
+            candidateCharacters,
+            Date,
+            Calendar.TurnIndex,
+            commandId,
+            CharacterConditionIds.DeriveActionEventId(Date, commandId));
+
+        RetinueMembershipState ended = Assert.Single(plan.Changes.EndedRetinueMemberships);
+        Assert.Equal(CareerServiceEndReason.MemberDied, ended.EndReason);
+        CareerWorldSnapshot candidate = plan.CareerPlan.Candidate.CaptureSnapshot();
+        Assert.Equal(CareerLimits.CompletedRecordsPerCategoryPerCharacter, candidate.RetinueMemberships.Count);
+        Assert.Contains(candidate.RetinueMemberships, item => item.MembershipId == ended.MembershipId);
+        Assert.Equal(1, GetHistory(plan.CareerPlan.Candidate, target).FoldedRetinueMembershipCount);
+        Assert.Equal(
+            2,
+            candidate.History.Sum(item => item.FoldedRetinueMembershipCount));
+        Assert.Equal(65, plan.Changes.EndedRetinueMemberships.Count
+            + state.RetinueMemberships.Count(item => !item.IsActive));
+    }
+
+    [Fact]
+    public void F109_DeathPlannerRejectsStaleCoordinatesAndRetentionOverflowWithoutMutation()
+    {
+        EntityId target = Character(1);
+        CharacterWorldState currentCharacters = CreateCharacters(67);
+        CharacterCareerWorldState state = NewState(currentCharacters);
+        AcceptRetinue(state, Character(2), target, "death-validation");
+        string before = Serialize(state.CaptureSnapshot());
+        CharacterWorldState candidateCharacters = CreateCharacters(
+            67,
+            new Dictionary<EntityId, CharacterConditionState>
+            {
+                [target] = DeadCondition(),
+            });
+        EntityId commandId = new("command:career/death-validation");
+        EntityId eventId = CharacterConditionIds.DeriveActionEventId(Date, commandId);
+
+        Assert.Throws<SimulationValidationException>(() => state.PrepareCharacterDeath(
+            target,
+            currentCharacters,
+            Date,
+            Calendar.TurnIndex,
+            commandId,
+            eventId));
+        Assert.Throws<SimulationValidationException>(() => state.PrepareCharacterDeath(
+            target,
+            candidateCharacters,
+            Date.AddDays(-1),
+            Calendar.TurnIndex,
+            commandId,
+            eventId));
+        Assert.Throws<SimulationValidationException>(() => state.PrepareCharacterDeath(
+            target,
+            candidateCharacters,
+            Date,
+            Calendar.TurnIndex - 1,
+            commandId,
+            eventId));
+        Assert.Throws<SimulationValidationException>(() => state.PrepareCharacterDeath(
+            target,
+            candidateCharacters,
+            Date,
+            Calendar.TurnIndex,
+            commandId,
+            new EntityId("event:test/forged-career-death")));
+        Assert.Throws<SimulationValidationException>(() => state.PrepareCharacterDeath(
+            target,
+            null!,
+            Date,
+            Calendar.TurnIndex,
+            commandId,
+            eventId));
+        Assert.Equal(before, Serialize(state.CaptureSnapshot()));
+
+        EntityId futureCommand = new("command:career/death-future");
+        CharacterCareerDeathPlan future = state.PrepareCharacterDeath(
+            target,
+            candidateCharacters,
+            Date.AddDays(1),
+            Calendar.TurnIndex + 1,
+            futureCommand,
+            CharacterConditionIds.DeriveActionEventId(Date.AddDays(1), futureCommand));
+        Assert.Single(future.Changes.EndedRetinueMemberships);
+        Assert.Equal(before, Serialize(state.CaptureSnapshot()));
+
+        CareerWorldSnapshot saturatedSnapshot = state.CaptureSnapshot() with
+        {
+            History = [CareerHistoryAggregate.Empty(target) with
+            {
+                FoldedRetinueMembershipCount = long.MaxValue,
+                EarliestDate = Date.AddDays(-1),
+                LatestDate = Date.AddDays(-1),
+            }],
+        };
+        CharacterCareerWorldState saturated = new(
+            saturatedSnapshot,
+            currentCharacters,
+            Calendar);
+        for (int index = 0; index < CareerLimits.CompletedRecordsPerCategoryPerCharacter; index++)
+        {
+            // Populate exactly 64 retained completions through immutable snapshot reconstruction.
+            EntityId leader = Character(index + 3);
+            EntityId retinueId = CareerIds.DeriveRetinueId(leader);
+            EntityId sourceProposalId = new($"career_proposal:test/death-overflow-{index:D2}");
+            CareerWorldSnapshot current = saturated.CaptureSnapshot();
+            saturated = new CharacterCareerWorldState(
+                current with
+                {
+                    Retinues = current.Retinues.Append(new RetinueState(
+                        CareerContractVersions.State,
+                        retinueId,
+                        leader)).OrderBy(item => item.RetinueId).ToArray(),
+                    RetinueMemberships = current.RetinueMemberships.Append(new RetinueMembershipState(
+                        CareerContractVersions.State,
+                        CareerIds.DeriveRetinueMembershipId(sourceProposalId),
+                        retinueId,
+                        leader,
+                        target,
+                        sourceProposalId,
+                        Date.AddDays(-10),
+                        1,
+                        Date.AddDays(-1),
+                        2,
+                        new EntityId($"command:career/death-overflow-end-{index:D2}"),
+                        CareerServiceEndReason.MemberLeft)).OrderBy(item => item.MembershipId).ToArray(),
+                },
+                currentCharacters,
+                Calendar);
+        }
+
+        string saturatedBefore = Serialize(saturated.CaptureSnapshot());
+        Assert.Throws<SimulationValidationException>(() => saturated.PrepareCharacterDeath(
+            target,
+            candidateCharacters,
+            Date,
+            Calendar.TurnIndex,
+            commandId,
+            eventId));
+        Assert.Equal(saturatedBefore, Serialize(saturated.CaptureSnapshot()));
+    }
+
+    private static void AssertCareerDeathCoordinates(
+        CampaignDate? endDate,
+        long? endTurnIndex,
+        EntityId? endCommandId,
+        EntityId expectedCommandId)
+    {
+        Assert.Equal(Date, endDate);
+        Assert.Equal(Calendar.TurnIndex, endTurnIndex);
+        Assert.Equal(expectedCommandId, endCommandId);
+    }
+
+    private static CharacterConditionState DeadCondition() => new(
+        CharacterVitalStatus.Dead,
+        CharacterHealthStatus.Critical,
+        IsIncapacitated: true,
+        CharacterCustodyStatus.Free,
+        null);
+
     private static CharacterCareerWorldState NewState(CharacterWorldState characters) =>
         new(CareerWorldSnapshot.Empty, characters, Calendar);
 

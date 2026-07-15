@@ -14,6 +14,7 @@ public static class CareerContractVersions
     public const int Outcome = 1;
     public const int RelationshipConsequence = RelationshipContractVersions.Consequence;
     public const int AuthoritativeQuery = 1;
+    public const int DeathChange = 1;
 }
 
 public static class CareerLimits
@@ -67,6 +68,12 @@ public enum CareerServiceEndReason
     BeneficiaryEnded = 2,
     EmployeeLeft = 3,
     EmployerEnded = 4,
+    LeaderDied = 5,
+    MemberDied = 6,
+    PatronDied = 7,
+    BeneficiaryDied = 8,
+    EmployeeDied = 9,
+    EmployerDied = 10,
 }
 
 public sealed record CareerProposalState(
@@ -222,6 +229,13 @@ public sealed record CareerWorldSnapshot(
         History = History.OrderBy(item => item.CharacterId).ToArray(),
     };
 }
+
+public sealed record CharacterCareerDeathChangeSet(
+    int ContractVersion,
+    IReadOnlyList<CareerProposalState> InvalidatedProposals,
+    IReadOnlyList<RetinueMembershipState> EndedRetinueMemberships,
+    IReadOnlyList<PatronageBondState> EndedPatronageBonds,
+    IReadOnlyList<EmploymentTenure> EndedEmploymentTenures);
 
 public interface IAuthoritativeCareerWorldQuery
 {

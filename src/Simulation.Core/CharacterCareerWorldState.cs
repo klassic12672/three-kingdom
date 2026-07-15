@@ -455,6 +455,132 @@ public sealed class CharacterCareerWorldState : IAuthoritativeCareerWorldQuery
         ReplaceFrom(plan.Candidate);
     }
 
+    internal CharacterCareerDeathPlan PrepareCharacterDeath(
+        EntityId characterId,
+        IAuthoritativeCharacterWorldQuery candidateCharacters,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (!characterId.IsValid
+            || candidateCharacters is null
+            || !resolutionDate.IsValid
+            || resolutionDate.CompareTo(calendar.Date) < 0
+            || authoritativeTurnIndex < calendar.TurnIndex
+            || !commandId.IsValid
+            || eventId != CharacterConditionIds.DeriveActionEventId(
+                resolutionDate,
+                commandId)
+            || !characters.TryGetCharacterProfile(
+                characterId,
+                out AuthoritativeCharacterProfile? currentProfile)
+            || currentProfile.Condition.VitalStatus != CharacterVitalStatus.Alive
+            || !candidateCharacters.TryGetCharacterProfile(
+                characterId,
+                out AuthoritativeCharacterProfile? candidateProfile)
+            || candidateProfile.Condition.VitalStatus != CharacterVitalStatus.Dead)
+        {
+            throw new SimulationValidationException(
+                "Career death preparation requires a valid dead character candidate and current resolution coordinates.");
+        }
+
+        CareerWorldSnapshot current = CaptureSnapshot();
+        CareerProposalState[] invalidatedProposals = current.Proposals
+            .Where(item => item.Status == CareerProposalStatus.Active
+                && GetInvolvedCharacters(item).Contains(characterId))
+            .Select(item => CompleteProposal(
+                item,
+                CareerProposalStatus.Invalidated,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId))
+            .OrderBy(item => item.ProposalId)
+            .ToArray();
+        RetinueMembershipState[] endedMemberships = current.RetinueMemberships
+            .Where(item => item.IsActive
+                && GetInvolvedCharacters(item).Contains(characterId))
+            .Select(item => EndRetinueMembershipForDeath(
+                item,
+                characterId,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId))
+            .OrderBy(item => item.MembershipId)
+            .ToArray();
+        PatronageBondState[] endedBonds = current.PatronageBonds
+            .Where(item => item.IsActive
+                && GetInvolvedCharacters(item).Contains(characterId))
+            .Select(item => EndPatronageBondForDeath(
+                item,
+                characterId,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId))
+            .OrderBy(item => item.BondId)
+            .ToArray();
+        EmploymentTenure[] endedTenures = current.EmploymentTenures
+            .Where(item => item.IsActive
+                && GetInvolvedCharacters(item).Contains(characterId))
+            .Select(item => EndEmploymentTenureForDeath(
+                item,
+                characterId,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId))
+            .OrderBy(item => item.TenureId)
+            .ToArray();
+
+        Dictionary<EntityId, CareerProposalState> invalidatedById =
+            invalidatedProposals.ToDictionary(item => item.ProposalId);
+        Dictionary<EntityId, RetinueMembershipState> endedMembershipsById =
+            endedMemberships.ToDictionary(item => item.MembershipId);
+        Dictionary<EntityId, PatronageBondState> endedBondsById =
+            endedBonds.ToDictionary(item => item.BondId);
+        Dictionary<EntityId, EmploymentTenure> endedTenuresById =
+            endedTenures.ToDictionary(item => item.TenureId);
+        CareerWorldSnapshot candidate = new(
+            CareerContractVersions.Snapshot,
+            current.Proposals
+                .Select(item => invalidatedById.GetValueOrDefault(item.ProposalId) ?? Clone(item))
+                .ToArray(),
+            current.Retinues.Select(Clone).ToArray(),
+            current.RetinueMemberships
+                .Select(item => endedMembershipsById.GetValueOrDefault(item.MembershipId) ?? Clone(item))
+                .ToArray(),
+            current.PatronageBonds
+                .Select(item => endedBondsById.GetValueOrDefault(item.BondId) ?? Clone(item))
+                .ToArray(),
+            current.Recommendations.Select(Clone).ToArray(),
+            current.EmploymentTenures
+                .Select(item => endedTenuresById.GetValueOrDefault(item.TenureId) ?? Clone(item))
+                .ToArray(),
+            current.History.Select(Clone).ToArray());
+        try
+        {
+            candidate = NormalizeRetention(candidate);
+        }
+        catch (OverflowException exception)
+        {
+            throw new SimulationValidationException(
+                $"Career history counters exceeded their supported range: {exception.Message}");
+        }
+
+        CampaignCalendar candidateCalendar = new(
+            Max(calendar.Date, resolutionDate),
+            Math.Max(calendar.TurnIndex, authoritativeTurnIndex));
+        CharacterCareerDeathChangeSet changes = new(
+            CareerContractVersions.DeathChange,
+            Array.AsReadOnly(invalidatedProposals.Select(Clone).ToArray()),
+            Array.AsReadOnly(endedMemberships.Select(Clone).ToArray()),
+            Array.AsReadOnly(endedBonds.Select(Clone).ToArray()),
+            Array.AsReadOnly(endedTenures.Select(Clone).ToArray()));
+        return new CharacterCareerDeathPlan(
+            changes,
+            new CharacterCareerWorldUpdatePlan(
+                new CharacterCareerWorldState(candidate, candidateCharacters, candidateCalendar)));
+    }
+
     private ICharacterActionOutcome PlanNonResponseAction(
         EntityId actingCharacterId,
         ICharacterAction action,
@@ -710,6 +836,21 @@ public sealed class CharacterCareerWorldState : IAuthoritativeCareerWorldQuery
             EndReason = CareerServiceEndReason.MemberLeft,
         };
 
+    private static RetinueMembershipState EndRetinueMembershipForDeath(
+        RetinueMembershipState membership,
+        EntityId characterId,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId) => membership with
+        {
+            EndDate = resolutionDate,
+            EndTurnIndex = authoritativeTurnIndex,
+            EndCommandId = commandId,
+            EndReason = membership.LeaderCharacterId == characterId
+                ? CareerServiceEndReason.LeaderDied
+                : CareerServiceEndReason.MemberDied,
+        };
+
     private static PatronageBondState EndPatronageBond(
         PatronageBondState bond,
         EntityId actingCharacterId,
@@ -725,6 +866,21 @@ public sealed class CharacterCareerWorldState : IAuthoritativeCareerWorldQuery
                 : CareerServiceEndReason.BeneficiaryEnded,
         };
 
+    private static PatronageBondState EndPatronageBondForDeath(
+        PatronageBondState bond,
+        EntityId characterId,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId) => bond with
+        {
+            EndDate = resolutionDate,
+            EndTurnIndex = authoritativeTurnIndex,
+            EndCommandId = commandId,
+            EndReason = bond.PatronCharacterId == characterId
+                ? CareerServiceEndReason.PatronDied
+                : CareerServiceEndReason.BeneficiaryDied,
+        };
+
     private static EmploymentTenure EndEmploymentTenure(
         EmploymentTenure tenure,
         EntityId actingCharacterId,
@@ -738,6 +894,21 @@ public sealed class CharacterCareerWorldState : IAuthoritativeCareerWorldQuery
             EndReason = actingCharacterId == tenure.EmployeeCharacterId
                 ? CareerServiceEndReason.EmployeeLeft
                 : CareerServiceEndReason.EmployerEnded,
+        };
+
+    private static EmploymentTenure EndEmploymentTenureForDeath(
+        EmploymentTenure tenure,
+        EntityId characterId,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId) => tenure with
+        {
+            EndDate = resolutionDate,
+            EndTurnIndex = authoritativeTurnIndex,
+            EndCommandId = commandId,
+            EndReason = tenure.EmployeeCharacterId == characterId
+                ? CareerServiceEndReason.EmployeeDied
+                : CareerServiceEndReason.EmployerDied,
         };
 
     private static RecommendationRecord CreateRecommendation(
@@ -1683,7 +1854,11 @@ public sealed class CharacterCareerWorldState : IAuthoritativeCareerWorldQuery
                 membership.EndTurnIndex,
                 membership.EndCommandId,
                 membership.EndReason,
-                [CareerServiceEndReason.MemberLeft],
+                [
+                    CareerServiceEndReason.MemberLeft,
+                    CareerServiceEndReason.LeaderDied,
+                    CareerServiceEndReason.MemberDied,
+                ],
                 $"Retinue membership '{membership.MembershipId}'");
             if (!retinueMemberships.TryAdd(membership.MembershipId, Clone(membership)))
             {
@@ -1726,7 +1901,12 @@ public sealed class CharacterCareerWorldState : IAuthoritativeCareerWorldQuery
                 bond.EndTurnIndex,
                 bond.EndCommandId,
                 bond.EndReason,
-                [CareerServiceEndReason.PatronEnded, CareerServiceEndReason.BeneficiaryEnded],
+                [
+                    CareerServiceEndReason.PatronEnded,
+                    CareerServiceEndReason.BeneficiaryEnded,
+                    CareerServiceEndReason.PatronDied,
+                    CareerServiceEndReason.BeneficiaryDied,
+                ],
                 $"Patronage bond '{bond.BondId}'");
             if (!patronageBonds.TryAdd(bond.BondId, Clone(bond)))
             {
@@ -1827,7 +2007,12 @@ public sealed class CharacterCareerWorldState : IAuthoritativeCareerWorldQuery
                 tenure.EndTurnIndex,
                 tenure.EndCommandId,
                 tenure.EndReason,
-                [CareerServiceEndReason.EmployeeLeft, CareerServiceEndReason.EmployerEnded],
+                [
+                    CareerServiceEndReason.EmployeeLeft,
+                    CareerServiceEndReason.EmployerEnded,
+                    CareerServiceEndReason.EmployeeDied,
+                    CareerServiceEndReason.EmployerDied,
+                ],
                 $"Employment tenure '{tenure.TenureId}'");
             if (!employmentTenures.TryAdd(tenure.TenureId, Clone(tenure)))
             {
@@ -2822,3 +3007,7 @@ public sealed class CharacterCareerWorldState : IAuthoritativeCareerWorldQuery
 }
 
 internal sealed record CharacterCareerWorldUpdatePlan(CharacterCareerWorldState Candidate);
+
+internal sealed record CharacterCareerDeathPlan(
+    CharacterCareerDeathChangeSet Changes,
+    CharacterCareerWorldUpdatePlan CareerPlan);

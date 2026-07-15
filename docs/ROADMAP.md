@@ -85,6 +85,8 @@ SP-04E6's source-backed primary-guardian education attainment, runtime character
 
 SP-04F0's restricted public-death action/outcome, atomic character/marriage/guardianship/pregnancy lifecycle resolution, explicit household-head/custodian/career/retinue fail-closed seams, dead-owned wealth/estate preservation, and authenticated vocabulary-only schema-20-to-21 migration have passing [exact-SHA hosted macOS arm64/Windows x64 evidence](evidence/SP-04F0-EXACT-SHA-783ccfb.md) at `783ccfb61357248158cf287ee69ba27b56c38f4a`. Inheritance, successor selection, career death closure, household-head/captive disposition, player continuity, full SP-04 acceptance, and the three-second budget remain open.
 
+SP-04F1's local implementation candidate atomically closes active career proposals, retinue memberships, patronage bonds, and employment tenures when a character dies; preserves retained retinue identity; keeps household-head/current-custodian blockers; and structurally migrates authenticated schema-21 F0 death diagnostics to schema 22. Local focused/complete suites, repository gates, and independent architecture, verification, and schema/content reviews pass, but exact-SHA hosted macOS arm64/Windows x64 evidence remains pending. F1 is not yet accepted. Inheritance, successor selection, retinue succession, household-head/captive disposition, player continuity, full SP-04 acceptance, and the three-second budget remain open.
+
 ## Platform verification gates
 
 - Through M3, Apple Silicon macOS is the primary interactive and visual development platform.
@@ -118,8 +120,9 @@ Before M4, estimates are internal ranges only. After M4, record measured velocit
 18. Preserve SP-04E5's deterministic pregnancy birth resolution, generated-child insertion, schema-18-to-19 compatibility, independent-remediation record, and exact-SHA hosted evidence at `4b28fb74bed9181ce021e1c5e32ef9d039b4e2e1`.
 19. Preserve SP-04E6's primary-guardian education attainment, runtime-v3/authored-v1-v2 separation, schema-19-to-20 compatibility, independent-remediation record, and exact-SHA hosted evidence at `0928e4484ef41da5ac31f5683af5347800a92dec`.
 20. Complete — SP-04F0 restricted public death is accepted at exact SHA `783ccfb61357248158cf287ee69ba27b56c38f4a` with hosted macOS arm64/Windows x64 evidence.
-21. Select and implement the next dependency-ordered SP-04 package without crossing the remaining inheritance/succession policy seams prematurely.
+21. In progress — SP-04F1 career-death obligation closure is locally implemented; exact-SHA hosted evidence remains pending.
+22. After SP-04F1 exact-SHA acceptance, select and implement the next dependency-ordered SP-04 package without crossing the remaining inheritance/succession policy seams prematurely.
 
-M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A through SP-04F0 have passing exact-SHA hosted macOS arm64/Windows x64 evidence at their accepted revisions. SP-05 remains blocked, and later SP-04 packages remain pending.
+M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A through SP-04F0 have passing exact-SHA hosted macOS arm64/Windows x64 evidence at their accepted revisions; F1 is a local candidate pending exact-SHA hosted evidence. SP-05 remains blocked, and later SP-04 packages remain pending.
 
 See the [subsystem plan index](plans/README.md) for dependency status.

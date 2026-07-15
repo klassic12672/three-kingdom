@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — through SP-04F0 exact-SHA hosted; later packages pending |
+| Status | Active — through SP-04F0 exact-SHA hosted; SP-04F1 locally implemented, exact-SHA hosted evidence pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -814,6 +814,47 @@ The representative local Release fixture contains 1,000 characters and resolves 
 Local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 797 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. The 39/39 F0-focused slice includes public pending/replay deaths on days two, three, and four of a campaign turn; action-specific authority, phase, missing-target, and already-dead rejection; and nonempty parentage, education, family, non-head household, completed-career, recommendation, and folded-history preservation. Independent architecture, schema/content, and verification reviews found no remaining blocker; verification separately reran 39/39 F0 tests and 537/537 neighboring lifecycle/save tests. The first full repository run exposed and corrected two historical-test assumptions: E6's current-save test hardcoded schema 20, and D3's preview test asserted that no later public death action existed. The corrected tests retain their original E6 round-trip and D3 non-mutating-preview evidence. `git diff --check`, `git lfs fsck`, and focused format verification pass.
 
 Accepted revision `783ccfb61357248158cf287ee69ba27b56c38f4a` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04F0-EXACT-SHA-783ccfb.md). F023 therefore passes at that revision. Full SP-04 acceptance, inheritance, succession continuity, and the overall performance gate remain open.
+
+## Active package: SP-04F1 career-death obligation closure
+
+SP-04F1 is the smallest dependency-safe package after accepted F0. It removes only F0's career/retinue death blockers: a public death now invalidates every active career proposal in which the target is proposer, recipient, or direct-character principal and ends every active retinue membership, patronage bond, and employment tenure involving the target. The six appended terminal reasons are role-specific: `LeaderDied`, `MemberDied`, `PatronDied`, `BeneficiaryDied`, `EmployeeDied`, and `EmployerDied`. Household-principal records do not treat every household member as the principal. Household-head and current-custodian death blockers remain unchanged.
+
+The existing death action/outcome discriminators and character-condition envelopes remain v1. `CharacterDeathChange` advances from v1 to v2 and contains a version-1 `CharacterCareerDeathChangeSet` with canonical invalidated proposals and ended service records. Career snapshot, state, action, outcome, query, and system versions all remain v1. The career candidate is prepared after the character, marriage, guardianship, and pregnancy candidates and before any mutation; all five commit in fixed order. One retention normalization pass preserves complete event evidence while folding bounded completed history. Saturated history overflow rejects the whole death without partial character or career mutation.
+
+Retained `RetinueState` remains byte-identical historical identity even when its leader dies. F1 does not delete or transfer a retinue, choose a successor, or create a replacement membership. Completed proposals and services, recommendations, and folded history remain unchanged except for the existing deterministic retention/folding required by newly terminal records. Personal resources, estates, relationships, memories, parentage, education, family and non-head household membership remain the F0-preserved succession inputs.
+
+Save schema 22 structurally upgrades schema-21 F0 death diagnostics from death-change v1 to v2 and injects an exact empty career-death change set. It authenticates the schema-21 source before mutation, leaves the authoritative snapshot and checksum unchanged, preserves source bytes, and rejects F1 properties, death version, explicit null, and every appended death-specific career reason in schema 21. Current schema 22 requires complete death/change-set arrays and current state versions in retained diagnostics. The career snapshot and registered system versions do not change.
+
+The frozen schema-21 fixture is 34,795 bytes with stored checksum `a108ed5ad5932992db2c2adfac6a9987320f3ab2493a2719d4035c05701b39e2` and file SHA-256 `8214d8f3430e48a09bc215a2dfc34608924472e44622885250351350a4581686`. A temporary test-only generator was added to a detached worktree at exact accepted F0 implementation `783ccfb61357248158cf287ee69ba27b56c38f4a`, run in Release on macOS through public career/death workflows and `SaveStore`, and then removed with the worktree. The frozen output retains one resolved F0 death diagnostic, one pending F0 death command, one active proposal, one active membership, one active patronage bond, and one active employment tenure. The temporary generator is intentionally not retained.
+
+F1 does not add inheritance, wealth or estate transfer, heir designation, household-head replacement, captive disposition, succession claims, regency, offices/titles, disputed succession, player-character transfer, retinue succession/dissolution, cause-of-death taxonomy, automatic mortality, RNG, relationship effects, content, localization, UI, AI, battle, or full performance completion. No locked decision changes and no ADR is required.
+
+### SP-04F1 verification matrix
+
+| ID | Criterion | Evidence | Status |
+| --- | --- | --- | --- |
+| F101 | Exact F0 is accepted; career-death closure is the smallest safe next package and requires no ADR | Source-of-truth and architecture review | Local pass |
+| F102 | Death-change v2, career-death change-set v1, and appended reason ordinals/JSON are canonical and defensive | Contract, ordinal, round-trip, and read-only tests | Local pass |
+| F103 | Every active proposal kind invalidates for target proposer, recipient, or valid direct-character principal | Six-row public proposal-role matrix and direct planner coverage | Local pass |
+| F104 | Membership, patronage, and employment end with exact role-specific death reason, date, turn, and command | Six-role direct matrix and public workflow theories | Local pass |
+| F105 | A bare retained target-led retinue no longer blocks death and remains unchanged | Public death snapshot comparison | Local pass |
+| F106 | Every target-involving membership ends once; no retinue transfer, successor, or membership creation occurs | Multi-membership direct and simultaneous-death tests | Local pass |
+| F107 | Household-head and current-custodian blockers remain exact and atomic | Existing blocker/no-mutation regression | Local pass |
+| F108 | Completed records and recommendations remain unchanged except one deterministic retention pass | Preservation, 64-record boundary, fold count/date tests | Local pass |
+| F109 | Saturated history and stale planner coordinates fail without partial mutation | Direct planner matrix and public aggregate overflow test | Local pass |
+| F110 | Career-death affected IDs and evidence are complete, sorted, unique, versioned, canonical, and tamper-checked | Omission/version/null/reorder/duplicate/status/reason/date/command rollback matrix | Local pass |
+| F111 | Proposal creation and all three service endings race death across both priorities and submission orders | Sixteen registered campaign executions | Local pass |
+| F112 | Simultaneous deaths sharing proposal/service records emit terminal evidence once | Both ID assignments and submission orders | Local pass |
+| F113 | Future-day pending replay and valid/duplicate/forged death application remain deterministic | Day-two/three/four career-rich replay and tamper tests | Local pass |
+| F114 | Current schema-22 pending/resolved saves preserve nonempty career-death evidence and terminal state | JSON/gzip/SaveStore/restore round trip | Local pass |
+| F115 | Exact F0 schema 21 authenticates, migrates diagnostics structurally, preserves source/checksum, and continues | Frozen fixture identity, deep comparison, pending death, and nonempty F1 continuation | Local pass |
+| F116 | Schema 21 rejects isolated F1 properties/version/reasons/null and corruption; current schema rejects incomplete diagnostics | Historical injection and current raw-shape matrix | Local pass |
+| F117 | A 1,000-character/200-death career-rich workload records raw local measurements without a brittle threshold | Local Apple Silicon measurement | Local pass; no threshold |
+| F118 | Focused/full suites, repository gates, diff/LFS/format checks, independent reviews, and exact-SHA hosted macOS/Windows evidence pass | Local and hosted closeout | Local gates and independent reviews pass; hosted evidence pending |
+
+The representative local Release fixture contains 1,000 characters and 200 deaths, each with one active proposal, membership, patronage bond, and employment tenure. A raw Apple Silicon run measured 5,940.911 ms workflow, 0.693 ms query, and 4.326 ms snapshot/checksum; snapshot JSON was 1,441,251 bytes, gzip was 85,205 bytes, and checksum was `e8da6e52e9b1c34d0c2cd6787f5aa65f9564cca28f2ecf1415db1568d1a9f730`. The test asserts shape and correctness only. This component workload neither passes nor waives the full SP-04 three-second campaign-turn budget.
+
+Local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. Focused F1 verification passes 40/40 cases and the complete Simulation.Core suite passes 831/831. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 831 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. `git diff --check`, `git lfs fsck`, and focused formatter verification pass. Independent architecture, verification, and schema/content reviews report no local blocker. Implementation commit identity and exact-SHA hosted macOS arm64/Windows x64 evidence remain pending; F1 is therefore not yet accepted. Full SP-04 acceptance, inheritance, succession continuity, and the overall performance gate remain open.
 
 ## Edge cases and failure handling
 
