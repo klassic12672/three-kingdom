@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — through SP-04E1 exact-SHA hosted; SP-04E2 locally verified with exact-SHA hosted evidence pending; later packages pending |
+| Status | Active — through SP-04E2 exact-SHA hosted; later packages pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -561,7 +561,7 @@ Independent review found and remediated a stale local guardianship calendar afte
 
 Accepted revision `97b607ae8df77dbd5c6fa5ab6b544000208cdb0e` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04E1-EXACT-SHA-97b607a.md). E114 therefore passes at that revision. Every full SP-04 acceptance criterion remains unchecked. Pregnancy/birth, education, coming of age, guardianship lifecycle/authority, public death, inheritance, succession, content, presentation, and platform work remain later E/F/G/X packages; SP-05 remains blocked.
 
-## Locally verified package: SP-04E2 guardianship termination and replacement
+## Accepted package: SP-04E2 guardianship termination and replacement
 
 SP-04E2 is a workflow-only extension of the accepted E1 guardianship state. `EndPrimaryGuardianshipAction` requires the ward's exact active record and permits only explicit `Revoked`, or `GuardianUnavailable` when the current guardian is dead, incapacitated, or not free. `ReplacePrimaryGuardianshipAction` requires the same exact active record, a living minor ward, and a different older replacement guardian who is at least 18, alive, capable, and free. Replacement atomically terminalizes the prior record as `Replaced` and creates one active replacement from the same command/event evidence. Capacity, collision, stale-state, invalid-condition, and apply-time failures preserve the complete prior snapshot.
 
@@ -586,14 +586,16 @@ Save schema 16 advances only nested family-action vocabulary. The authenticated 
 | E211 | Exact-E1 schema 15 authenticates and migrates byte-preservingly while rejecting E2 vocabulary/properties | Frozen fixture, migration, rejection, and source-byte tests | Local pass |
 | E212 | Existing schema-15 active and terminal records remain compatible without tighter persisted-state validation | Historical fixture and restore tests | Local pass |
 | E213 | A 1,000-character bounded replacement/end fixture records workflow/checksum/JSON/gzip without a time threshold | Local Apple Silicon measurement | Local macOS pass; full SP-04 budget unmet |
-| E214 | Repository gates pass and the same revision passes hosted macOS arm64 and Windows x64 | Local gates plus exact-SHA clean-checkout hosted evidence | Local pass; exact-SHA hosted pending |
+| E214 | Repository gates pass and the same revision passes hosted macOS arm64 and Windows x64 | Local gates plus exact-SHA clean-checkout hosted evidence | Pass at `7491da89985fedb18e423082a2fd9187b8899e52` |
 | E215 | No automatic coming age/death, authority/consent, education, pregnancy/birth, inheritance, succession, content, or presentation enters E2 | Reflection and diff review | Local pass |
 
 The representative local Release fixture contains 1,000 characters, 64 active starting guardianships, 32 atomic replacements, and 32 explicit endings. The latest raw run measured 301.142 ms for workflow and 126.468 ms for snapshot/checksum, serialized to 1,015,230 JSON bytes and 35,762 gzip bytes, and produced checksum `962ea2a48bbe1984c8b94b9745c08c3f9984abcba2516d61911291803a805020`. The test asserts exact shape and correctness, not a wall-clock threshold. These working-tree measurements do not establish the full SP-04 three-second campaign-turn budget.
 
-Local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 602 Simulation.Core, 71 Game.Content, 6 Game.Application, and 18 repository tests. The focused family/guardianship/save slice passes 301 tests; touched-file formatting, `git diff --check`, and `git lfs fsck` pass. Independent review found an exact-JSON evidence gap, verified the added literal-property/discriminator and replacement-rejection coverage, reran 46 narrow tests and the full 602-test Core suite, and reports no remaining correctness or package-boundary blocker. Exact-SHA hosted macOS/Windows evidence remains required before E214 can close.
+Local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 602 Simulation.Core, 71 Game.Content, 6 Game.Application, and 18 repository tests. The focused family/guardianship/save slice passes 301 tests; touched-file formatting, `git diff --check`, and `git lfs fsck` pass. Independent review found an exact-JSON evidence gap, verified the added literal-property/discriminator and replacement-rejection coverage, reran 46 narrow tests and the full 602-test Core suite, and reports no remaining correctness or package-boundary blocker.
 
 One final wrapper invocation failed before build or tests when `dotnet restore` terminated with a segmentation fault. No source changed; the immediate unchanged-tree rerun completed the validation, zero-warning build, and all four suites above. The failed attempt is retained here and is not relabeled as passing.
+
+Accepted revision `7491da89985fedb18e423082a2fd9187b8899e52` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04E2-EXACT-SHA-7491da8.md). E214 therefore passes at that revision. Every full SP-04 acceptance criterion remains unchecked. Later E/F/G/X packages, physical Windows, signing, and Steam remain open under their existing gates; SP-05 remains blocked.
 
 ## Edge cases and failure handling
 

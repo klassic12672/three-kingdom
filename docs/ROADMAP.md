@@ -73,7 +73,7 @@ SP-04E0's reserved-system establishment of current legal-adoptive parentage, com
 
 SP-04E1's bounded primary-guardianship state/query, reserved-system establishment workflow, and authenticated schema-14-to-15 migration have passing [exact-SHA hosted macOS arm64/Windows x64 evidence](evidence/SP-04E1-EXACT-SHA-97b607a.md) at `97b607ae8df77dbd5c6fa5ab6b544000208cdb0e`. It grants no education, residence, custody, inheritance, succession, adult-regency, co-guardian, consent, content, UI, AI, battle, or platform behavior. The full SP-04 criteria and three-second turn budget remain unchecked.
 
-SP-04E2's reserved-system primary-guardianship ending and atomic replacement workflow, exact state/race revalidation, and authenticated vocabulary-only schema-15-to-16 migration are locally verified. The package reuses guardianship-v1 state, changes no other subsystem, and adds no automatic birthday/death termination, authority/consent, education, pregnancy/birth, inheritance, succession, content, or presentation behavior. Exact-SHA hosted macOS arm64/Windows x64 evidence remains pending; E2 is not yet accepted.
+SP-04E2's reserved-system primary-guardianship ending and atomic replacement workflow, exact state/race revalidation, and authenticated vocabulary-only schema-15-to-16 migration have passing [exact-SHA hosted macOS arm64/Windows x64 evidence](evidence/SP-04E2-EXACT-SHA-7491da8.md) at `7491da89985fedb18e423082a2fd9187b8899e52`. The package reuses guardianship-v1 state, changes no other subsystem, and adds no automatic birthday/death termination, authority/consent, education, pregnancy/birth, inheritance, succession, content, or presentation behavior. The full SP-04 criteria and three-second turn budget remain unchecked.
 
 ## Platform verification gates
 
@@ -102,8 +102,9 @@ Before M4, estimates are internal ranges only. After M4, record measured velocit
 12. Preserve SP-04D3's household/coercion/condition-lifecycle package, authenticated schema-12-to-13 compatibility, independent-remediation record, and exact-SHA hosted evidence at `93d38810a87707a7c4c98c7392e2a2f20dc030fb`.
 13. Preserve SP-04E0's legal-adoptive-parent establishment, authenticated vocabulary-only schema-13-to-14 compatibility, independent-remediation record, and exact-SHA hosted evidence at `30fd0ad5f9a47eb15c0af27360ae31d72414a8ed`.
 14. Preserve SP-04E1's primary-guardianship establishment, authenticated schema-14-to-15 compatibility, independent-remediation record, and exact-SHA hosted evidence at `97b607ae8df77dbd5c6fa5ab6b544000208cdb0e`.
-15. Preserve the locally verified SP-04E2 guardianship termination/replacement and schema-15-to-16 compatibility candidate, then obtain exact-SHA hosted macOS arm64/Windows x64 evidence before accepting it.
+15. Preserve SP-04E2's guardianship termination/replacement and schema-15-to-16 compatibility package with exact-SHA hosted evidence at `7491da89985fedb18e423082a2fd9187b8899e52`.
+16. Implement and verify the next dependency-ordered SP-04 package without broadening its independently testable boundary.
 
-M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A, SP-04B-L, SP-04C0, SP-04C1, SP-04C2, SP-04C3, SP-04D0, SP-04D1, SP-04D2, SP-04D3, SP-04E0, and SP-04E1 have passing exact-SHA hosted macOS arm64/Windows x64 evidence at their accepted revisions. SP-04E2 is locally verified with exact-SHA hosted evidence pending. SP-05 remains blocked, and later SP-04 packages remain pending.
+M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A, SP-04B-L, SP-04C0, SP-04C1, SP-04C2, SP-04C3, SP-04D0, SP-04D1, SP-04D2, SP-04D3, SP-04E0, SP-04E1, and SP-04E2 have passing exact-SHA hosted macOS arm64/Windows x64 evidence at their accepted revisions. SP-05 remains blocked, and later SP-04 packages remain pending.
 
 See the [subsystem plan index](plans/README.md) for dependency status.
