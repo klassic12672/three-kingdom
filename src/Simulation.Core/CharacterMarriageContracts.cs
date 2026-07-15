@@ -8,18 +8,22 @@ namespace Simulation.Core;
 
 public static class CharacterMarriageContractVersions
 {
-    public const int Snapshot = 1;
+    public const int Snapshot = 2;
     public const int State = 1;
+    public const int RomanceInvitationState = 1;
+    public const int RomanceRouteState = 2;
     public const int Practice = 1;
     public const int Eligibility = 1;
     public const int Action = 1;
     public const int Outcome = 1;
-    public const int AuthoritativeQuery = 1;
+    public const int AuthoritativeQuery = 2;
 }
 
 public static class CharacterMarriageLimits
 {
     public const int ActiveProposalsPerRecipient = 8;
+    public const int ActiveRomanceInvitationsPerRecipient = 8;
+    public const int ActiveRomanceInvitationsPerCharacter = 64;
     public const int RetainedRecordsPerCategoryPerCharacter = 64;
     public const int ActiveLegalRelationshipsPerCharacter = 64;
     public const int MaximumPrincipalSpouseLimit = 8;
@@ -32,7 +36,7 @@ public static class CharacterMarriageLimits
 public static class CharacterMarriageSystem
 {
     public const string SystemId = "simulation.character_marriages";
-    public const int Version = 1;
+    public const int Version = 2;
 }
 
 [Flags]
@@ -113,6 +117,12 @@ public enum RomanceRouteStatus
     Completed = 1,
     Ended = 2,
     Invalidated = 3,
+}
+
+public enum RomanceInvitationResponse
+{
+    Accept = 0,
+    Refuse = 1,
 }
 
 public enum MarriageEligibilityCategory
@@ -216,6 +226,16 @@ public sealed record MarriageUnionState(
     public bool IsActive => Status == MarriageUnionStatus.Active;
 }
 
+public sealed record RomanceInvitationState(
+    int ContractVersion,
+    EntityId InvitationId,
+    EntityId InitiatorCharacterId,
+    EntityId RecipientCharacterId,
+    EntityId PracticeId,
+    CampaignDate CreatedDate,
+    long CreatedTurnIndex,
+    EntityId SourceCommandId);
+
 public sealed record RomanceRouteState(
     int ContractVersion,
     EntityId RouteId,
@@ -229,7 +249,15 @@ public sealed record RomanceRouteState(
     RomanceRouteStatus Status,
     CampaignDate? ResolutionDate,
     long? ResolutionTurnIndex,
-    EntityId? ResolutionCommandId)
+    EntityId? ResolutionCommandId,
+    EntityId? SourceInvitationId = null,
+    EntityId? InvitationInitiatorCharacterId = null,
+    CampaignDate? InvitationCreatedDate = null,
+    long? InvitationCreatedTurnIndex = null,
+    EntityId? InvitationSourceCommandId = null,
+    CampaignDate? LastPositiveProgressDate = null,
+    long? LastPositiveProgressTurnIndex = null,
+    EntityId? LastPositiveProgressCommandId = null)
 {
     [JsonIgnore]
     public bool IsActive => Status == RomanceRouteStatus.Active;
@@ -272,6 +300,7 @@ public sealed record MarriageEligibilityResult(
     bool IsEligible,
     IReadOnlyList<MarriageEligibilityIssue> Issues);
 
+[method: JsonConstructor]
 public sealed record CharacterMarriageWorldSnapshot(
     int ContractVersion,
     IReadOnlyList<MarriagePracticeState> Practices,
@@ -279,10 +308,32 @@ public sealed record CharacterMarriageWorldSnapshot(
     IReadOnlyList<PoliticalBetrothalState> Betrothals,
     IReadOnlyList<MarriageUnionState> Unions,
     IReadOnlyList<RomanceRouteState> RomanceRoutes,
-    IReadOnlyList<CharacterMarriageHistoryAggregate> History)
+    IReadOnlyList<CharacterMarriageHistoryAggregate> History,
+    IReadOnlyList<RomanceInvitationState> Invitations)
 {
+    public CharacterMarriageWorldSnapshot(
+        int contractVersion,
+        IReadOnlyList<MarriagePracticeState> practices,
+        IReadOnlyList<MarriageProposalState> proposals,
+        IReadOnlyList<PoliticalBetrothalState> betrothals,
+        IReadOnlyList<MarriageUnionState> unions,
+        IReadOnlyList<RomanceRouteState> romanceRoutes,
+        IReadOnlyList<CharacterMarriageHistoryAggregate> history)
+        : this(
+            contractVersion,
+            practices,
+            proposals,
+            betrothals,
+            unions,
+            romanceRoutes,
+            history,
+            [])
+    {
+    }
+
     public static CharacterMarriageWorldSnapshot Empty { get; } = new(
         CharacterMarriageContractVersions.Snapshot,
+        [],
         [],
         [],
         [],
@@ -298,6 +349,7 @@ public sealed record CharacterMarriageWorldSnapshot(
         Unions = Unions.OrderBy(item => item.UnionId).ToArray(),
         RomanceRoutes = RomanceRoutes.OrderBy(item => item.RouteId).ToArray(),
         History = History.OrderBy(item => item.CharacterId).ToArray(),
+        Invitations = (Invitations ?? []).OrderBy(item => item.InvitationId).ToArray(),
     };
 }
 
@@ -313,6 +365,8 @@ public interface IAuthoritativeCharacterMarriageWorldQuery
 
     IReadOnlyList<RomanceRouteState> RomanceRoutes { get; }
 
+    IReadOnlyList<RomanceInvitationState> RomanceInvitations { get; }
+
     IReadOnlyList<CharacterMarriageHistoryAggregate> History { get; }
 
     bool TryGetPractice(EntityId practiceId, [NotNullWhen(true)] out MarriagePracticeState? practice);
@@ -325,6 +379,10 @@ public interface IAuthoritativeCharacterMarriageWorldQuery
 
     bool TryGetRomanceRoute(EntityId routeId, [NotNullWhen(true)] out RomanceRouteState? route);
 
+    bool TryGetRomanceInvitation(
+        EntityId invitationId,
+        [NotNullWhen(true)] out RomanceInvitationState? invitation);
+
     bool TryGetHistory(
         EntityId characterId,
         [NotNullWhen(true)] out CharacterMarriageHistoryAggregate? history);
@@ -336,6 +394,8 @@ public interface IAuthoritativeCharacterMarriageWorldQuery
     IReadOnlyList<MarriageUnionState> GetUnionsInvolving(EntityId characterId);
 
     IReadOnlyList<RomanceRouteState> GetRomanceRoutesInvolving(EntityId characterId);
+
+    IReadOnlyList<RomanceInvitationState> GetRomanceInvitationsInvolving(EntityId characterId);
 
     MarriageEligibilityResult EvaluateEligibility(
         MarriageEligibilityRequest request,
@@ -350,6 +410,11 @@ public interface IAuthoritativeCharacterMarriageWorldQuery
 [JsonDerivedType(typeof(WithdrawPoliticalMarriageProposalAction), "withdraw_political_marriage_proposal.v1")]
 [JsonDerivedType(typeof(CancelPoliticalBetrothalAction), "cancel_political_betrothal.v1")]
 [JsonDerivedType(typeof(FulfillPoliticalBetrothalAction), "fulfill_political_betrothal.v1")]
+[JsonDerivedType(typeof(OfferRomanceRouteAction), "offer_romance_route.v1")]
+[JsonDerivedType(typeof(RespondToRomanceInvitationAction), "respond_to_romance_invitation.v1")]
+[JsonDerivedType(typeof(WithdrawRomanceInvitationAction), "withdraw_romance_invitation.v1")]
+[JsonDerivedType(typeof(AdvanceRomanceRouteAction), "advance_romance_route.v1")]
+[JsonDerivedType(typeof(EndRomanceRouteAction), "end_romance_route.v1")]
 public interface ICharacterMarriageAction;
 
 public sealed record ProposePoliticalMarriageAction(
@@ -372,6 +437,23 @@ public sealed record CancelPoliticalBetrothalAction(EntityId BetrothalId)
 public sealed record FulfillPoliticalBetrothalAction(EntityId BetrothalId)
     : ICharacterMarriageAction;
 
+public sealed record OfferRomanceRouteAction(
+    EntityId RecipientCharacterId,
+    EntityId PracticeId) : ICharacterMarriageAction;
+
+public sealed record RespondToRomanceInvitationAction(
+    EntityId InvitationId,
+    RomanceInvitationResponse Response) : ICharacterMarriageAction;
+
+public sealed record WithdrawRomanceInvitationAction(EntityId InvitationId)
+    : ICharacterMarriageAction;
+
+public sealed record AdvanceRomanceRouteAction(
+    EntityId RouteId,
+    int ExpectedProgressLevel) : ICharacterMarriageAction;
+
+public sealed record EndRomanceRouteAction(EntityId RouteId) : ICharacterMarriageAction;
+
 [method: JsonConstructor]
 public sealed record CharacterMarriageActionCommandPayload(ICharacterMarriageAction Action)
     : ICampaignCommandPayload;
@@ -387,6 +469,14 @@ public sealed record CharacterMarriageActionCommandPayload(ICharacterMarriageAct
 [JsonDerivedType(typeof(DirectPoliticalUnionAcceptedOutcome), "direct_political_union_accepted.v1")]
 [JsonDerivedType(typeof(PoliticalBetrothalCancelledOutcome), "political_betrothal_cancelled.v1")]
 [JsonDerivedType(typeof(PoliticalBetrothalFulfilledOutcome), "political_betrothal_fulfilled.v1")]
+[JsonDerivedType(typeof(RomanceInvitationCreatedOutcome), "romance_invitation_created.v1")]
+[JsonDerivedType(typeof(RomanceInvitationRefusedOutcome), "romance_invitation_refused.v1")]
+[JsonDerivedType(typeof(RomanceInvitationWithdrawnOutcome), "romance_invitation_withdrawn.v1")]
+[JsonDerivedType(typeof(RomanceInvitationCancelledOutcome), "romance_invitation_cancelled.v1")]
+[JsonDerivedType(typeof(RomanceRouteStartedOutcome), "romance_route_started.v1")]
+[JsonDerivedType(typeof(RomanceRouteAdvancedOutcome), "romance_route_advanced.v1")]
+[JsonDerivedType(typeof(RomanceRouteCompletedOutcome), "romance_route_completed.v1")]
+[JsonDerivedType(typeof(RomanceRouteEndedOutcome), "romance_route_ended.v1")]
 public interface ICharacterMarriageActionOutcome;
 
 public sealed record MarriageProposalCreatedOutcome(MarriageProposalState Proposal)
@@ -416,6 +506,31 @@ public sealed record PoliticalBetrothalFulfilledOutcome(
     PoliticalBetrothalState Betrothal,
     MarriageProposalState FulfillmentProposal,
     MarriageUnionState Union) : ICharacterMarriageActionOutcome;
+
+public sealed record RomanceInvitationCreatedOutcome(RomanceInvitationState Invitation)
+    : ICharacterMarriageActionOutcome;
+
+public sealed record RomanceInvitationRefusedOutcome(RomanceInvitationState Invitation)
+    : ICharacterMarriageActionOutcome;
+
+public sealed record RomanceInvitationWithdrawnOutcome(RomanceInvitationState Invitation)
+    : ICharacterMarriageActionOutcome;
+
+public sealed record RomanceInvitationCancelledOutcome(RomanceInvitationState Invitation)
+    : ICharacterMarriageActionOutcome;
+
+public sealed record RomanceRouteStartedOutcome(
+    EntityId InvitationId,
+    RomanceRouteState Route) : ICharacterMarriageActionOutcome;
+
+public sealed record RomanceRouteAdvancedOutcome(RomanceRouteState Route)
+    : ICharacterMarriageActionOutcome;
+
+public sealed record RomanceRouteCompletedOutcome(RomanceRouteState Route)
+    : ICharacterMarriageActionOutcome;
+
+public sealed record RomanceRouteEndedOutcome(RomanceRouteState Route)
+    : ICharacterMarriageActionOutcome;
 
 public sealed record CharacterMarriageActionResolvedEventPayload(
     EntityId ActingCharacterId,
@@ -469,6 +584,32 @@ public static class CharacterMarriageIds
             "marriage_union",
             "marriage-union.v1",
             sourceProposalId.Value);
+    }
+
+    public static EntityId DeriveRomanceInvitationId(
+        CampaignDate createdDate,
+        EntityId offerCommandId)
+    {
+        RequireDate(createdDate, nameof(createdDate));
+        RequireId(offerCommandId, nameof(offerCommandId));
+        return Hash(
+            "romance_invitation",
+            "romance-invitation.v1",
+            FormatDate(createdDate),
+            offerCommandId.Value);
+    }
+
+    public static EntityId DeriveRomanceRouteId(
+        EntityId invitationId,
+        EntityId acceptanceCommandId)
+    {
+        RequireId(invitationId, nameof(invitationId));
+        RequireId(acceptanceCommandId, nameof(acceptanceCommandId));
+        return Hash(
+            "romance_route",
+            "romance-route.v2",
+            invitationId.Value,
+            acceptanceCommandId.Value);
     }
 
     private static EntityId Hash(string entityNamespace, string domain, params string[] fields)

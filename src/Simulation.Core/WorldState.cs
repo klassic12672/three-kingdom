@@ -625,6 +625,22 @@ public sealed class WorldState : IWorldQuery
             case FulfillPoliticalBetrothalAction action:
                 affected.Add(action.BetrothalId);
                 break;
+            case OfferRomanceRouteAction action:
+                affected.Add(action.RecipientCharacterId);
+                affected.Add(action.PracticeId);
+                break;
+            case RespondToRomanceInvitationAction action:
+                affected.Add(action.InvitationId);
+                break;
+            case WithdrawRomanceInvitationAction action:
+                affected.Add(action.InvitationId);
+                break;
+            case AdvanceRomanceRouteAction action:
+                affected.Add(action.RouteId);
+                break;
+            case EndRomanceRouteAction action:
+                affected.Add(action.RouteId);
+                break;
             default:
                 throw new SimulationValidationException(
                     $"Unregistered character-marriage action '{payload.Action.GetType().Name}'.");
@@ -659,6 +675,31 @@ public sealed class WorldState : IWorldQuery
                 AddPoliticalBetrothal(affected, value.Betrothal);
                 AddMarriageProposal(affected, value.FulfillmentProposal);
                 AddMarriageUnion(affected, value.Union);
+                break;
+            case RomanceInvitationCreatedOutcome value:
+                AddRomanceInvitation(affected, value.Invitation);
+                break;
+            case RomanceInvitationRefusedOutcome value:
+                AddRomanceInvitation(affected, value.Invitation);
+                break;
+            case RomanceInvitationWithdrawnOutcome value:
+                AddRomanceInvitation(affected, value.Invitation);
+                break;
+            case RomanceInvitationCancelledOutcome value:
+                AddRomanceInvitation(affected, value.Invitation);
+                break;
+            case RomanceRouteStartedOutcome value:
+                affected.Add(value.InvitationId);
+                AddRomanceRoute(affected, value.Route);
+                break;
+            case RomanceRouteAdvancedOutcome value:
+                AddRomanceRoute(affected, value.Route);
+                break;
+            case RomanceRouteCompletedOutcome value:
+                AddRomanceRoute(affected, value.Route);
+                break;
+            case RomanceRouteEndedOutcome value:
+                AddRomanceRoute(affected, value.Route);
                 break;
             default:
                 throw new SimulationValidationException(
@@ -720,6 +761,30 @@ public sealed class WorldState : IWorldQuery
         if (union.ConcubinagePrincipalCharacterId is EntityId principal)
         {
             affected.Add(principal);
+        }
+    }
+
+    private static void AddRomanceInvitation(
+        ISet<EntityId> affected,
+        RomanceInvitationState invitation)
+    {
+        affected.Add(invitation.InvitationId);
+        affected.Add(invitation.InitiatorCharacterId);
+        affected.Add(invitation.RecipientCharacterId);
+        affected.Add(invitation.PracticeId);
+    }
+
+    private static void AddRomanceRoute(
+        ISet<EntityId> affected,
+        RomanceRouteState route)
+    {
+        affected.Add(route.RouteId);
+        affected.Add(route.FirstCharacterId);
+        affected.Add(route.SecondCharacterId);
+        affected.Add(route.PracticeId);
+        if (route.SourceInvitationId is EntityId invitationId)
+        {
+            affected.Add(invitationId);
         }
     }
 
@@ -1269,6 +1334,7 @@ public sealed class WorldState : IWorldQuery
         && characterMarriages.Proposals is { Count: 0 }
         && characterMarriages.Betrothals is { Count: 0 }
         && characterMarriages.Unions is { Count: 0 }
+        && characterMarriages.Invitations is { Count: 0 }
         && characterMarriages.RomanceRoutes is { Count: 0 }
         && characterMarriages.History is { Count: 0 };
 

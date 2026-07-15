@@ -18,7 +18,7 @@ public readonly record struct SimulationChecksum(string Value)
 
     internal static SimulationChecksum ComputeForSaveSchema(WorldSnapshot snapshot, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 10)
+        if (schemaVersion is < 1 or > 11)
         {
             throw new ArgumentOutOfRangeException(nameof(schemaVersion));
         }
@@ -30,11 +30,15 @@ public readonly record struct SimulationChecksum(string Value)
         // schemas 1-6 predate the separate career world, schemas 1-7 predate
         // character resources, schemas 1-8 predate the separate
         // character-estate-holding world, and schemas 1-9 predate the
-        // separate character-marriage world. Schema 10 includes the D0
-        // marriage state but predates D1 command/event discriminators.
+        // separate character-marriage world. Schemas 10-11 include the
+        // version-1 marriage state and predate D2 romance invitations/routes.
         if (schemaVersion < 10)
         {
             canonical.Remove("characterMarriages");
+        }
+        else if (schemaVersion < 12)
+        {
+            StripCharacterMarriageV2Fields(canonical);
         }
         if (schemaVersion < 9)
         {
@@ -76,6 +80,40 @@ public readonly record struct SimulationChecksum(string Value)
 
         byte[] serialized = JsonSerializer.SerializeToUtf8Bytes(canonical, CanonicalJson.Options);
         return FromBytes(serialized);
+    }
+
+    private static void StripCharacterMarriageV2Fields(JsonObject canonical)
+    {
+        if (canonical["characterMarriages"] is not JsonObject marriages)
+        {
+            return;
+        }
+
+        marriages["contractVersion"] = 1;
+        marriages.Remove("invitations");
+        if (marriages["romanceRoutes"] is not JsonArray routes)
+        {
+            return;
+        }
+
+        string[] v2Fields =
+        [
+            "sourceInvitationId",
+            "invitationInitiatorCharacterId",
+            "invitationCreatedDate",
+            "invitationCreatedTurnIndex",
+            "invitationSourceCommandId",
+            "lastPositiveProgressDate",
+            "lastPositiveProgressTurnIndex",
+            "lastPositiveProgressCommandId",
+        ];
+        foreach (JsonObject route in routes.OfType<JsonObject>())
+        {
+            foreach (string field in v2Fields)
+            {
+                route.Remove(field);
+            }
+        }
     }
 
     private static void StripCharacterV2Fields(JsonObject canonical)
@@ -196,6 +234,12 @@ public readonly record struct SimulationChecksum(string Value)
                 CharacterMarriageSystem.SystemId))
             {
                 versions.RemoveAt(index);
+            }
+            else if (schemaVersion < 12 && StringComparer.Ordinal.Equals(
+                systemId,
+                CharacterMarriageSystem.SystemId))
+            {
+                version["version"] = 1;
             }
             else if (schemaVersion is >= 5 and < 7
                 && StringComparer.Ordinal.Equals(systemId, "simulation.relationships"))

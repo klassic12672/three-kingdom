@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2/SP-04C3/SP-04D0/SP-04D1 exact-SHA hosted verified; later packages pending |
+| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2/SP-04C3/SP-04D0/SP-04D1 exact-SHA hosted verified; SP-04D2 locally verified candidate awaiting exact-SHA hosted evidence; later packages pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -400,7 +400,44 @@ Independent review remediated candidate-capacity turn abort, background-phase ev
 
 The final representative local Release performance run contains 1,000 characters and 250 bounded political proposals. Workflow measured 1,525.199 ms; snapshot plus checksum measured 120.596 ms; snapshot JSON was 930,668 bytes; gzip was 32,440 bytes; checksum was `9610a37a8e68825fa9d907ab58832240f1357b5f3ef227f4d61a57bd86f8d215`. The test asserts shape/correctness, not a wall-clock threshold. These working-tree measurements are not exact-SHA, hosted, cross-platform, physical-Windows, signing, Steam, release, or full-turn performance evidence.
 
-Accepted revision `653ce71d24bd81435ded9e65022dc29afd8f4810` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04D1-EXACT-SHA-653ce71.md). D117 and D121 therefore pass at that revision. Physical Windows remains an M4 gate, production signing and Steam remain SP-15 gates, and the full SP-04 three-second budget remains unmet. Every full SP-04 acceptance criterion remains unchecked, SP-05 remains blocked, and D2 is the next package.
+Accepted revision `653ce71d24bd81435ded9e65022dc29afd8f4810` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04D1-EXACT-SHA-653ce71.md). D117 and D121 therefore pass at that revision. Physical Windows remains an M4 gate, production signing and Steam remain SP-15 gates, and the full SP-04 three-second budget remains unmet. Every full SP-04 acceptance criterion remains unchecked, SP-05 remains blocked, and the D2 local candidate follows.
+
+## Local candidate package: SP-04D2 mutual-consent romance workflow
+
+SP-04D2 is implemented on accepted D1 revision `653ce71d24bd81435ded9e65022dc29afd8f4810`. The dependency is satisfied, M2/SP-04 remain Active, SP-05 remains blocked, and no ADR is required. The package remains deterministic pure .NET and preserves the unchanged outer `character_marriage_action.v1` command plus `character_marriage_action_resolved.v1` event. Five nested actions cover offer, recipient accept/refuse, initiator withdrawal, expected-level advance, and either-participant ending.
+
+An offer requires both distinct participants to meet the explicit practice's current voluntary-romance rules. Acceptance revalidates those rules and is the recipient's affirmative consent; it atomically removes the invitation and creates one route-v2 record at progress 1. Refusal or withdrawal removes the active invitation without retained invitation history. Progression increments exactly once, completes at level 4, and never creates legal state, relationship/memory effects, household state, scenes, content, or presentation. `ExpectedProgressLevel` plus stable event ordering makes repeated and conflicting queued commands deterministic. D2 creates no `Invalidated` outcome; lifecycle/condition integration remains D3 scope. Ending requires only participant authority, not mutual agreement.
+
+Active invitations are unique by canonical pair, bounded to 8 incoming per recipient and 64 involving either participant, and are never folded. Version-2 routes retain immutable invitation/acceptance evidence plus the latest positive progression command/date/turn. Progress 1 must identify acceptance; later progress identifies a distinct uniquely retained advance command. Invitation and route identities use namespaced length-framed SHA-256. Version-1 routes remain version 1, never gain synthesized fields, and remain actionable under their accepted 0→1, 1/2→+1, 3→Completed4, and active4→Completed4 semantics. Existing route retention remains 64 per participant with active pinning, terminal resolution ordering, and atomic checked folding for both participants.
+
+Save schema 12 advances the marriage snapshot/query/system to v2 and adds active invitations while preserving v1 practice/proposal/betrothal/union/history contracts and the outer D1 command/event. The 325,473-byte schema-11 fixture was generated from detached exact D1 source `653ce71d24bd81435ded9e65022dc29afd8f4810`. It contains one active and one ended v1 route, a pending D1 command, and nonempty D1 command/event diagnostics; stored checksum `9c5dc3195649bfde2626f95c7cf2573d4acbc4c2a081b9af0ac9d30c74f9c8fb`; file SHA-256 `ce6f737a9e3a608dfaaaeaf422f74e134a8fa7073ad4026a9aa1354007174d14`. The authenticated 11→12 step rejects D2 discriminators and v2 marriage state, injects empty invitations, advances the exact marriage system registration, preserves legacy routes and all prior state/diagnostics/source bytes, and extends historical checksums through schema 11. Duplicate historical marriage-system registrations fail as controlled compatibility errors.
+
+D2 does not add romantic marriage proposals or unions, attraction/affinity/memory/trauma/conflict effects, household decisions or movement, family/guardian/household/faction/court authority, coerced romance, lifecycle, succession, content, localization, UI, AI, RNG, battle, or platform behavior. D3 remains the owner of household decisions, conflict, coercion effects, and atomic condition/lifecycle integration. Every full SP-04 acceptance criterion remains unchecked.
+
+### SP-04D2 verification matrix
+
+| ID | Observable package criterion | Required evidence | Closeout classification |
+|---|---|---|---|
+| D201 | Nested actions/outcomes, invitation/route IDs, and snapshot/query/system v2 are explicit, registered, and round-trip | Contract, golden-ID, and discriminator tests | Local pass |
+| D202 | Offer/accept provides adult bilateral consent; refuse/withdraw authority is exact | Workflow, birthday, practice, condition, and authority tests | Local pass |
+| D203 | Political betrothal/union and romance may coexist without relationship or household mutation | Divergence workflow tests | Local pass |
+| D204 | Expected-level progression advances once, completes only at 4, and either participant may end | Progression/completion/end tests | Local pass |
+| D205 | Legacy v1 levels 0–4 remain actionable without version or causal-field synthesis | Explicit v1 progression and migration tests | Local pass after remediation |
+| D206 | Same-pair offer, response, repeated advance, advance/end, completion/end, and capacity races use stable event order without partial state | Concurrent command tests | Local pass after remediation |
+| D207 | Apply-time replan, exact nested JSON/affected IDs/phase/causality, candidate validation, and rollback hold | Tamper and phase-injection tests | Local pass |
+| D208 | Invitation 8/64 bounds and route active pinning/terminal folding are deterministic and atomic | Bound, saturation, retry, and aging tests | Local pass |
+| D209 | Coercive commands cannot offer, accept, advance, or complete romance, including legacy routes; ending remains non-positive | Causal-state and command-reuse tests | Local pass after remediation |
+| D210 | Current schema-12 saves round-trip v2 state and every pending action; replay events and final checksums are exact | Save/load/replay and semantic-tamper tests | Local pass after remediation |
+| D211 | Exact-D1 schema 11 authenticates, migrates legacy routes without rewriting them, rejects D2 data, and preserves source bytes | Frozen fixture and migration/recovery tests | Local pass |
+| D212 | Ten-year/1,000-entity deterministic golden is exact | Complete Core suite | Local pass; checksum `ba4eccd512e7bf699c3360032f2a5f007b362cc16ff718a487a6d082357e65b2` |
+| D213 | Independent architecture and adversarial review find no remaining correctness or package-boundary blocker | Read-only post-remediation review | Local pass after remediation |
+| D214 | Same revision passes repository gates and hosted macOS arm64/Windows x64 evidence | Local gates plus exact-SHA hosted clean-checkout run | Local pass; hosted pending |
+
+Local candidate verification on 2026-07-15 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 469 Simulation.Core, 71 Game.Content, 6 Game.Application, and 18 repository tests. The focused marriage/save/ten-year-soak slice passes 296 tests. Touched-project format verification, `git diff --check`, and `git lfs fsck` pass.
+
+Independent review found and remediated coercive command reuse on legacy nonterminal advances, incomplete v2 last-positive-progress causality, uncontrolled duplicate historical system registration, and race tests that did not force both hashed-event orderings. Final architecture and adversarial re-review report no remaining correctness or package-boundary blocker under the locked decision that D3, not D2, owns atomic route invalidation with condition/lifecycle mutation.
+
+The current raw Release fixture contains 1,000 characters and 200 completed routes. Workflow measured 7,238.257 ms; snapshot plus checksum measured 113.094 ms; snapshot JSON was 1,009,019 bytes; gzip was 48,844 bytes; checksum was `6035ff878b94f261a676af83bb2d293b3585e9eb40f650721399c39f96539af0`. The test asserts shape and correctness, not a wall-clock threshold. These working-tree measurements are not exact-SHA, hosted, cross-platform, physical-Windows, signing, Steam, release, or full-turn performance evidence. Exact-SHA hosted macOS arm64/Windows x64 evidence is still required before D2 acceptance; the full SP-04 three-second budget remains unmet.
 
 ## Edge cases and failure handling
 

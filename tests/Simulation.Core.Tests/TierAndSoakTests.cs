@@ -44,9 +44,9 @@ public sealed class TierAndSoakTests
 
         Assert.True(result.Turns > 1_000);
         Assert.Equal(200, result.FinalDate.Year);
-        // SP-04D0 adds the empty character-marriage world and system identity, so the
+        // SP-04D2 advances the character-marriage snapshot and system identity to v2, so the
         // canonical golden changes without altering the soak inputs or simulated outcomes.
-        Assert.Equal("0a92aa6dec435a9b33a399898ed7985210d7142dc10027b23a0bc4e392666b36", result.Checksum.Value);
+        Assert.Equal("ba4eccd512e7bf699c3360032f2a5f007b362cc16ff718a487a6d082357e65b2", result.Checksum.Value);
     }
 
     [Theory]

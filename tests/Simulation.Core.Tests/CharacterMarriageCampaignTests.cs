@@ -1225,6 +1225,1179 @@ public sealed class CharacterMarriageCampaignTests
             + $"checksum={checksumValue}");
     }
 
+    [Fact]
+    public void D201_RomanceContractsDiscriminatorsAndStableIdsAreExact()
+    {
+        EntityId offerCommand = new("command:marriage/romance/golden-offer");
+        EntityId acceptanceCommand = new("command:marriage/romance/golden-accept");
+        EntityId invitationId = CharacterMarriageIds.DeriveRomanceInvitationId(
+            Date,
+            offerCommand);
+        EntityId routeId = CharacterMarriageIds.DeriveRomanceRouteId(
+            invitationId,
+            acceptanceCommand);
+
+        Assert.Equal(2, CharacterMarriageContractVersions.Snapshot);
+        Assert.Equal(2, CharacterMarriageContractVersions.RomanceRouteState);
+        Assert.Equal(2, CharacterMarriageContractVersions.AuthoritativeQuery);
+        Assert.Equal(2, CharacterMarriageSystem.Version);
+        Assert.Equal(
+            "romance_invitation:sha256/92bf37d6a7277b8806b29c301dbde83b27abf3e5837c364971a966ffe8619961",
+            invitationId.Value);
+        Assert.Equal(
+            "romance_route:sha256/6bcd5b92ab1a43fb5a56e445070be71a8b81e455acf68e62596fcb2129aa02cc",
+            routeId.Value);
+
+        CampaignCommand command = CampaignCommand.Create(
+            offerCommand,
+            Character(0),
+            Date,
+            new CharacterMarriageActionCommandPayload(
+                new OfferRomanceRouteAction(Character(1), PracticeId)));
+        string json = JsonSerializer.Serialize(command, SimulationJson.CreateOptions());
+        CampaignCommand restored = JsonSerializer.Deserialize<CampaignCommand>(
+            json,
+            SimulationJson.CreateOptions())!;
+        Assert.Contains("character_marriage_action.v1", json, StringComparison.Ordinal);
+        Assert.Contains("offer_romance_route.v1", json, StringComparison.Ordinal);
+        Assert.IsType<OfferRomanceRouteAction>(
+            Assert.IsType<CharacterMarriageActionCommandPayload>(restored.Payload).Action);
+    }
+
+    [Fact]
+    public void D201B_EveryRomanceActionAndOutcomeDiscriminatorRoundTrips()
+    {
+        RomanceInvitationState invitation = ActiveInvitation(
+            "discriminator",
+            Character(0),
+            Character(1));
+        RomanceRouteState active = LegacyRoute(
+            "discriminator-active",
+            Character(0),
+            Character(1),
+            2);
+        RomanceRouteState completed = active with
+        {
+            ProgressLevel = 4,
+            Status = RomanceRouteStatus.Completed,
+            ResolutionDate = Date,
+            ResolutionTurnIndex = 0,
+            ResolutionCommandId = new EntityId(
+                "command:marriage/discriminator-completed"),
+        };
+        RomanceRouteState ended = active with
+        {
+            Status = RomanceRouteStatus.Ended,
+            ResolutionDate = Date,
+            ResolutionTurnIndex = 0,
+            ResolutionCommandId = new EntityId("command:marriage/discriminator-ended"),
+        };
+        (ICharacterMarriageAction Action, string Discriminator)[] actions =
+        [
+            (new OfferRomanceRouteAction(Character(1), PracticeId), "offer_romance_route.v1"),
+            (new RespondToRomanceInvitationAction(
+                invitation.InvitationId,
+                RomanceInvitationResponse.Accept), "respond_to_romance_invitation.v1"),
+            (new WithdrawRomanceInvitationAction(
+                invitation.InvitationId), "withdraw_romance_invitation.v1"),
+            (new AdvanceRomanceRouteAction(
+                active.RouteId,
+                active.ProgressLevel), "advance_romance_route.v1"),
+            (new EndRomanceRouteAction(active.RouteId), "end_romance_route.v1"),
+        ];
+        foreach ((ICharacterMarriageAction action, string discriminator) in actions)
+        {
+            CharacterMarriageActionCommandPayload payload = new(action);
+            string json = JsonSerializer.Serialize(payload, SimulationJson.CreateOptions());
+            CharacterMarriageActionCommandPayload restored = JsonSerializer.Deserialize<
+                CharacterMarriageActionCommandPayload>(
+                    json,
+                    SimulationJson.CreateOptions())!;
+            Assert.Equal(action.GetType(), restored.Action.GetType());
+            Assert.Contains(discriminator, json, StringComparison.Ordinal);
+        }
+
+        (ICharacterMarriageActionOutcome Outcome, string Discriminator)[] outcomes =
+        [
+            (new RomanceInvitationCreatedOutcome(invitation), "romance_invitation_created.v1"),
+            (new RomanceInvitationRefusedOutcome(invitation), "romance_invitation_refused.v1"),
+            (new RomanceInvitationWithdrawnOutcome(invitation), "romance_invitation_withdrawn.v1"),
+            (new RomanceInvitationCancelledOutcome(invitation), "romance_invitation_cancelled.v1"),
+            (new RomanceRouteStartedOutcome(
+                invitation.InvitationId,
+                active), "romance_route_started.v1"),
+            (new RomanceRouteAdvancedOutcome(active), "romance_route_advanced.v1"),
+            (new RomanceRouteCompletedOutcome(completed), "romance_route_completed.v1"),
+            (new RomanceRouteEndedOutcome(ended), "romance_route_ended.v1"),
+        ];
+        foreach ((ICharacterMarriageActionOutcome outcome, string discriminator) in outcomes)
+        {
+            CharacterMarriageActionResolvedEventPayload payload = new(
+                Character(0),
+                new OfferRomanceRouteAction(Character(1), PracticeId),
+                outcome);
+            string json = JsonSerializer.Serialize(payload, SimulationJson.CreateOptions());
+            CharacterMarriageActionResolvedEventPayload restored = JsonSerializer.Deserialize<
+                CharacterMarriageActionResolvedEventPayload>(
+                    json,
+                    SimulationJson.CreateOptions())!;
+            Assert.Equal(outcome.GetType(), restored.Outcome.GetType());
+            Assert.Contains(discriminator, json, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void D202_RecipientAcceptanceStartsOneVersionTwoRouteWithExactEvidence()
+    {
+        CampaignSimulation simulation = CreateSimulation(3);
+        CharacterMarriageActionResolvedEventPayload offered = Assert.IsType<
+            CharacterMarriageActionResolvedEventPayload>(SubmitAndResolve(
+                simulation,
+                Character(0),
+                new OfferRomanceRouteAction(Character(1), PracticeId),
+                "romance/start-offer").Payload);
+        RomanceInvitationState invitation = Assert.IsType<RomanceInvitationCreatedOutcome>(
+            offered.Outcome).Invitation;
+        Assert.Equal(invitation, Assert.Single(simulation.World.CharacterMarriages.RomanceInvitations));
+        Assert.Empty(simulation.World.CharacterMarriages.RomanceRoutes);
+
+        CampaignEvent acceptedEvent = SubmitAndResolve(
+            simulation,
+            Character(1),
+            new RespondToRomanceInvitationAction(
+                invitation.InvitationId,
+                RomanceInvitationResponse.Accept),
+            "romance/start-accept");
+        CharacterMarriageActionResolvedEventPayload accepted = Assert.IsType<
+            CharacterMarriageActionResolvedEventPayload>(acceptedEvent.Payload);
+        RomanceRouteState route = Assert.IsType<RomanceRouteStartedOutcome>(
+            accepted.Outcome).Route;
+
+        Assert.Empty(simulation.World.CharacterMarriages.RomanceInvitations);
+        Assert.Equal(route, Assert.Single(simulation.World.CharacterMarriages.RomanceRoutes));
+        Assert.Equal(CharacterMarriageContractVersions.RomanceRouteState, route.ContractVersion);
+        Assert.Equal(1, route.ProgressLevel);
+        Assert.Equal(RomanceRouteStatus.Active, route.Status);
+        Assert.Equal(invitation.InvitationId, route.SourceInvitationId);
+        Assert.Equal(invitation.InitiatorCharacterId, route.InvitationInitiatorCharacterId);
+        Assert.Equal(invitation.CreatedDate, route.InvitationCreatedDate);
+        Assert.Equal(invitation.CreatedTurnIndex, route.InvitationCreatedTurnIndex);
+        Assert.Equal(invitation.SourceCommandId, route.InvitationSourceCommandId);
+        Assert.Equal(acceptedEvent.CausalId, route.SourceCommandId);
+        Assert.Equal(acceptedEvent.CausalId, route.LastPositiveProgressCommandId);
+        Assert.Equal(acceptedEvent.ResolutionDate, route.LastPositiveProgressDate);
+        Assert.Equal(
+            CharacterMarriageIds.DeriveRomanceRouteId(
+                invitation.InvitationId,
+                acceptedEvent.CausalId!.Value),
+            route.RouteId);
+        Assert.Empty(simulation.World.CharacterMarriages.Proposals);
+        Assert.Empty(simulation.World.CharacterMarriages.Unions);
+        Assert.Empty(simulation.World.Relationships.CaptureSnapshot().Subjects);
+        Assert.Equal(
+            WorldState.GetCharacterMarriageActionAffectedIds(accepted),
+            acceptedEvent.AffectedIds);
+        string json = JsonSerializer.Serialize(acceptedEvent, SimulationJson.CreateOptions());
+        Assert.Contains("romance_route_started.v1", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void D203_RefusalWithdrawalAndAuthorityRemoveInvitationsWithoutRoutes()
+    {
+        CampaignSimulation simulation = CreateSimulation(4);
+        RomanceInvitationState refused = Offer(simulation, Character(0), Character(1), "romance/refuse-offer");
+        Assert.False(simulation.Submit(Command(
+            simulation,
+            Character(2),
+            new RespondToRomanceInvitationAction(
+                refused.InvitationId,
+                RomanceInvitationResponse.Refuse),
+            "romance/refuse-third")).IsValid);
+        RomanceInvitationRefusedOutcome refusal = Assert.IsType<RomanceInvitationRefusedOutcome>(
+            Assert.IsType<CharacterMarriageActionResolvedEventPayload>(SubmitAndResolve(
+                simulation,
+                Character(1),
+                new RespondToRomanceInvitationAction(
+                    refused.InvitationId,
+                    RomanceInvitationResponse.Refuse),
+                "romance/refuse-recipient").Payload).Outcome);
+        Assert.Equal(refused, refusal.Invitation);
+
+        RomanceInvitationState withdrawn = Offer(
+            simulation,
+            Character(0),
+            Character(2),
+            "romance/withdraw-offer");
+        Assert.False(simulation.Submit(Command(
+            simulation,
+            Character(2),
+            new WithdrawRomanceInvitationAction(withdrawn.InvitationId),
+            "romance/withdraw-recipient")).IsValid);
+        RomanceInvitationWithdrawnOutcome withdrawal = Assert.IsType<
+            RomanceInvitationWithdrawnOutcome>(Assert.IsType<
+                CharacterMarriageActionResolvedEventPayload>(SubmitAndResolve(
+                    simulation,
+                    Character(0),
+                    new WithdrawRomanceInvitationAction(withdrawn.InvitationId),
+                    "romance/withdraw-initiator").Payload).Outcome);
+        Assert.Equal(withdrawn, withdrawal.Invitation);
+        Assert.Empty(simulation.World.CharacterMarriages.RomanceInvitations);
+        Assert.Empty(simulation.World.CharacterMarriages.RomanceRoutes);
+        Assert.Empty(simulation.World.CharacterMarriages.History);
+    }
+
+    [Fact]
+    public void D204_AdvanceUsesExpectedLevelAndCompletesExactlyAtFour()
+    {
+        CampaignSimulation simulation = CreateSimulation(3);
+        RomanceRouteState route = OfferAndAccept(
+            simulation,
+            Character(0),
+            Character(1),
+            "romance/progress");
+
+        for (int expected = 1; expected <= 3; expected++)
+        {
+            CampaignEvent campaignEvent = SubmitAndResolve(
+                simulation,
+                expected % 2 == 0 ? Character(0) : Character(1),
+                new AdvanceRomanceRouteAction(route.RouteId, expected),
+                $"romance/progress-{expected}");
+            CharacterMarriageActionResolvedEventPayload payload = Assert.IsType<
+                CharacterMarriageActionResolvedEventPayload>(campaignEvent.Payload);
+            route = expected == 3
+                ? Assert.IsType<RomanceRouteCompletedOutcome>(payload.Outcome).Route
+                : Assert.IsType<RomanceRouteAdvancedOutcome>(payload.Outcome).Route;
+            Assert.Equal(expected + 1, route.ProgressLevel);
+            Assert.Equal(campaignEvent.CausalId, route.LastPositiveProgressCommandId);
+        }
+
+        Assert.Equal(RomanceRouteStatus.Completed, route.Status);
+        Assert.Equal(4, route.ProgressLevel);
+        Assert.Equal(route.ResolutionCommandId, route.LastPositiveProgressCommandId);
+        Assert.Empty(simulation.World.CharacterMarriages.Proposals);
+        Assert.Empty(simulation.World.CharacterMarriages.Unions);
+        Assert.Empty(simulation.World.Relationships.CaptureSnapshot().Subjects);
+        Assert.False(simulation.Submit(Command(
+            simulation,
+            Character(0),
+            new AdvanceRomanceRouteAction(route.RouteId, 4),
+            "romance/progress-terminal")).IsValid);
+    }
+
+    [Fact]
+    public void D205_EitherParticipantMayEndButThirdPartyCannot()
+    {
+        CampaignSimulation first = CreateSimulation(3);
+        RomanceRouteState firstRoute = OfferAndAccept(
+            first,
+            Character(0),
+            Character(1),
+            "romance/end-first");
+        Assert.False(first.Submit(Command(
+            first,
+            Character(2),
+            new EndRomanceRouteAction(firstRoute.RouteId),
+            "romance/end-third")).IsValid);
+        RomanceRouteEndedOutcome endedByFirst = Assert.IsType<RomanceRouteEndedOutcome>(
+            Assert.IsType<CharacterMarriageActionResolvedEventPayload>(SubmitAndResolve(
+                first,
+                Character(0),
+                new EndRomanceRouteAction(firstRoute.RouteId),
+                "romance/end-participant-first").Payload).Outcome);
+        Assert.Equal(RomanceRouteStatus.Ended, endedByFirst.Route.Status);
+
+        CampaignSimulation second = CreateSimulation(2);
+        RomanceRouteState secondRoute = OfferAndAccept(
+            second,
+            Character(0),
+            Character(1),
+            "romance/end-second");
+        RomanceRouteEndedOutcome endedBySecond = Assert.IsType<RomanceRouteEndedOutcome>(
+            Assert.IsType<CharacterMarriageActionResolvedEventPayload>(SubmitAndResolve(
+                second,
+                Character(1),
+                new EndRomanceRouteAction(secondRoute.RouteId),
+                "romance/end-participant-second").Payload).Outcome);
+        Assert.Equal(RomanceRouteStatus.Ended, endedBySecond.Route.Status);
+    }
+
+    [Fact]
+    public void D206_OfferEnforcesBirthdayLifeCapacityCustodyAndDuplicateState()
+    {
+        CampaignSimulation minor = CreateSimulation(
+            2,
+            birthDates: new Dictionary<EntityId, CampaignDate>
+            {
+                [Character(0)] = new CampaignDate(182, 5, 11),
+            });
+        Assert.False(minor.Submit(Command(
+            minor,
+            Character(0),
+            new OfferRomanceRouteAction(Character(1), PracticeId),
+            "romance/minor")).IsValid);
+
+        foreach (CharacterConditionState condition in new[]
+                 {
+                     CharacterConditionState.Default with { IsIncapacitated = true },
+                     CharacterConditionState.Default with
+                     {
+                         CustodyStatus = CharacterCustodyStatus.Captive,
+                        CustodianId = Character(1),
+                     },
+                     new CharacterConditionState(
+                         CharacterVitalStatus.Dead,
+                         CharacterHealthStatus.Critical,
+                         IsIncapacitated: true,
+                         CharacterCustodyStatus.Free,
+                         null),
+                 })
+        {
+            CampaignSimulation ineligible = CreateSimulation(
+                2,
+                conditions: new Dictionary<EntityId, CharacterConditionState>
+                {
+                    [Character(0)] = condition,
+                });
+            Assert.False(ineligible.Submit(Command(
+                ineligible,
+                Character(1),
+                new OfferRomanceRouteAction(Character(0), PracticeId),
+                $"romance/condition-{condition.GetHashCode()}")).IsValid);
+        }
+
+        CampaignSimulation duplicate = CreateSimulation(2);
+        _ = Offer(duplicate, Character(0), Character(1), "romance/duplicate-first");
+        Assert.False(duplicate.Submit(Command(
+            duplicate,
+            Character(1),
+            new OfferRomanceRouteAction(Character(0), PracticeId),
+            "romance/duplicate-second")).IsValid);
+
+        RomanceRouteState existingRoute = LegacyRoute(
+            "duplicate-route",
+            Character(0),
+            Character(1),
+            1);
+        CampaignSimulation duplicateRoute = CreateSimulation(
+            2,
+            RomanceSnapshot([existingRoute]));
+        Assert.False(duplicateRoute.Submit(Command(
+            duplicateRoute,
+            Character(1),
+            new OfferRomanceRouteAction(Character(0), PracticeId),
+            "romance/duplicate-route-offer")).IsValid);
+    }
+
+    [Fact]
+    public void D207_SameLevelSameTurnRaceFirstWinsAndLaterCancels()
+    {
+        CampaignSimulation simulation = CreateSimulation(2);
+        RomanceRouteState route = OfferAndAccept(
+            simulation,
+            Character(0),
+            Character(1),
+            "romance/race");
+        CampaignCommand first = Command(
+            simulation,
+            Character(0),
+            new AdvanceRomanceRouteAction(route.RouteId, 1),
+            "romance/race-a");
+        CampaignCommand second = Command(
+            simulation,
+            Character(1),
+            new AdvanceRomanceRouteAction(route.RouteId, 1),
+            "romance/race-b");
+        Assert.True(simulation.Submit(first).IsValid);
+        Assert.True(simulation.Submit(second).IsValid);
+
+        CampaignEvent[] events = simulation.ResolveTurn().ToArray();
+        Assert.Single(events, item => item.Payload is CharacterMarriageActionResolvedEventPayload);
+        Assert.Single(events, item => item.Payload is CommandCancelledEventPayload);
+        Assert.Equal(2, Assert.Single(simulation.World.CharacterMarriages.RomanceRoutes).ProgressLevel);
+    }
+
+    [Fact]
+    public void D208_StaleAcceptanceEligibilityProducesTypedCancellationAndRemovesInvitation()
+    {
+        RomanceInvitationState invitation = ActiveInvitation(
+            "stale",
+            Character(0),
+            Character(1));
+        CampaignSimulation simulation = CreateSimulation(
+            2,
+            RomanceSnapshot(invitations: [invitation]),
+            conditions: new Dictionary<EntityId, CharacterConditionState>
+            {
+                [Character(0)] = CharacterConditionState.Default with
+                {
+                    IsIncapacitated = true,
+                },
+            });
+        EntityId commandId = new("command:marriage/romance/stale-accept");
+        EntityId eventId = CharacterMarriageIds.DeriveActionEventId(
+            simulation.World.Calendar.Date,
+            commandId);
+        CharacterMarriageActionResolvedEventPayload planned =
+            simulation.World.CharacterMarriages.PlanAction(
+                Character(1),
+                new CharacterMarriageActionCommandPayload(
+                    new RespondToRomanceInvitationAction(
+                        invitation.InvitationId,
+                        RomanceInvitationResponse.Accept)),
+                simulation.World.Calendar.Date,
+                simulation.World.Calendar.TurnIndex,
+                commandId,
+                eventId);
+        Assert.IsType<RomanceInvitationCancelledOutcome>(planned.Outcome);
+
+        CampaignEvent campaignEvent = new(
+            ContractVersions.CampaignEvent,
+            eventId,
+            commandId,
+            simulation.World.Calendar.Date,
+            ResolutionPhase.Commands,
+            0,
+            WorldState.GetCharacterMarriageActionAffectedIds(planned),
+            planned);
+        simulation.World.Apply(campaignEvent);
+        Assert.Empty(simulation.World.CharacterMarriages.RomanceInvitations);
+        Assert.Empty(simulation.World.CharacterMarriages.RomanceRoutes);
+    }
+
+    [Fact]
+    public void D209_RouteCapacityRaceCancelsGenericallyAndPreservesInvitation()
+    {
+        RomanceRouteState[] routes = Enumerable.Range(1, 64)
+            .Select(index => LegacyRoute(
+                $"capacity-{index:D2}",
+                Character(0),
+                Character(index),
+                1))
+            .ToArray();
+        RomanceInvitationState invitation = ActiveInvitation(
+            "capacity",
+            Character(0),
+            Character(65));
+        CampaignSimulation simulation = CreateSimulation(
+            66,
+            RomanceSnapshot(routes, [invitation]));
+        CampaignCommand command = Command(
+            simulation,
+            Character(65),
+            new RespondToRomanceInvitationAction(
+                invitation.InvitationId,
+                RomanceInvitationResponse.Accept),
+            "romance/capacity-accept");
+        Assert.True(simulation.Submit(command).IsValid);
+
+        CampaignEvent campaignEvent = Assert.Single(simulation.ResolveTurn());
+        Assert.IsType<CommandCancelledEventPayload>(campaignEvent.Payload);
+        Assert.Equal(invitation, Assert.Single(simulation.World.CharacterMarriages.RomanceInvitations));
+        Assert.Equal(64, simulation.World.CharacterMarriages.RomanceRoutes.Count);
+    }
+
+    [Theory]
+    [InlineData(0, RomanceRouteStatus.Active, 1)]
+    [InlineData(1, RomanceRouteStatus.Active, 2)]
+    [InlineData(2, RomanceRouteStatus.Active, 3)]
+    [InlineData(3, RomanceRouteStatus.Completed, 4)]
+    [InlineData(4, RomanceRouteStatus.Completed, 4)]
+    public void D210_LegacyVersionOneActiveRouteRemainsActionable(
+        int initialProgress,
+        RomanceRouteStatus expectedStatus,
+        int expectedProgress)
+    {
+        RomanceRouteState legacy = LegacyRoute(
+            $"legacy-{initialProgress}",
+            Character(0),
+            Character(1),
+            initialProgress);
+        CampaignSimulation simulation = CreateSimulation(
+            2,
+            RomanceSnapshot([legacy]));
+        CampaignEvent campaignEvent = SubmitAndResolve(
+            simulation,
+            Character(0),
+            new AdvanceRomanceRouteAction(legacy.RouteId, initialProgress),
+            $"romance/legacy-{initialProgress}");
+        CharacterMarriageActionResolvedEventPayload payload = Assert.IsType<
+            CharacterMarriageActionResolvedEventPayload>(campaignEvent.Payload);
+        RomanceRouteState result = expectedStatus == RomanceRouteStatus.Completed
+            ? Assert.IsType<RomanceRouteCompletedOutcome>(payload.Outcome).Route
+            : Assert.IsType<RomanceRouteAdvancedOutcome>(payload.Outcome).Route;
+        Assert.Equal(CharacterMarriageContractVersions.State, result.ContractVersion);
+        Assert.Equal(expectedStatus, result.Status);
+        Assert.Equal(expectedProgress, result.ProgressLevel);
+        Assert.Null(result.SourceInvitationId);
+        Assert.Null(result.LastPositiveProgressCommandId);
+        if (expectedStatus == RomanceRouteStatus.Completed)
+        {
+            Assert.Equal(campaignEvent.ResolutionDate, result.ResolutionDate);
+            Assert.Equal(campaignEvent.CausalId, result.ResolutionCommandId);
+            Assert.NotNull(result.ResolutionTurnIndex);
+        }
+        else
+        {
+            Assert.Null(result.ResolutionDate);
+            Assert.Null(result.ResolutionTurnIndex);
+            Assert.Null(result.ResolutionCommandId);
+        }
+    }
+
+    [Fact]
+    public void D211_OfferCapacityRaceCancelsLaterCommandWithoutPartialInvitation()
+    {
+        RomanceInvitationState[] invitations = Enumerable.Range(1, 63)
+            .Select(index => ActiveInvitation(
+                $"offer-capacity-{index:D2}",
+                Character(0),
+                Character(index)))
+            .ToArray();
+        CampaignSimulation simulation = CreateSimulation(
+            66,
+            RomanceSnapshot(invitations: invitations));
+        CampaignCommand first = Command(
+            simulation,
+            Character(0),
+            new OfferRomanceRouteAction(Character(64), PracticeId),
+            "romance/offer-capacity-a");
+        CampaignCommand second = Command(
+            simulation,
+            Character(0),
+            new OfferRomanceRouteAction(Character(65), PracticeId),
+            "romance/offer-capacity-b");
+        Assert.True(simulation.Submit(first).IsValid);
+        Assert.True(simulation.Submit(second).IsValid);
+
+        CampaignEvent[] events = simulation.ResolveTurn().ToArray();
+        Assert.Single(events, item => item.Payload is CharacterMarriageActionResolvedEventPayload);
+        Assert.Single(events, item => item.Payload is CommandCancelledEventPayload);
+        Assert.Equal(64, simulation.World.CharacterMarriages.RomanceInvitations.Count);
+        Assert.True(
+            simulation.World.CharacterMarriages.RomanceInvitations.Any(
+                item => item.RecipientCharacterId == Character(64))
+            ^ simulation.World.CharacterMarriages.RomanceInvitations.Any(
+                item => item.RecipientCharacterId == Character(65)));
+    }
+
+    [Fact]
+    public void D212_TamperedOutcomeAndBackgroundPhaseRollBackExactly()
+    {
+        CampaignSimulation simulation = CreateSimulation(3);
+        EntityId commandId = new("command:marriage/romance/tamper");
+        EntityId eventId = CharacterMarriageIds.DeriveActionEventId(Date, commandId);
+        CharacterMarriageActionResolvedEventPayload planned =
+            simulation.World.CharacterMarriages.PlanAction(
+                Character(0),
+                new CharacterMarriageActionCommandPayload(
+                    new OfferRomanceRouteAction(Character(1), PracticeId)),
+                Date,
+                simulation.World.Calendar.TurnIndex,
+                commandId,
+                eventId);
+        RomanceInvitationCreatedOutcome created = Assert.IsType<
+            RomanceInvitationCreatedOutcome>(planned.Outcome);
+        CharacterMarriageActionResolvedEventPayload tampered = planned with
+        {
+            Outcome = new RomanceInvitationCreatedOutcome(created.Invitation with
+            {
+                RecipientCharacterId = Character(2),
+            }),
+        };
+        string before = SimulationChecksum.Compute(simulation.World.CaptureSnapshot()).Value;
+        Assert.Throws<SimulationValidationException>(() =>
+            simulation.World.CharacterMarriages.PrevalidateOutcome(
+                tampered,
+                Date,
+                simulation.World.Calendar.TurnIndex,
+                commandId,
+                eventId));
+        Assert.Equal(before, SimulationChecksum.Compute(simulation.World.CaptureSnapshot()).Value);
+
+        CampaignEvent wrongPhase = new(
+            ContractVersions.CampaignEvent,
+            eventId,
+            commandId,
+            Date,
+            ResolutionPhase.BackgroundCommit,
+            0,
+            WorldState.GetCharacterMarriageActionAffectedIds(planned),
+            planned);
+        Assert.Throws<SimulationValidationException>(() => simulation.World.Apply(wrongPhase));
+        Assert.Equal(before, SimulationChecksum.Compute(simulation.World.CaptureSnapshot()).Value);
+    }
+
+    [Fact]
+    public void D213_CurrentSaveAndPendingReplayPreserveRomanceIdentity()
+    {
+        CampaignSimulation original = CreateSimulation(2);
+        RomanceInvitationState invitation = Offer(
+            original,
+            Character(0),
+            Character(1),
+            "romance/replay-offer");
+        CampaignCommand acceptance = Command(
+            original,
+            Character(1),
+            new RespondToRomanceInvitationAction(
+                invitation.InvitationId,
+                RomanceInvitationResponse.Accept),
+            "romance/replay-accept");
+        Assert.True(original.Submit(acceptance).IsValid);
+        SaveEnvelope envelope = SaveEnvelope.Create("test", [], original);
+        string path = Path.Combine(
+            Path.GetTempPath(),
+            $"sp04d2-pending-{Guid.NewGuid():N}.save.gz");
+        CampaignSimulation restored;
+        try
+        {
+            new SaveStore().SaveAtomic(path, envelope);
+            SaveEnvelope loaded = new SaveStore().Load(path);
+            restored = new CampaignSimulation(WorldState.Restore(loaded.Snapshot));
+            Assert.Equal(SaveEnvelope.CurrentSchemaVersion, loaded.SchemaVersion);
+            Assert.Equal(envelope.Checksum, loaded.Checksum);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+
+        CampaignEvent originalEvent = Assert.Single(original.ResolveTurn());
+        CampaignEvent restoredEvent = Assert.Single(restored.ResolveTurn());
+        Assert.Equal(
+            JsonSerializer.Serialize(originalEvent, CanonicalJson.Options),
+            JsonSerializer.Serialize(restoredEvent, CanonicalJson.Options));
+        Assert.Equal(
+            SimulationChecksum.Compute(original.World.CaptureSnapshot()),
+            SimulationChecksum.Compute(restored.World.CaptureSnapshot()));
+        RomanceRouteState route = Assert.Single(restored.World.CharacterMarriages.RomanceRoutes);
+        Assert.Equal(invitation.InvitationId, route.SourceInvitationId);
+        string routePath = Path.Combine(
+            Path.GetTempPath(),
+            $"sp04d2-route-{Guid.NewGuid():N}.save.gz");
+        try
+        {
+            new SaveStore().SaveAtomic(
+                routePath,
+                SaveEnvelope.Create("test", [], restored));
+            SaveEnvelope routeSave = new SaveStore().Load(routePath);
+            Assert.Equal(
+                route,
+                Assert.Single(routeSave.Snapshot.CharacterMarriages.RomanceRoutes));
+        }
+        finally
+        {
+            File.Delete(routePath);
+        }
+    }
+
+    [Theory]
+    [InlineData("offer")]
+    [InlineData("accept")]
+    [InlineData("refuse")]
+    [InlineData("withdraw")]
+    [InlineData("advance")]
+    [InlineData("end")]
+    public void D213B_EveryPendingRomanceActionReplaysByteExactlyAfterSaveLoad(
+        string scenario)
+    {
+        CampaignSimulation original = CreateSimulation(2);
+        CampaignCommand pending;
+        if (scenario == "offer")
+        {
+            pending = Command(
+                original,
+                Character(0),
+                new OfferRomanceRouteAction(Character(1), PracticeId),
+                "romance/replay-all-offer");
+        }
+        else if (scenario is "accept" or "refuse" or "withdraw")
+        {
+            RomanceInvitationState invitation = Offer(
+                original,
+                Character(0),
+                Character(1),
+                $"romance/replay-all-{scenario}-setup");
+            ICharacterMarriageAction action = scenario switch
+            {
+                "accept" => new RespondToRomanceInvitationAction(
+                    invitation.InvitationId,
+                    RomanceInvitationResponse.Accept),
+                "refuse" => new RespondToRomanceInvitationAction(
+                    invitation.InvitationId,
+                    RomanceInvitationResponse.Refuse),
+                _ => new WithdrawRomanceInvitationAction(invitation.InvitationId),
+            };
+            pending = Command(
+                original,
+                scenario == "withdraw" ? Character(0) : Character(1),
+                action,
+                $"romance/replay-all-{scenario}");
+        }
+        else
+        {
+            RomanceRouteState route = OfferAndAccept(
+                original,
+                Character(0),
+                Character(1),
+                $"romance/replay-all-{scenario}-setup");
+            pending = Command(
+                original,
+                Character(0),
+                scenario == "advance"
+                    ? new AdvanceRomanceRouteAction(route.RouteId, route.ProgressLevel)
+                    : new EndRomanceRouteAction(route.RouteId),
+                $"romance/replay-all-{scenario}");
+        }
+
+        Assert.True(original.Submit(pending).IsValid);
+        string path = Path.Combine(
+            Path.GetTempPath(),
+            $"sp04d2-pending-{scenario}-{Guid.NewGuid():N}.save.gz");
+        CampaignSimulation restored;
+        try
+        {
+            SaveEnvelope envelope = SaveEnvelope.Create("test", [], original);
+            new SaveStore().SaveAtomic(path, envelope);
+            SaveEnvelope loaded = new SaveStore().Load(path);
+            restored = new CampaignSimulation(WorldState.Restore(loaded.Snapshot));
+            Assert.Equal(envelope.Checksum, loaded.Checksum);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+
+        CampaignEvent[] originalEvents = original.ResolveTurn().ToArray();
+        CampaignEvent[] restoredEvents = restored.ResolveTurn().ToArray();
+        Assert.Equal(
+            JsonSerializer.Serialize(originalEvents, CanonicalJson.Options),
+            JsonSerializer.Serialize(restoredEvents, CanonicalJson.Options));
+        Assert.Equal(
+            SimulationChecksum.Compute(original.World.CaptureSnapshot()),
+            SimulationChecksum.Compute(restored.World.CaptureSnapshot()));
+    }
+
+    [Fact]
+    public void D214_ThousandCharacterRomanceWorkflowRecordsRawPerformance()
+    {
+        CampaignSimulation simulation = CreateSimulation(1_000);
+        Stopwatch workflow = Stopwatch.StartNew();
+        for (int index = 0; index < 200; index++)
+        {
+            EntityId first = Character(index * 2);
+            EntityId second = Character(index * 2 + 1);
+            RomanceRouteState route = OfferAndAccept(
+                simulation,
+                first,
+                second,
+                $"romance/performance-{index:D3}");
+            for (int progress = 1; progress <= 3; progress++)
+            {
+                _ = SubmitAndResolve(
+                    simulation,
+                    progress % 2 == 0 ? first : second,
+                    new AdvanceRomanceRouteAction(route.RouteId, progress),
+                    $"romance/performance-{index:D3}-{progress}");
+            }
+        }
+
+        workflow.Stop();
+        Stopwatch checksum = Stopwatch.StartNew();
+        WorldSnapshot snapshot = simulation.World.CaptureSnapshot();
+        string checksumValue = SimulationChecksum.Compute(snapshot).Value;
+        checksum.Stop();
+        byte[] json = JsonSerializer.SerializeToUtf8Bytes(snapshot, CanonicalJson.Options);
+        using MemoryStream compressed = new();
+        using (GZipStream gzip = new(compressed, CompressionLevel.SmallestSize, leaveOpen: true))
+        {
+            gzip.Write(json);
+        }
+
+        Assert.Equal(200, snapshot.CharacterMarriages.RomanceRoutes.Count);
+        Assert.All(
+            snapshot.CharacterMarriages.RomanceRoutes,
+            item => Assert.Equal(RomanceRouteStatus.Completed, item.Status));
+        Assert.Empty(snapshot.CharacterMarriages.Proposals);
+        Assert.Empty(snapshot.CharacterMarriages.Unions);
+        output.WriteLine(
+            $"SP-04D2 raw fixture: characters=1000; completed_routes=200; "
+            + $"workflow_ms={workflow.Elapsed.TotalMilliseconds:F3}; "
+            + $"snapshot_checksum_ms={checksum.Elapsed.TotalMilliseconds:F3}; "
+            + $"json_bytes={json.Length}; gzip_bytes={compressed.Length}; "
+            + $"checksum={checksumValue}");
+    }
+
+    [Fact]
+    public void D215_IncomingInvitationLimitIsExactlyEight()
+    {
+        RomanceInvitationState[] invitations = Enumerable.Range(0, 8)
+            .Select(index => ActiveInvitation(
+                $"incoming-{index}",
+                Character(index),
+                Character(9)))
+            .ToArray();
+        CampaignSimulation simulation = CreateSimulation(
+            10,
+            RomanceSnapshot(invitations: invitations));
+        Assert.False(simulation.Submit(Command(
+            simulation,
+            Character(8),
+            new OfferRomanceRouteAction(Character(9), PracticeId),
+            "romance/incoming-ninth")).IsValid);
+
+        Assert.Throws<SimulationValidationException>(() => CreateSimulation(
+            11,
+            RomanceSnapshot(invitations:
+            [
+                .. invitations,
+                ActiveInvitation("incoming-overflow", Character(10), Character(9)),
+            ])));
+    }
+
+    [Fact]
+    public void D216_NewActiveRoutePinsAndFoldsOldestTerminalRouteForBothParticipants()
+    {
+        RomanceRouteState[] terminalRoutes = Enumerable.Range(1, 64)
+            .Select(index => LegacyRoute(
+                $"retention-{index:D2}",
+                Character(0),
+                Character(index),
+                3) with
+            {
+                StartDate = Date.AddDays(-100 - index),
+                Status = RomanceRouteStatus.Ended,
+                ResolutionDate = Date.AddDays(-index),
+                ResolutionTurnIndex = 0,
+                ResolutionCommandId = new EntityId(
+                    $"command:marriage/fixture-route-retention-{index:D2}-end"),
+            })
+            .ToArray();
+        RomanceInvitationState invitation = ActiveInvitation(
+            "retention-new",
+            Character(0),
+            Character(65));
+        CampaignSimulation simulation = CreateSimulation(
+            66,
+            RomanceSnapshot(terminalRoutes, [invitation]));
+
+        _ = SubmitAndResolve(
+            simulation,
+            Character(65),
+            new RespondToRomanceInvitationAction(
+                invitation.InvitationId,
+                RomanceInvitationResponse.Accept),
+            "romance/retention-accept");
+
+        Assert.Equal(64, simulation.World.CharacterMarriages.RomanceRoutes.Count);
+        Assert.Contains(
+            simulation.World.CharacterMarriages.RomanceRoutes,
+            route => route.Status == RomanceRouteStatus.Active
+                && route.SourceInvitationId == invitation.InvitationId);
+        Assert.DoesNotContain(
+            simulation.World.CharacterMarriages.RomanceRoutes,
+            route => route.RouteId == terminalRoutes[^1].RouteId);
+        Assert.True(simulation.World.CharacterMarriages.TryGetHistory(
+            Character(0),
+            out CharacterMarriageHistoryAggregate? firstHistory));
+        Assert.Equal(1, firstHistory.FoldedRomanceRouteCount);
+        Assert.True(simulation.World.CharacterMarriages.TryGetHistory(
+            Character(64),
+            out CharacterMarriageHistoryAggregate? secondHistory));
+        Assert.Equal(1, secondHistory.FoldedRomanceRouteCount);
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    [InlineData(2, true)]
+    public void D217_LegacyAdvanceRejectsRetainedCoerciveSourceAndResolutionCommands(
+        int progressLevel,
+        bool useResolutionCommand)
+    {
+        CharacterMarriageWorldSnapshot snapshot = CoerciveLegacyRouteSnapshot(
+            progressLevel,
+            out EntityId sourceCommandId,
+            out EntityId resolutionCommandId);
+        CampaignSimulation simulation = CreateSimulation(2, snapshot);
+        RomanceRouteState route = Assert.Single(
+            simulation.World.CharacterMarriages.RomanceRoutes);
+        EntityId reusedCommandId = useResolutionCommand
+            ? resolutionCommandId
+            : sourceCommandId;
+        CampaignCommand command = CampaignCommand.Create(
+            reusedCommandId,
+            Character(0),
+            simulation.World.Calendar.Date,
+            new CharacterMarriageActionCommandPayload(
+                new AdvanceRomanceRouteAction(route.RouteId, progressLevel)));
+
+        Assert.True(simulation.Submit(command).IsValid);
+        CampaignEvent cancelled = Assert.Single(simulation.ResolveTurn());
+
+        Assert.IsType<CommandCancelledEventPayload>(cancelled.Payload);
+        RomanceRouteState unchanged = Assert.Single(
+            simulation.World.CharacterMarriages.RomanceRoutes);
+        Assert.Equal(progressLevel, unchanged.ProgressLevel);
+        Assert.Equal(RomanceRouteStatus.Active, unchanged.Status);
+    }
+
+    [Fact]
+    public void D218_SamePairOfferRaceHasOneStableWinnerAndNoPartialState()
+    {
+        CampaignSimulation simulation = CreateSimulation(2);
+        CampaignCommand first = Command(
+            simulation,
+            Character(0),
+            new OfferRomanceRouteAction(Character(1), PracticeId),
+            "romance/same-pair-offer/a");
+        CampaignCommand second = Command(
+            simulation,
+            Character(1),
+            new OfferRomanceRouteAction(Character(0), PracticeId),
+            "romance/same-pair-offer/b");
+        Assert.True(simulation.Submit(first).IsValid);
+        Assert.True(simulation.Submit(second).IsValid);
+
+        CampaignEvent[] events = simulation.ResolveTurn().ToArray();
+
+        Assert.Single(events, item => item.Payload is CharacterMarriageActionResolvedEventPayload);
+        Assert.Single(events, item => item.Payload is CommandCancelledEventPayload);
+        Assert.Single(simulation.World.CharacterMarriages.RomanceInvitations);
+        Assert.Empty(simulation.World.CharacterMarriages.RomanceRoutes);
+    }
+
+    [Theory]
+    [InlineData("refuse", true)]
+    [InlineData("refuse", false)]
+    [InlineData("withdraw", true)]
+    [InlineData("withdraw", false)]
+    public void D219_AcceptResponseRacesResolveByStableCommandOrder(
+        string competingAction,
+        bool acceptFirst)
+    {
+        CampaignSimulation simulation = CreateSimulation(2);
+        string order = acceptFirst ? "accept-first" : "conflict-first";
+        RomanceInvitationState invitation = Offer(
+            simulation,
+            Character(0),
+            Character(1),
+            $"romance/response-race-{competingAction}-setup-{order}");
+        (EntityId earlierId, EntityId laterId) = OrderByMarriageEventId(
+            simulation.World.Calendar.Date,
+            new EntityId($"command:marriage/romance/response-race-{competingAction}-{order}/one"),
+            new EntityId($"command:marriage/romance/response-race-{competingAction}-{order}/two"));
+        CampaignCommand accept = CampaignCommand.Create(
+            acceptFirst ? earlierId : laterId,
+            Character(1),
+            simulation.World.Calendar.Date,
+            new CharacterMarriageActionCommandPayload(
+                new RespondToRomanceInvitationAction(
+                    invitation.InvitationId,
+                    RomanceInvitationResponse.Accept)));
+        ICharacterMarriageAction conflictAction = competingAction == "refuse"
+            ? new RespondToRomanceInvitationAction(
+                invitation.InvitationId,
+                RomanceInvitationResponse.Refuse)
+            : new WithdrawRomanceInvitationAction(invitation.InvitationId);
+        CampaignCommand conflict = CampaignCommand.Create(
+            acceptFirst ? laterId : earlierId,
+            competingAction == "refuse" ? Character(1) : Character(0),
+            simulation.World.Calendar.Date,
+            new CharacterMarriageActionCommandPayload(conflictAction));
+        Assert.True(simulation.Submit(accept).IsValid);
+        Assert.True(simulation.Submit(conflict).IsValid);
+
+        CampaignEvent[] events = simulation.ResolveTurn().ToArray();
+        bool acceptanceResolvedFirst = CharacterMarriageIds.DeriveActionEventId(
+            accept.IssuedDate,
+            accept.CommandId).CompareTo(CharacterMarriageIds.DeriveActionEventId(
+                conflict.IssuedDate,
+                conflict.CommandId)) < 0;
+        Assert.Equal(acceptFirst, acceptanceResolvedFirst);
+
+        Assert.Single(events, item => item.Payload is CharacterMarriageActionResolvedEventPayload);
+        Assert.Single(events, item => item.Payload is CommandCancelledEventPayload);
+        Assert.Empty(simulation.World.CharacterMarriages.RomanceInvitations);
+        Assert.Equal(
+            acceptanceResolvedFirst ? 1 : 0,
+            simulation.World.CharacterMarriages.RomanceRoutes.Count);
+    }
+
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(1, false)]
+    [InlineData(3, true)]
+    [InlineData(3, false)]
+    public void D220_AdvanceAndEndRacesResolveByStableCommandOrder(
+        int initialProgress,
+        bool endFirst)
+    {
+        CampaignSimulation simulation = CreateSimulation(2);
+        string order = endFirst ? "end-first" : "advance-first";
+        RomanceRouteState route = OfferAndAccept(
+            simulation,
+            Character(0),
+            Character(1),
+            $"romance/advance-end-{initialProgress}-{order}");
+        for (int expected = 1; expected < initialProgress; expected++)
+        {
+            _ = SubmitAndResolve(
+                simulation,
+                Character(0),
+                new AdvanceRomanceRouteAction(route.RouteId, expected),
+                $"romance/advance-end-setup-{initialProgress}-{expected}-{order}");
+        }
+
+        (EntityId earlierId, EntityId laterId) = OrderByMarriageEventId(
+            simulation.World.Calendar.Date,
+            new EntityId($"command:marriage/romance/advance-end-{initialProgress}-{order}/one"),
+            new EntityId($"command:marriage/romance/advance-end-{initialProgress}-{order}/two"));
+        CampaignCommand advance = CampaignCommand.Create(
+            endFirst ? laterId : earlierId,
+            Character(0),
+            simulation.World.Calendar.Date,
+            new CharacterMarriageActionCommandPayload(
+                new AdvanceRomanceRouteAction(route.RouteId, initialProgress)));
+        CampaignCommand end = CampaignCommand.Create(
+            endFirst ? earlierId : laterId,
+            Character(0),
+            simulation.World.Calendar.Date,
+            new CharacterMarriageActionCommandPayload(
+                new EndRomanceRouteAction(route.RouteId)));
+        Assert.True(simulation.Submit(advance).IsValid);
+        Assert.True(simulation.Submit(end).IsValid);
+
+        CampaignEvent[] events = simulation.ResolveTurn().ToArray();
+        RomanceRouteState resolved = Assert.Single(
+            simulation.World.CharacterMarriages.RomanceRoutes);
+        bool endResolvedFirst = CharacterMarriageIds.DeriveActionEventId(
+            end.IssuedDate,
+            end.CommandId).CompareTo(CharacterMarriageIds.DeriveActionEventId(
+                advance.IssuedDate,
+                advance.CommandId)) < 0;
+        Assert.Equal(endFirst, endResolvedFirst);
+
+        if (endResolvedFirst)
+        {
+            Assert.Equal(RomanceRouteStatus.Ended, resolved.Status);
+            Assert.Equal(initialProgress, resolved.ProgressLevel);
+            Assert.Single(events, item => item.Payload is CommandCancelledEventPayload);
+        }
+        else if (initialProgress == 1)
+        {
+            Assert.Equal(RomanceRouteStatus.Ended, resolved.Status);
+            Assert.Equal(2, resolved.ProgressLevel);
+            Assert.All(events, item => Assert.IsType<CharacterMarriageActionResolvedEventPayload>(
+                item.Payload));
+        }
+        else
+        {
+            Assert.Equal(RomanceRouteStatus.Completed, resolved.Status);
+            Assert.Equal(4, resolved.ProgressLevel);
+            Assert.Single(events, item => item.Payload is CommandCancelledEventPayload);
+        }
+    }
+
+    [Theory]
+    [InlineData(MarriageProposalKind.LegalUnion)]
+    [InlineData(MarriageProposalKind.PoliticalBetrothal)]
+    public void D221_PoliticalLegalStateCoexistsWithIndependentRomance(
+        MarriageProposalKind proposalKind)
+    {
+        CampaignSimulation simulation = CreateSimulation(2);
+        string kindLabel = proposalKind == MarriageProposalKind.LegalUnion
+            ? "legal-union"
+            : "political-betrothal";
+        MarriageProposalState proposal = Assert.IsType<MarriageProposalCreatedOutcome>(
+            Assert.IsType<CharacterMarriageActionResolvedEventPayload>(SubmitAndResolve(
+                simulation,
+                Character(0),
+                new ProposePoliticalMarriageAction(
+                    Character(1),
+                    proposalKind,
+                    MarriageUnionForm.PrincipalSpouse,
+                    null,
+                    PracticeId),
+                $"romance/coexist-{kindLabel}-propose").Payload).Outcome).Proposal;
+        _ = SubmitAndResolve(
+            simulation,
+            Character(1),
+            new RespondToPoliticalMarriageProposalAction(
+                proposal.ProposalId,
+                MarriageProposalResponse.Accept),
+            $"romance/coexist-{kindLabel}-accept");
+
+        RomanceRouteState route = OfferAndAccept(
+            simulation,
+            Character(0),
+            Character(1),
+            $"romance/coexist-{kindLabel}-romance");
+
+        Assert.Equal(RomanceRouteStatus.Active, route.Status);
+        Assert.Equal(
+            proposalKind == MarriageProposalKind.LegalUnion ? 1 : 0,
+            simulation.World.CharacterMarriages.Unions.Count);
+        Assert.Equal(
+            proposalKind == MarriageProposalKind.PoliticalBetrothal ? 1 : 0,
+            simulation.World.CharacterMarriages.Betrothals.Count);
+        Assert.Empty(simulation.World.Relationships.CaptureSnapshot().Subjects);
+        Assert.All(
+            simulation.World.Characters.Profiles,
+            profile => Assert.Null(profile.HouseholdId));
+    }
+
+    [Fact]
+    public void D222_RomanceWorkflowHonorsExactBirthdayConfiguredMinimumAndPracticeIdentity()
+    {
+        IReadOnlyDictionary<EntityId, CampaignDate> exactAdultBirthDates =
+            new Dictionary<EntityId, CampaignDate>
+            {
+                [Character(0)] = new CampaignDate(182, 5, 10),
+                [Character(1)] = new CampaignDate(182, 5, 10),
+            };
+        CampaignSimulation exactAdult = CreateSimulation(
+            2,
+            birthDates: exactAdultBirthDates);
+        RomanceRouteState route = OfferAndAccept(
+            exactAdult,
+            Character(0),
+            Character(1),
+            "romance/exact-eighteen");
+        Assert.Equal(1, route.ProgressLevel);
+
+        CharacterMarriageWorldSnapshot ageNineteenPractice = new(
+            CharacterMarriageContractVersions.Snapshot,
+            [Practice(minimumRomanceAge: 19)],
+            [],
+            [],
+            [],
+            [],
+            []);
+        CampaignSimulation belowConfiguredMinimum = CreateSimulation(
+            2,
+            ageNineteenPractice,
+            exactAdultBirthDates);
+        Assert.False(belowConfiguredMinimum.Submit(Command(
+            belowConfiguredMinimum,
+            Character(0),
+            new OfferRomanceRouteAction(Character(1), PracticeId),
+            "romance/configured-minimum")).IsValid);
+
+        CampaignSimulation unknownPractice = CreateSimulation(2);
+        Assert.False(unknownPractice.Submit(Command(
+            unknownPractice,
+            Character(0),
+            new OfferRomanceRouteAction(
+                Character(1),
+                new EntityId("marriage_practice:test/unknown")),
+            "romance/unknown-practice")).IsValid);
+    }
+
     private static CampaignEvent SubmitAndResolve(
         CampaignSimulation simulation,
         EntityId actor,
@@ -1248,6 +2421,148 @@ public sealed class CharacterMarriageCampaignTests
             actor,
             simulation.World.Calendar.Date,
             new CharacterMarriageActionCommandPayload(action));
+
+    private static RomanceInvitationState Offer(
+        CampaignSimulation simulation,
+        EntityId initiator,
+        EntityId recipient,
+        string suffix) => Assert.IsType<RomanceInvitationCreatedOutcome>(
+            Assert.IsType<CharacterMarriageActionResolvedEventPayload>(SubmitAndResolve(
+                simulation,
+                initiator,
+                new OfferRomanceRouteAction(recipient, PracticeId),
+                suffix).Payload).Outcome).Invitation;
+
+    private static RomanceRouteState OfferAndAccept(
+        CampaignSimulation simulation,
+        EntityId initiator,
+        EntityId recipient,
+        string suffix)
+    {
+        RomanceInvitationState invitation = Offer(
+            simulation,
+            initiator,
+            recipient,
+            $"{suffix}-offer");
+        return Assert.IsType<RomanceRouteStartedOutcome>(
+            Assert.IsType<CharacterMarriageActionResolvedEventPayload>(SubmitAndResolve(
+                simulation,
+                recipient,
+                new RespondToRomanceInvitationAction(
+                    invitation.InvitationId,
+                    RomanceInvitationResponse.Accept),
+                $"{suffix}-accept").Payload).Outcome).Route;
+    }
+
+    private static RomanceInvitationState ActiveInvitation(
+        string suffix,
+        EntityId initiator,
+        EntityId recipient)
+    {
+        EntityId commandId = new($"command:marriage/fixture-invitation-{suffix}");
+        return new RomanceInvitationState(
+            CharacterMarriageContractVersions.RomanceInvitationState,
+            CharacterMarriageIds.DeriveRomanceInvitationId(Date, commandId),
+            initiator,
+            recipient,
+            PracticeId,
+            Date,
+            0,
+            commandId);
+    }
+
+    private static RomanceRouteState LegacyRoute(
+        string suffix,
+        EntityId first,
+        EntityId second,
+        int progress) => new(
+            CharacterMarriageContractVersions.State,
+            new EntityId($"romance_route:fixture/{suffix}"),
+            first.CompareTo(second) < 0 ? first : second,
+            first.CompareTo(second) < 0 ? second : first,
+            PracticeId,
+            progress,
+            Date,
+            0,
+            new EntityId($"command:marriage/fixture-route-{suffix}"),
+            RomanceRouteStatus.Active,
+            null,
+            null,
+            null);
+
+    private static CharacterMarriageWorldSnapshot RomanceSnapshot(
+        IReadOnlyList<RomanceRouteState>? routes = null,
+        IReadOnlyList<RomanceInvitationState>? invitations = null) => new(
+            CharacterMarriageContractVersions.Snapshot,
+            [Practice(maxPrincipal: 8)],
+            [],
+            [],
+            [],
+            routes ?? [],
+            [],
+            invitations ?? []);
+
+    private static CharacterMarriageWorldSnapshot CoerciveLegacyRouteSnapshot(
+        int progressLevel,
+        out EntityId sourceCommandId,
+        out EntityId resolutionCommandId)
+    {
+        sourceCommandId = new EntityId("command:marriage/coercive-retained/source");
+        resolutionCommandId = new EntityId("command:marriage/coercive-retained/resolution");
+        EntityId proposalId = new("marriage_proposal:test/coercive-retained");
+        MarriageProposalState proposal = new(
+            CharacterMarriageContractVersions.State,
+            proposalId,
+            MarriageProposalKind.LegalUnion,
+            MarriageBasis.Political,
+            MarriageUnionForm.PrincipalSpouse,
+            MarriageConsentKind.Coerced,
+            Character(0),
+            Character(1),
+            null,
+            PracticeId,
+            Date.AddDays(-2),
+            0,
+            sourceCommandId,
+            MarriageProposalStatus.Accepted,
+            Date.AddDays(-1),
+            0,
+            resolutionCommandId);
+        MarriageUnionState union = new(
+            CharacterMarriageContractVersions.State,
+            new EntityId("marriage_union:test/coercive-retained"),
+            Character(0),
+            Character(1),
+            MarriageUnionForm.PrincipalSpouse,
+            null,
+            MarriageBasis.Political,
+            MarriageConsentKind.Coerced,
+            PracticeId,
+            proposalId,
+            Date.AddDays(-1),
+            0,
+            MarriageUnionStatus.Active,
+            null,
+            null,
+            null,
+            null);
+        RomanceRouteState route = LegacyRoute(
+            $"coercive-retained-{progressLevel}",
+            Character(0),
+            Character(1),
+            progressLevel) with
+        {
+            StartDate = Date.AddDays(-3),
+        };
+        return new CharacterMarriageWorldSnapshot(
+            CharacterMarriageContractVersions.Snapshot,
+            [Practice()],
+            [proposal],
+            [],
+            [union],
+            [route],
+            []);
+    }
 
     private static MarriageProposalState CreateProposal(
         CampaignSimulation simulation,
@@ -1535,17 +2850,27 @@ public sealed class CharacterMarriageCampaignTests
             []);
     }
 
-    private static MarriagePracticeState Practice(int maxPrincipal = 1) => new(
+    private static MarriagePracticeState Practice(
+        int maxPrincipal = 1,
+        int minimumRomanceAge = 18) => new(
         CharacterMarriageContractVersions.Practice,
         PracticeId,
         18,
-        18,
+        minimumRomanceAge,
         maxPrincipal,
         4,
         1,
         true,
         true,
         MarriageProhibitedKinship.DirectLine | MarriageProhibitedKinship.Siblings);
+
+    private static (EntityId Earlier, EntityId Later) OrderByMarriageEventId(
+        CampaignDate date,
+        EntityId first,
+        EntityId second) => CharacterMarriageIds.DeriveActionEventId(date, first)
+            .CompareTo(CharacterMarriageIds.DeriveActionEventId(date, second)) < 0
+                ? (first, second)
+                : (second, first);
 
     private static EntityId Character(int index) => new($"character:marriage/d1_{index:D4}");
 }

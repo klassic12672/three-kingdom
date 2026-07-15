@@ -30,6 +30,7 @@ public sealed class SaveSchemaRegistry
             new SaveMigrationV8ToV9(),
             new SaveMigrationV9ToV10(),
             new SaveMigrationV10ToV11(),
+            new SaveMigrationV11ToV12(),
         ]).ToArray();
         if (registered.Any(item => item.ToSchemaVersion != item.FromSchemaVersion + 1))
         {
@@ -99,7 +100,7 @@ public sealed class SaveSchemaRegistry
 
     internal static void ValidateHistoricalSourceChecksum(JsonObject source, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 10)
+        if (schemaVersion is < 1 or > 11)
         {
             throw new SaveCompatibilityException($"Save schema {schemaVersion} has no historical checksum contract.");
         }
@@ -174,7 +175,7 @@ public sealed class SaveSchemaRegistry
                 $"Schema {schemaVersion} unexpectedly contains schema 10 character-marriage data.");
         }
 
-        if (schemaVersion == 10)
+        if (schemaVersion is 10 or 11)
         {
             ValidateCharacterMarriageSnapshotShape(
                 RequireHistoricalObject(
@@ -182,37 +183,50 @@ public sealed class SaveSchemaRegistry
                     "characterMarriages",
                     schemaVersion,
                     "snapshot.characterMarriages"),
-                "Save schema 10");
-            if (!systemVersions.Any(version => IsSystemVersion(
-                    version,
+                $"Save schema {schemaVersion}",
+                expectedSnapshotVersion: 1,
+                requireInvitations: false,
+                allowVersionTwoRoutes: false);
+            JsonObject[] marriageSystemVersions = systemVersions
+                .Where(version => IsSystemId(version, CharacterMarriageSystem.SystemId))
+                .ToArray();
+            if (marriageSystemVersions.Length != 1
+                || !IsSystemVersion(
+                    marriageSystemVersions[0],
                     CharacterMarriageSystem.SystemId,
-                    CharacterMarriageSystem.Version)))
+                    1))
             {
                 throw new SaveCompatibilityException(
-                    $"Save schema 10 is missing required '{CharacterMarriageSystem.SystemId}@{CharacterMarriageSystem.Version}' system-version data.");
+                    $"Save schema {schemaVersion} requires exactly one '{CharacterMarriageSystem.SystemId}@1' system-version registration.");
             }
 
-            RejectD1Discriminators(
-                RequireHistoricalArray(
-                    snapshot,
-                    "pendingCommands",
-                    schemaVersion,
-                    "snapshot.pendingCommands"),
-                "snapshot pending commands");
-            RejectD1Discriminators(
-                RequireHistoricalArray(
-                    source,
-                    "diagnosticCommands",
-                    schemaVersion,
-                    "diagnosticCommands"),
-                "diagnostic commands");
-            RejectD1Discriminators(
-                RequireHistoricalArray(
-                    source,
-                    "diagnosticEvents",
-                    schemaVersion,
-                    "diagnosticEvents"),
-                "diagnostic events");
+            JsonArray pendingCommands = RequireHistoricalArray(
+                snapshot,
+                "pendingCommands",
+                schemaVersion,
+                "snapshot.pendingCommands");
+            JsonArray diagnosticCommands = RequireHistoricalArray(
+                source,
+                "diagnosticCommands",
+                schemaVersion,
+                "diagnosticCommands");
+            JsonArray diagnosticEvents = RequireHistoricalArray(
+                source,
+                "diagnosticEvents",
+                schemaVersion,
+                "diagnosticEvents");
+            if (schemaVersion == 10)
+            {
+                RejectD1Discriminators(pendingCommands, "snapshot pending commands");
+                RejectD1Discriminators(diagnosticCommands, "diagnostic commands");
+                RejectD1Discriminators(diagnosticEvents, "diagnostic events");
+            }
+            else
+            {
+                RejectD2Discriminators(pendingCommands, "snapshot pending commands");
+                RejectD2Discriminators(diagnosticCommands, "diagnostic commands");
+                RejectD2Discriminators(diagnosticEvents, "diagnostic events");
+            }
         }
 
         if (schemaVersion < 9
@@ -573,7 +587,12 @@ public sealed class SaveSchemaRegistry
         ValidateCharacterEstateHoldingSnapshotShape(
             characterEstateHoldings,
             "Current save schema");
-        ValidateCharacterMarriageSnapshotShape(characterMarriages, "Current save schema");
+        ValidateCharacterMarriageSnapshotShape(
+            characterMarriages,
+            "Current save schema",
+            CharacterMarriageContractVersions.Snapshot,
+            requireInvitations: true,
+            allowVersionTwoRoutes: true);
 
         if (snapshot["systemVersions"] is not JsonArray systemVersions
             || !systemVersions.Any(IsCurrentCharacterSystemVersion))
@@ -1087,7 +1106,10 @@ public sealed class SaveSchemaRegistry
 
     private static void ValidateCharacterMarriageSnapshotShape(
         JsonObject characterMarriages,
-        string context)
+        string context,
+        int expectedSnapshotVersion,
+        bool requireInvitations,
+        bool allowVersionTwoRoutes)
     {
         string[] requiredArrays =
         [
@@ -1098,11 +1120,37 @@ public sealed class SaveSchemaRegistry
             "romanceRoutes",
             "history",
         ];
+        if (requireInvitations)
+        {
+            requiredArrays = [.. requiredArrays, "invitations"];
+        }
+
         if (characterMarriages["contractVersion"]?.GetValue<int>()
-                != CharacterMarriageContractVersions.Snapshot
+                != expectedSnapshotVersion
             || requiredArrays.Any(property => characterMarriages[property] is not JsonArray))
         {
             throw MalformedCharacterMarriageData(context, "snapshot fields");
+        }
+
+        if (requireInvitations)
+        {
+            foreach (JsonNode? node in characterMarriages["invitations"]!.AsArray())
+            {
+                if (node is not JsonObject invitation
+                    || !HasVersion(
+                        invitation,
+                        CharacterMarriageContractVersions.RomanceInvitationState)
+                    || !HasObject(invitation, "invitationId")
+                    || !HasObject(invitation, "initiatorCharacterId")
+                    || !HasObject(invitation, "recipientCharacterId")
+                    || !HasObject(invitation, "practiceId")
+                    || !HasObject(invitation, "createdDate")
+                    || !HasLong(invitation, "createdTurnIndex")
+                    || !HasObject(invitation, "sourceCommandId"))
+                {
+                    throw MalformedCharacterMarriageData(context, "romance invitation");
+                }
+            }
         }
 
         foreach (JsonNode? node in characterMarriages["practices"]!.AsArray())
@@ -1198,8 +1246,12 @@ public sealed class SaveSchemaRegistry
 
         foreach (JsonNode? node in characterMarriages["romanceRoutes"]!.AsArray())
         {
+            int routeVersion = node?["contractVersion"]?.GetValue<int>() ?? -1;
             if (node is not JsonObject route
-                || !HasVersion(route, CharacterMarriageContractVersions.State)
+                || routeVersion != CharacterMarriageContractVersions.State
+                    && (!allowVersionTwoRoutes
+                        || routeVersion
+                            != CharacterMarriageContractVersions.RomanceRouteState)
                 || !HasObject(route, "routeId")
                 || !HasObject(route, "firstCharacterId")
                 || !HasObject(route, "secondCharacterId")
@@ -1214,6 +1266,41 @@ public sealed class SaveSchemaRegistry
                 || !HasNullableObject(route, "resolutionCommandId"))
             {
                 throw MalformedCharacterMarriageData(context, "romance-route record");
+            }
+
+            string[] versionTwoFields =
+            [
+                "sourceInvitationId",
+                "invitationInitiatorCharacterId",
+                "invitationCreatedDate",
+                "invitationCreatedTurnIndex",
+                "invitationSourceCommandId",
+                "lastPositiveProgressDate",
+                "lastPositiveProgressTurnIndex",
+                "lastPositiveProgressCommandId",
+            ];
+            if (routeVersion == CharacterMarriageContractVersions.State)
+            {
+                if (!allowVersionTwoRoutes
+                    && versionTwoFields.Any(route.ContainsKey))
+                {
+                    throw MalformedCharacterMarriageData(
+                        context,
+                        "legacy romance-route future fields");
+                }
+            }
+            else if (!HasObject(route, "sourceInvitationId")
+                || !HasObject(route, "invitationInitiatorCharacterId")
+                || !HasObject(route, "invitationCreatedDate")
+                || !HasLong(route, "invitationCreatedTurnIndex")
+                || !HasObject(route, "invitationSourceCommandId")
+                || !HasObject(route, "lastPositiveProgressDate")
+                || !HasLong(route, "lastPositiveProgressTurnIndex")
+                || !HasObject(route, "lastPositiveProgressCommandId"))
+            {
+                throw MalformedCharacterMarriageData(
+                    context,
+                    "version-2 romance-route evidence");
             }
         }
 
@@ -1470,13 +1557,22 @@ public sealed class SaveSchemaRegistry
         }
     }
 
+    private static void RejectD2Discriminators(JsonNode node, string description)
+    {
+        if (ContainsD2Discriminator(node))
+        {
+            throw new SaveCompatibilityException(
+                $"Save schema 11 unexpectedly contains schema 12 character-marriage data in {description}.");
+        }
+    }
+
     private static bool ContainsD1Discriminator(JsonNode? node)
     {
         if (node is JsonObject value)
         {
             if (value["$type"] is JsonValue discriminator
                 && discriminator.TryGetValue(out string? type)
-                && type is "character_marriage_action.v1"
+                && (type is "character_marriage_action.v1"
                     or "character_marriage_action_resolved.v1"
                     or "propose_political_marriage.v1"
                     or "respond_political_marriage_proposal.v1"
@@ -1490,7 +1586,8 @@ public sealed class SaveSchemaRegistry
                     or "political_betrothal_accepted.v1"
                     or "direct_political_union_accepted.v1"
                     or "political_betrothal_cancelled.v1"
-                    or "political_betrothal_fulfilled.v1")
+                    or "political_betrothal_fulfilled.v1"
+                    || IsD2Discriminator(type)))
             {
                 return true;
             }
@@ -1500,6 +1597,38 @@ public sealed class SaveSchemaRegistry
 
         return node is JsonArray array && array.Any(ContainsD1Discriminator);
     }
+
+    private static bool ContainsD2Discriminator(JsonNode? node)
+    {
+        if (node is JsonObject value)
+        {
+            if (value["$type"] is JsonValue discriminator
+                && discriminator.TryGetValue(out string? type)
+                && IsD2Discriminator(type))
+            {
+                return true;
+            }
+
+            return value.Any(property => ContainsD2Discriminator(property.Value));
+        }
+
+        return node is JsonArray array && array.Any(ContainsD2Discriminator);
+    }
+
+    private static bool IsD2Discriminator(string? type) => type is
+        "offer_romance_route.v1"
+        or "respond_to_romance_invitation.v1"
+        or "withdraw_romance_invitation.v1"
+        or "advance_romance_route.v1"
+        or "end_romance_route.v1"
+        or "romance_invitation_created.v1"
+        or "romance_invitation_refused.v1"
+        or "romance_invitation_withdrawn.v1"
+        or "romance_invitation_cancelled.v1"
+        or "romance_route_started.v1"
+        or "romance_route_advanced.v1"
+        or "romance_route_completed.v1"
+        or "romance_route_ended.v1";
 }
 
 public sealed class SaveMigrationV1ToV2 : ISaveMigration
@@ -1973,19 +2102,24 @@ public sealed class SaveMigrationV9ToV10 : ISaveMigration
                 "Schema 9 unexpectedly contains schema 10 character-marriage data.");
         }
 
-        snapshot["characterMarriages"] = JsonSerializer.SerializeToNode(
+        JsonObject legacyMarriages = JsonSerializer.SerializeToNode(
             CharacterMarriageWorldSnapshot.Empty,
-            SimulationJson.CreateOptions());
+            SimulationJson.CreateOptions())!.AsObject();
+        legacyMarriages["contractVersion"] = 1;
+        legacyMarriages.Remove("invitations");
+        snapshot["characterMarriages"] = legacyMarriages;
         systemVersions.Add(new JsonObject
         {
             ["systemId"] = CharacterMarriageSystem.SystemId,
-            ["version"] = CharacterMarriageSystem.Version,
+            ["version"] = 1,
         });
 
         WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(
             SimulationJson.CreateOptions())
             ?? throw new SaveCompatibilityException("Migrated schema 10 snapshot is empty.");
-        source["checksum"] = SimulationChecksum.Compute(migratedSnapshot).Value;
+        source["checksum"] = SimulationChecksum.ComputeForSaveSchema(
+            migratedSnapshot,
+            ToSchemaVersion).Value;
         source["schemaVersion"] = ToSchemaVersion;
         return source;
     }
@@ -2009,6 +2143,57 @@ public sealed class SaveMigrationV10ToV11 : ISaveMigration
         WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(
             SimulationJson.CreateOptions())
             ?? throw new SaveCompatibilityException("Migrated schema 11 snapshot is empty.");
+        source["checksum"] = SimulationChecksum.ComputeForSaveSchema(
+            migratedSnapshot,
+            ToSchemaVersion).Value;
+        source["schemaVersion"] = ToSchemaVersion;
+        return source;
+    }
+}
+
+public sealed class SaveMigrationV11ToV12 : ISaveMigration
+{
+    public int FromSchemaVersion => 11;
+
+    public int ToSchemaVersion => 12;
+
+    public JsonObject Migrate(JsonObject source)
+    {
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(source, FromSchemaVersion);
+        if (source["snapshot"] is not JsonObject snapshot
+            || snapshot["characterMarriages"] is not JsonObject marriages
+            || snapshot["systemVersions"] is not JsonArray systemVersions)
+        {
+            throw new SaveCompatibilityException(
+                "Schema 11 save is missing character-marriage or system-version data.");
+        }
+
+        if (marriages.ContainsKey("invitations")
+            || marriages["contractVersion"]?.GetValue<int>() != 1)
+        {
+            throw new SaveCompatibilityException(
+                "Schema 11 unexpectedly contains schema 12 character-marriage state.");
+        }
+
+        JsonObject? marriageVersion = systemVersions
+            .OfType<JsonObject>()
+            .SingleOrDefault(item =>
+                item["systemId"]?.GetValue<string>()
+                    == CharacterMarriageSystem.SystemId
+                && item["version"]?.GetValue<int>() == 1);
+        if (marriageVersion is null)
+        {
+            throw new SaveCompatibilityException(
+                $"Schema 11 is missing '{CharacterMarriageSystem.SystemId}@1'.");
+        }
+
+        marriages["contractVersion"] = CharacterMarriageContractVersions.Snapshot;
+        marriages["invitations"] = new JsonArray();
+        marriageVersion["version"] = CharacterMarriageSystem.Version;
+
+        WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(
+            SimulationJson.CreateOptions())
+            ?? throw new SaveCompatibilityException("Migrated schema 12 snapshot is empty.");
         source["checksum"] = SimulationChecksum.Compute(migratedSnapshot).Value;
         source["schemaVersion"] = ToSchemaVersion;
         return source;

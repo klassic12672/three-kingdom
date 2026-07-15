@@ -18,6 +18,8 @@ public sealed class SaveStoreTests : IDisposable
     private const string FrozenSchemaEightChecksum = "ba485b0efc67e7cff38cf6de4b4536dbda2191ee87f5577ff1ee2d1d0031424f";
     private const string FrozenSchemaNineChecksum = "1ef0f8728311ab217e84d9e6ff432342a7bac85b74aae6eee2cf92159d541684";
     private const string FrozenSchemaTenChecksum = "6e644f0db882a7b7440653060c5b635d6020844a1f032ee05afbe48dd90bce12";
+    private const string FrozenSchemaElevenChecksum = "9c5dc3195649bfde2626f95c7cf2573d4acbc4c2a081b9af0ac9d30c74f9c8fb";
+    private const string FrozenSchemaElevenFileSha256 = "ce6f737a9e3a608dfaaaeaf422f74e134a8fa7073ad4026a9aa1354007174d14";
     // Reconstructed literally from the exact schema-4 serializer contract at eaa3aaf.
     // Unlike the inferred schema-1/2 fixtures, this contains nonempty character history.
     private const string FrozenSchemaFourFixture = """{"schemaVersion":4,"contractVersion":2,"gameVersion":"0.1.0","createdUtc":"2026-07-15T00:00:00+00:00","contentManifests":[{"packId":{"value":"base:synthetic"},"version":"1.0.0","checksum":"sha256:abc","requiredForSimulation":true}],"seed":99,"snapshot":{"contractVersion":1,"calendar":{"date":{"year":191,"month":7,"day":14},"turnIndex":0,"daysInCurrentTurn":3},"rootSeed":99,"randomStreams":[],"entities":[],"pendingCommands":[],"systemVersions":[{"systemId":"simulation.calendar","version":1},{"systemId":"simulation.synthetic_entities","version":1},{"systemId":"simulation.command_events","version":1},{"systemId":"simulation.geography","version":1},{"systemId":"simulation.characters","version":1}],"lastEventDate":null,"lastEventPhase":null,"lastEventPriority":null,"lastEventId":null,"geography":{"graph":{"regions":[],"districts":[],"localities":[],"stops":[],"routes":[]},"season":0,"weather":0,"locations":[],"routes":[],"armies":[]},"characters":{"contractVersion":1,"identityDefinitions":[{"contractVersion":1,"id":{"value":"ability:synthetic/command"},"kind":0,"nameKey":{"value":"loc:ability/synthetic_command"}}],"characterDefinitions":[{"contractVersion":1,"id":{"value":"character:synthetic/adult"},"nameKey":{"value":"loc:character/synthetic_adult"},"birthDate":{"year":160,"month":1,"day":1},"abilityIds":[{"value":"ability:synthetic/command"}],"aptitudeIds":[],"traitIds":[],"ambitionIds":[],"reputationIds":[]}],"familyDefinitions":[],"householdDefinitions":[],"characterStates":[{"contractVersion":1,"characterId":{"value":"character:synthetic/adult"},"parentIds":[]}],"familyStates":[],"householdStates":[]}},"diagnosticCommands":[],"diagnosticEvents":[],"checksum":"48b94dad9d4dda78591243341afa16ece40e0ed157368f84c1189641684ecd3e"}""";
@@ -415,12 +417,15 @@ public sealed class SaveStoreTests : IDisposable
 
     [Theory]
     [InlineData("practice-null")]
+    [InlineData("snapshot-missing-invitations")]
     [InlineData("practice-missing-id")]
     [InlineData("proposal-missing-resolution")]
     [InlineData("betrothal-missing-source")]
     [InlineData("betrothal-missing-fulfillment-union")]
     [InlineData("union-missing-consent")]
     [InlineData("route-missing-practice")]
+    [InlineData("invitation-missing-source")]
+    [InlineData("route-v2-missing-evidence")]
     [InlineData("history-missing-count")]
     public void SchemaTen_RequiresCompleteCharacterMarriageEntryShapesWithoutChangingSource(
         string mutation)
@@ -436,6 +441,9 @@ public sealed class SaveStoreTests : IDisposable
         JsonObject entry;
         switch (mutation)
         {
+            case "snapshot-missing-invitations":
+                marriages.Remove("invitations");
+                break;
             case "practice-null":
                 marriages["practices"]!.AsArray().Add(null);
                 break;
@@ -540,6 +548,53 @@ public sealed class SaveStoreTests : IDisposable
                 entry.Remove("practiceId");
                 marriages["romanceRoutes"]!.AsArray().Add(entry);
                 break;
+            case "invitation-missing-source":
+                EntityId invitationCommand = new("command:test/romance-invitation");
+                entry = JsonSerializer.SerializeToNode(new RomanceInvitationState(
+                    CharacterMarriageContractVersions.RomanceInvitationState,
+                    CharacterMarriageIds.DeriveRomanceInvitationId(date, invitationCommand),
+                    first,
+                    second,
+                    practiceId,
+                    date,
+                    0,
+                    invitationCommand), CanonicalJson.Options)!.AsObject();
+                entry.Remove("sourceCommandId");
+                marriages["invitations"]!.AsArray().Add(entry);
+                break;
+            case "route-v2-missing-evidence":
+                EntityId routeInvitationCommand = new("command:test/route-v2-invitation");
+                EntityId routeInvitationId = CharacterMarriageIds.DeriveRomanceInvitationId(
+                    date,
+                    routeInvitationCommand);
+                EntityId acceptanceCommand = new("command:test/route-v2-acceptance");
+                entry = JsonSerializer.SerializeToNode(new RomanceRouteState(
+                    CharacterMarriageContractVersions.RomanceRouteState,
+                    CharacterMarriageIds.DeriveRomanceRouteId(
+                        routeInvitationId,
+                        acceptanceCommand),
+                    first,
+                    second,
+                    practiceId,
+                    1,
+                    date,
+                    0,
+                    acceptanceCommand,
+                    RomanceRouteStatus.Active,
+                    null,
+                    null,
+                    null,
+                    routeInvitationId,
+                    first,
+                    date,
+                    0,
+                    routeInvitationCommand,
+                    date,
+                    0,
+                    acceptanceCommand), CanonicalJson.Options)!.AsObject();
+                entry.Remove("sourceInvitationId");
+                marriages["romanceRoutes"]!.AsArray().Add(entry);
+                break;
             case "history-missing-count":
                 entry = JsonSerializer.SerializeToNode(
                     CharacterMarriageHistoryAggregate.Empty(first),
@@ -563,6 +618,8 @@ public sealed class SaveStoreTests : IDisposable
     [InlineData("future-turn")]
     [InlineData("orphan-accepted-proposal")]
     [InlineData("duplicate-proposal-outcome")]
+    [InlineData("v2-level-one-false-progress")]
+    [InlineData("v2-progress-reuses-acceptance")]
     public void SchemaTen_RejectsSemanticallyInvalidMarriageStateWithoutChangingSource(
         string mutation)
     {
@@ -584,6 +641,45 @@ public sealed class SaveStoreTests : IDisposable
                 JsonObject duplicate = marriages["unions"]![0]!.DeepClone().AsObject();
                 duplicate["unionId"]!["value"] = "marriage_union:synthetic/duplicate";
                 marriages["unions"]!.AsArray().Add(duplicate);
+                break;
+            case "v2-level-one-false-progress":
+            case "v2-progress-reuses-acceptance":
+                CampaignDate date = snapshot["calendar"]!["date"]!
+                    .Deserialize<CampaignDate>(CanonicalJson.Options);
+                EntityId invitationCommand = new("command:synthetic/romance-invitation");
+                EntityId invitationId = CharacterMarriageIds.DeriveRomanceInvitationId(
+                    date,
+                    invitationCommand);
+                EntityId acceptanceCommand = new("command:synthetic/romance-acceptance");
+                bool levelOne = mutation == "v2-level-one-false-progress";
+                RomanceRouteState route = new(
+                    CharacterMarriageContractVersions.RomanceRouteState,
+                    CharacterMarriageIds.DeriveRomanceRouteId(
+                        invitationId,
+                        acceptanceCommand),
+                    new EntityId("character:synthetic/child"),
+                    new EntityId("character:synthetic/peer"),
+                    new EntityId("marriage_practice:synthetic/default"),
+                    levelOne ? 1 : 2,
+                    date,
+                    0,
+                    acceptanceCommand,
+                    RomanceRouteStatus.Active,
+                    null,
+                    null,
+                    null,
+                    invitationId,
+                    new EntityId("character:synthetic/child"),
+                    date,
+                    0,
+                    invitationCommand,
+                    date,
+                    0,
+                    levelOne
+                        ? new EntityId("command:synthetic/false-level-one-progress")
+                        : acceptanceCommand);
+                marriages["romanceRoutes"]!.AsArray().Add(
+                    JsonSerializer.SerializeToNode(route, CanonicalJson.Options));
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(mutation));
@@ -1381,9 +1477,20 @@ public sealed class SaveStoreTests : IDisposable
             JsonSerializer.Serialize(frozen["contentManifests"], CanonicalJson.Options),
             JsonSerializer.Serialize(migrated.ContentManifests, CanonicalJson.Options));
         Assert.Equal(
-            JsonSerializer.Serialize(historical, CanonicalJson.Options),
-            JsonSerializer.Serialize(migrated.Snapshot, CanonicalJson.Options));
-        Assert.Equal(FrozenSchemaTenChecksum, migrated.Checksum);
+            JsonSerializer.Serialize(historical.CharacterMarriages.Practices, CanonicalJson.Options),
+            JsonSerializer.Serialize(migrated.Snapshot.CharacterMarriages.Practices, CanonicalJson.Options));
+        Assert.Equal(
+            JsonSerializer.Serialize(historical.CharacterMarriages.Proposals, CanonicalJson.Options),
+            JsonSerializer.Serialize(migrated.Snapshot.CharacterMarriages.Proposals, CanonicalJson.Options));
+        Assert.Equal(
+            JsonSerializer.Serialize(historical.CharacterMarriages.Unions, CanonicalJson.Options),
+            JsonSerializer.Serialize(migrated.Snapshot.CharacterMarriages.Unions, CanonicalJson.Options));
+        Assert.Equal(CharacterMarriageContractVersions.Snapshot, migrated.Snapshot.CharacterMarriages.ContractVersion);
+        Assert.Empty(migrated.Snapshot.CharacterMarriages.Invitations);
+        Assert.Contains(
+            migrated.Snapshot.SystemVersions,
+            item => item.SystemId == CharacterMarriageSystem.SystemId
+                && item.Version == CharacterMarriageSystem.Version);
         Assert.Equal(SimulationChecksum.Compute(migrated.Snapshot).Value, migrated.Checksum);
         Assert.Single(migrated.Snapshot.CharacterMarriages.Practices);
         MarriageProposalState proposal = Assert.Single(
@@ -1405,10 +1512,95 @@ public sealed class SaveStoreTests : IDisposable
         Assert.Equal(sourceBytes, File.ReadAllBytes(path));
     }
 
+    [Fact]
+    public void SchemaEleven_AuthenticatesExactD1FixtureAndMigratesLegacyRoutesWithoutChangingSource()
+    {
+        JsonObject frozen = CreateHistoricalFixture(11);
+        Assert.Equal(FrozenSchemaElevenChecksum, frozen["checksum"]!.GetValue<string>());
+        string fixturePath = Path.Combine(
+            AppContext.BaseDirectory,
+            "Fixtures",
+            "save-schema-11-history-backed.json");
+        byte[] fixtureBytes = File.ReadAllBytes(fixturePath);
+        Assert.Equal(325_473, fixtureBytes.Length);
+        Assert.Equal(
+            FrozenSchemaElevenFileSha256,
+            Convert.ToHexStringLower(SHA256.HashData(fixtureBytes)));
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(frozen, 11);
+        JsonObject original = (JsonObject)frozen.DeepClone();
+        string historicalCommands = JsonSerializer.Serialize(
+            frozen["diagnosticCommands"],
+            CanonicalJson.Options);
+        string historicalEvents = JsonSerializer.Serialize(
+            frozen["diagnosticEvents"],
+            CanonicalJson.Options);
+        string path = Path.Combine(directory, "schema-eleven-history-backed.save.gz");
+        WriteFrozenHistoricalFixture(path, 11);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        SaveEnvelope migrated = new SaveStore().Load(path);
+
+        Assert.Equal(SaveEnvelope.CurrentSchemaVersion, migrated.SchemaVersion);
+        Assert.Equal(CharacterMarriageContractVersions.Snapshot, migrated.Snapshot.CharacterMarriages.ContractVersion);
+        Assert.Empty(migrated.Snapshot.CharacterMarriages.Invitations);
+        RomanceRouteState[] routes = migrated.Snapshot.CharacterMarriages.RomanceRoutes.ToArray();
+        Assert.Equal(2, routes.Length);
+        Assert.All(routes, route =>
+        {
+            Assert.Equal(CharacterMarriageContractVersions.State, route.ContractVersion);
+            Assert.Null(route.SourceInvitationId);
+            Assert.Null(route.LastPositiveProgressCommandId);
+        });
+        Assert.Contains(routes, route => route.Status == RomanceRouteStatus.Active);
+        Assert.Contains(routes, route => route.Status == RomanceRouteStatus.Ended);
+        Assert.Single(migrated.Snapshot.CharacterMarriages.Unions);
+        Assert.Single(migrated.Snapshot.CharacterEstateHoldings.Holdings);
+        Assert.IsType<CharacterMarriageActionCommandPayload>(
+            Assert.Single(migrated.Snapshot.PendingCommands).Payload);
+        Assert.Contains(
+            migrated.DiagnosticCommands,
+            command => command.Payload is CharacterMarriageActionCommandPayload);
+        Assert.Contains(
+            migrated.DiagnosticEvents,
+            campaignEvent => campaignEvent.Payload
+                is CharacterMarriageActionResolvedEventPayload);
+        Assert.Equal(
+            historicalCommands,
+            JsonSerializer.Serialize(migrated.DiagnosticCommands, CanonicalJson.Options));
+        Assert.Equal(
+            historicalEvents,
+            JsonSerializer.Serialize(migrated.DiagnosticEvents, CanonicalJson.Options));
+        Assert.Equal(SimulationChecksum.Compute(migrated.Snapshot).Value, migrated.Checksum);
+        WorldState restored = WorldState.Restore(migrated.Snapshot);
+        RomanceRouteState activeRoute = routes.Single(
+            route => route.Status == RomanceRouteStatus.Active);
+        EntityId commandId = new("command:test/schema11-legacy-route-advance");
+        EntityId eventId = CharacterMarriageIds.DeriveActionEventId(
+            restored.Calendar.Date,
+            commandId);
+        CharacterMarriageActionResolvedEventPayload legacyAdvance =
+            restored.CharacterMarriages.PlanAction(
+                activeRoute.FirstCharacterId,
+                new CharacterMarriageActionCommandPayload(
+                    new AdvanceRomanceRouteAction(
+                        activeRoute.RouteId,
+                        activeRoute.ProgressLevel)),
+                restored.Calendar.Date,
+                restored.Calendar.TurnIndex,
+                commandId,
+                eventId);
+        Assert.IsType<RomanceRouteAdvancedOutcome>(legacyAdvance.Outcome);
+        Assert.Equal(
+            JsonSerializer.Serialize(original, CanonicalJson.Options),
+            JsonSerializer.Serialize(frozen, CanonicalJson.Options));
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
     [Theory]
     [InlineData("pending-command")]
     [InlineData("diagnostic-command")]
     [InlineData("diagnostic-event")]
+    [InlineData("d2-nested")]
     public void SchemaTen_RejectsFutureD1DiscriminatorsWithoutChangingSource(string mutation)
     {
         JsonObject invalid = CreateHistoricalFixture(10);
@@ -1432,6 +1624,15 @@ public sealed class SaveStoreTests : IDisposable
             case "diagnostic-event":
                 invalid["diagnosticEvents"]!.AsArray().Add(future);
                 break;
+            case "d2-nested":
+                invalid["diagnosticCommands"]!.AsArray().Add(new JsonObject
+                {
+                    ["nested"] = new JsonObject
+                    {
+                        ["$type"] = "offer_romance_route.v1",
+                    },
+                });
+                break;
         }
 
         string path = Path.Combine(directory, $"schema-ten-future-{mutation}.save.gz");
@@ -1439,6 +1640,101 @@ public sealed class SaveStoreTests : IDisposable
         byte[] sourceBytes = File.ReadAllBytes(path);
 
         Assert.Throws<SaveCompatibilityException>(() => new SaveStore().Load(path));
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Theory]
+    [InlineData("pending-action")]
+    [InlineData("diagnostic-action")]
+    [InlineData("diagnostic-outcome")]
+    [InlineData("invitation-state")]
+    [InlineData("route-v2")]
+    [InlineData("system-v2")]
+    public void SchemaEleven_RejectsAllD2DiscriminatorsAndStateWithoutChangingSource(
+        string mutation)
+    {
+        JsonObject invalid = CreateHistoricalFixture(11);
+        JsonObject snapshot = invalid["snapshot"]!.AsObject();
+        JsonObject marriages = snapshot["characterMarriages"]!.AsObject();
+        JsonObject nested = new()
+        {
+            ["payload"] = new JsonObject
+            {
+                ["$type"] = "character_marriage_action.v1",
+                ["action"] = new JsonObject
+                {
+                    ["$type"] = mutation == "diagnostic-outcome"
+                        ? "advance_romance_route.v1"
+                        : "offer_romance_route.v1",
+                },
+                ["outcome"] = new JsonObject
+                {
+                    ["$type"] = "romance_route_advanced.v1",
+                },
+            },
+        };
+        switch (mutation)
+        {
+            case "pending-action":
+                snapshot["pendingCommands"]!.AsArray().Add(nested);
+                break;
+            case "diagnostic-action":
+                invalid["diagnosticCommands"]!.AsArray().Add(nested);
+                break;
+            case "diagnostic-outcome":
+                invalid["diagnosticEvents"]!.AsArray().Add(nested);
+                break;
+            case "invitation-state":
+                marriages["invitations"] = new JsonArray();
+                break;
+            case "route-v2":
+                marriages["romanceRoutes"]![0]!["contractVersion"] = 2;
+                break;
+            case "system-v2":
+                JsonObject marriageVersion = snapshot["systemVersions"]!.AsArray()
+                    .OfType<JsonObject>()
+                    .Single(item => item["systemId"]!.GetValue<string>()
+                        == CharacterMarriageSystem.SystemId);
+                marriageVersion["version"] = 2;
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(mutation));
+        }
+
+        string path = Path.Combine(directory, $"schema-eleven-future-{mutation}.save.gz");
+        WriteJsonGzip(path, invalid);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        Assert.Throws<SaveCompatibilityException>(() => new SaveStore().Load(path));
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void SchemaEleven_DuplicateMarriageSystemRegistrationRecoversWithoutChangingPrimary()
+    {
+        JsonObject invalid = CreateHistoricalFixture(11);
+        JsonObject snapshot = invalid["snapshot"]!.AsObject();
+        JsonArray systemVersions = snapshot["systemVersions"]!.AsArray();
+        JsonObject marriageVersion = systemVersions
+            .OfType<JsonObject>()
+            .Single(item => item["systemId"]!.GetValue<string>()
+                == CharacterMarriageSystem.SystemId);
+        systemVersions.Add(marriageVersion.DeepClone());
+        WorldSnapshot historical = SaveSchemaRegistry.DeserializeHistoricalSnapshotForChecksum(
+            snapshot,
+            11);
+        invalid["checksum"] = SimulationChecksum.ComputeForSaveSchema(historical, 11).Value;
+
+        string path = Path.Combine(directory, "schema-eleven-duplicate-marriage-system.save.gz");
+        WriteJsonGzip(path, invalid);
+        WriteJsonGzip(path + ".1", CreateHistoricalFixture(11));
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        SaveLoadResult recovered = new SaveStore().LoadWithRecovery(path);
+
+        Assert.Equal(path + ".1", recovered.SourcePath);
+        Assert.NotNull(recovered.RecoveryDiagnostic);
+        Assert.Equal(SaveEnvelope.CurrentSchemaVersion, recovered.Envelope.SchemaVersion);
         Assert.Equal(sourceBytes, File.ReadAllBytes(path));
     }
 
@@ -1693,6 +1989,7 @@ public sealed class SaveStoreTests : IDisposable
     [InlineData(8)]
     [InlineData(9)]
     [InlineData(10)]
+    [InlineData(11)]
     public void CorruptedHistoricalSnapshotFailsAuthenticationWithoutOverwritingSource(int schemaVersion)
     {
         JsonObject historical = CreateHistoricalFixture(schemaVersion);
@@ -2646,6 +2943,7 @@ public sealed class SaveStoreTests : IDisposable
         // Schema 8 is generated from the exact accepted SP-04C2 contract at e2d9590.
         // Schema 9 is generated from the exact accepted SP-04C3 contract at 7b9f795.
         // Schema 10 is generated from the exact accepted SP-04D0 contract at f7fef24.
+        // Schema 11 is generated from the exact accepted SP-04D1 contract at 653ce71.
         // Schema 1/2 are synthetic fixtures inferred from the registered migration contracts.
         string fileName = schemaVersion switch
         {
@@ -2659,6 +2957,7 @@ public sealed class SaveStoreTests : IDisposable
             8 => "save-schema-8-history-backed.json",
             9 => "save-schema-9-history-backed.json",
             10 => "save-schema-10-history-backed.json",
+            11 => "save-schema-11-history-backed.json",
             _ => throw new ArgumentOutOfRangeException(nameof(schemaVersion)),
         };
         return schemaVersion == 4

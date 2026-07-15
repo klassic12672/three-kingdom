@@ -14,6 +14,7 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
     private readonly SortedDictionary<EntityId, MarriageProposalState> proposals = [];
     private readonly SortedDictionary<EntityId, PoliticalBetrothalState> betrothals = [];
     private readonly SortedDictionary<EntityId, MarriageUnionState> unions = [];
+    private readonly SortedDictionary<EntityId, RomanceInvitationState> romanceInvitations = [];
     private readonly SortedDictionary<EntityId, RomanceRouteState> romanceRoutes = [];
     private readonly SortedDictionary<EntityId, CharacterMarriageHistoryAggregate> history = [];
 
@@ -42,6 +43,7 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
         AddProposals(snapshot.Proposals);
         AddBetrothals(snapshot.Betrothals);
         AddUnions(snapshot.Unions);
+        AddRomanceInvitations(snapshot.Invitations ?? []);
         AddRomanceRoutes(snapshot.RomanceRoutes);
         AddHistory(snapshot.History);
         ValidateProposalSemantics();
@@ -66,6 +68,9 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
 
     public IReadOnlyList<RomanceRouteState> RomanceRoutes =>
         romanceRoutes.Values.Select(Clone).ToArray();
+
+    public IReadOnlyList<RomanceInvitationState> RomanceInvitations =>
+        romanceInvitations.Values.Select(Clone).ToArray();
 
     public IReadOnlyList<CharacterMarriageHistoryAggregate> History =>
         history.Values.Select(Clone).ToArray();
@@ -94,6 +99,11 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
         EntityId routeId,
         [NotNullWhen(true)] out RomanceRouteState? route) =>
         TryGet(romanceRoutes, routeId, Clone, out route);
+
+    public bool TryGetRomanceInvitation(
+        EntityId invitationId,
+        [NotNullWhen(true)] out RomanceInvitationState? invitation) =>
+        TryGet(romanceInvitations, invitationId, Clone, out invitation);
 
     public bool TryGetHistory(
         EntityId characterId,
@@ -132,6 +142,19 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
         _ = RequireCharacter(characterId, "Romance-route query character");
         return romanceRoutes.Values
             .Where(item => Involves(item.FirstCharacterId, item.SecondCharacterId, characterId))
+            .Select(Clone)
+            .ToArray();
+    }
+
+    public IReadOnlyList<RomanceInvitationState> GetRomanceInvitationsInvolving(
+        EntityId characterId)
+    {
+        _ = RequireCharacter(characterId, "Romance-invitation query character");
+        return romanceInvitations.Values
+            .Where(item => Involves(
+                item.InitiatorCharacterId,
+                item.RecipientCharacterId,
+                characterId))
             .Select(Clone)
             .ToArray();
     }
@@ -324,7 +347,8 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
         betrothals.Values.Select(Clone).ToArray(),
         unions.Values.Select(Clone).ToArray(),
         romanceRoutes.Values.Select(Clone).ToArray(),
-        history.Values.Select(Clone).ToArray());
+        history.Values.Select(Clone).ToArray(),
+        romanceInvitations.Values.Select(Clone).ToArray());
 
     internal void UpdateCampaignCalendar(CampaignCalendar value)
     {
@@ -379,6 +403,13 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
         ThrowIfInvalid(issues);
         RequireNamespacedId(commandId, "command:", "Character-marriage command ID");
         RequireNamespacedId(eventId, "event:", "Character-marriage event ID");
+        if (IsPositiveRomanceAction(payload.Action)
+            && IsRetainedCoerciveCommand(commandId))
+        {
+            throw new SimulationValidationException(
+                "A retained coercive proposal command cannot resolve a positive romance action.");
+        }
+
         if (eventId != CharacterMarriageIds.DeriveActionEventId(resolutionDate, commandId))
         {
             throw new SimulationValidationException(
@@ -416,6 +447,30 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
                 resolutionDate,
                 authoritativeTurnIndex,
                 commandId),
+            OfferRomanceRouteAction value => PlanRomanceInvitation(
+                actingCharacterId,
+                value,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId),
+            RespondToRomanceInvitationAction value => PlanRomanceInvitationResponse(
+                value,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId),
+            WithdrawRomanceInvitationAction value =>
+                new RomanceInvitationWithdrawnOutcome(
+                    Clone(romanceInvitations[value.InvitationId])),
+            AdvanceRomanceRouteAction value => PlanRomanceRouteAdvance(
+                value,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId),
+            EndRomanceRouteAction value => PlanRomanceRouteEnd(
+                value,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId),
             _ => throw new SimulationValidationException(
                 "Unsupported character-marriage action type."),
         };
@@ -425,6 +480,19 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
             action,
             Clone(outcome));
     }
+
+    private static bool IsPositiveRomanceAction(ICharacterMarriageAction action) => action is
+        OfferRomanceRouteAction
+        or AdvanceRomanceRouteAction
+        or RespondToRomanceInvitationAction
+        {
+            Response: RomanceInvitationResponse.Accept,
+        };
+
+    private bool IsRetainedCoerciveCommand(EntityId commandId) => proposals.Values.Any(
+        proposal => proposal.ConsentKind == MarriageConsentKind.Coerced
+            && (proposal.SourceCommandId == commandId
+                || proposal.ResolutionCommandId == commandId));
 
     public void PrevalidateOutcome(
         CharacterMarriageActionResolvedEventPayload payload,
@@ -674,6 +742,137 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
             union);
     }
 
+    private ICharacterMarriageActionOutcome PlanRomanceInvitation(
+        EntityId actingCharacterId,
+        OfferRomanceRouteAction action,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId) => new RomanceInvitationCreatedOutcome(new(
+            CharacterMarriageContractVersions.RomanceInvitationState,
+            CharacterMarriageIds.DeriveRomanceInvitationId(resolutionDate, commandId),
+            actingCharacterId,
+            action.RecipientCharacterId,
+            action.PracticeId,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId));
+
+    private ICharacterMarriageActionOutcome PlanRomanceInvitationResponse(
+        RespondToRomanceInvitationAction action,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId)
+    {
+        RomanceInvitationState invitation = romanceInvitations[action.InvitationId];
+        if (action.Response == RomanceInvitationResponse.Refuse)
+        {
+            return new RomanceInvitationRefusedOutcome(Clone(invitation));
+        }
+
+        MarriageEligibilityResult eligibility = EvaluateRomanceEligibility(
+            invitation.InitiatorCharacterId,
+            invitation.RecipientCharacterId,
+            invitation.PracticeId,
+            resolutionDate);
+        if (!eligibility.IsEligible)
+        {
+            return new RomanceInvitationCancelledOutcome(Clone(invitation));
+        }
+
+        (EntityId first, EntityId second) = CanonicalPair(
+            invitation.InitiatorCharacterId,
+            invitation.RecipientCharacterId);
+        RomanceRouteState route = new(
+            CharacterMarriageContractVersions.RomanceRouteState,
+            CharacterMarriageIds.DeriveRomanceRouteId(
+                invitation.InvitationId,
+                commandId),
+            first,
+            second,
+            invitation.PracticeId,
+            1,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            RomanceRouteStatus.Active,
+            null,
+            null,
+            null,
+            invitation.InvitationId,
+            invitation.InitiatorCharacterId,
+            invitation.CreatedDate,
+            invitation.CreatedTurnIndex,
+            invitation.SourceCommandId,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId);
+        return new RomanceRouteStartedOutcome(invitation.InvitationId, route);
+    }
+
+    private ICharacterMarriageActionOutcome PlanRomanceRouteAdvance(
+        AdvanceRomanceRouteAction action,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId)
+    {
+        RomanceRouteState route = romanceRoutes[action.RouteId];
+        int nextProgress = route.ProgressLevel == CharacterMarriageLimits.MaximumRomanceProgressLevel
+            ? route.ProgressLevel
+            : checked(route.ProgressLevel + 1);
+        bool completes = nextProgress == CharacterMarriageLimits.MaximumRomanceProgressLevel;
+        RomanceRouteState advanced = route with
+        {
+            ProgressLevel = nextProgress,
+            Status = completes ? RomanceRouteStatus.Completed : RomanceRouteStatus.Active,
+            ResolutionDate = completes ? resolutionDate : null,
+            ResolutionTurnIndex = completes ? authoritativeTurnIndex : null,
+            ResolutionCommandId = completes ? commandId : null,
+            LastPositiveProgressDate = route.ContractVersion
+                == CharacterMarriageContractVersions.RomanceRouteState
+                    ? resolutionDate
+                    : route.LastPositiveProgressDate,
+            LastPositiveProgressTurnIndex = route.ContractVersion
+                == CharacterMarriageContractVersions.RomanceRouteState
+                    ? authoritativeTurnIndex
+                    : route.LastPositiveProgressTurnIndex,
+            LastPositiveProgressCommandId = route.ContractVersion
+                == CharacterMarriageContractVersions.RomanceRouteState
+                    ? commandId
+                    : route.LastPositiveProgressCommandId,
+        };
+        return completes
+            ? new RomanceRouteCompletedOutcome(advanced)
+            : new RomanceRouteAdvancedOutcome(advanced);
+    }
+
+    private ICharacterMarriageActionOutcome PlanRomanceRouteEnd(
+        EndRomanceRouteAction action,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId) => new RomanceRouteEndedOutcome(
+            romanceRoutes[action.RouteId] with
+            {
+                Status = RomanceRouteStatus.Ended,
+                ResolutionDate = resolutionDate,
+                ResolutionTurnIndex = authoritativeTurnIndex,
+                ResolutionCommandId = commandId,
+            });
+
+    private MarriageEligibilityResult EvaluateRomanceEligibility(
+        EntityId first,
+        EntityId second,
+        EntityId practiceId,
+        CampaignDate date) => EvaluateEligibility(
+            new MarriageEligibilityRequest(
+                CharacterMarriageContractVersions.Eligibility,
+                MarriageEligibilityCategory.VoluntaryRomance,
+                first,
+                second,
+                practiceId,
+                null,
+                null),
+            date);
+
     private MarriageEligibilityResult EvaluateProposalAcceptance(
         MarriageProposalState proposal,
         CampaignDate resolutionDate) => EvaluateEligibility(
@@ -866,11 +1065,179 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
                 }
 
                 break;
+            case OfferRomanceRouteAction action:
+                ValidateRomanceOffer(
+                    actingCharacterId,
+                    action,
+                    resolutionDate,
+                    issues);
+                break;
+            case RespondToRomanceInvitationAction action:
+                if (!Enum.IsDefined(action.Response))
+                {
+                    issues.Add(new(
+                        "invalid_romance_invitation_response",
+                        "Romance-invitation response is invalid."));
+                }
+
+                if (!TryRequireRomanceInvitation(
+                        action.InvitationId,
+                        issues,
+                        out RomanceInvitationState? responseInvitation))
+                {
+                    break;
+                }
+
+                if (responseInvitation.RecipientCharacterId != actingCharacterId)
+                {
+                    issues.Add(new(
+                        "romance_recipient_authority_required",
+                        "Only the romance-invitation recipient may respond."));
+                }
+
+                if (validateAcceptanceEligibility
+                    && action.Response == RomanceInvitationResponse.Accept
+                    && !EvaluateRomanceEligibility(
+                        responseInvitation.InitiatorCharacterId,
+                        responseInvitation.RecipientCharacterId,
+                        responseInvitation.PracticeId,
+                        resolutionDate).IsEligible)
+                {
+                    issues.Add(new(
+                        "romance_invitation_acceptance_ineligible",
+                        "Romance invitation is not currently eligible for acceptance."));
+                }
+
+                break;
+            case WithdrawRomanceInvitationAction action:
+                if (TryRequireRomanceInvitation(
+                        action.InvitationId,
+                        issues,
+                        out RomanceInvitationState? withdrawalInvitation)
+                    && withdrawalInvitation.InitiatorCharacterId != actingCharacterId)
+                {
+                    issues.Add(new(
+                        "romance_initiator_authority_required",
+                        "Only the romance-invitation initiator may withdraw it."));
+                }
+
+                break;
+            case AdvanceRomanceRouteAction action:
+                if (!TryRequireActiveRomanceRoute(
+                        action.RouteId,
+                        issues,
+                        out RomanceRouteState? advancingRoute))
+                {
+                    break;
+                }
+
+                if (!Involves(
+                    advancingRoute.FirstCharacterId,
+                    advancingRoute.SecondCharacterId,
+                    actingCharacterId))
+                {
+                    issues.Add(new(
+                        "romance_participant_authority_required",
+                        "Only a romance-route participant may advance it."));
+                }
+
+                if (action.ExpectedProgressLevel != advancingRoute.ProgressLevel)
+                {
+                    issues.Add(new(
+                        "stale_romance_progress_level",
+                        "Expected romance progress does not match current progress."));
+                }
+
+                if (!EvaluateRomanceContinuation(
+                    advancingRoute,
+                    resolutionDate,
+                    authoritativeTurnIndex,
+                    new EntityId("command:romance-continuation-validation")).IsEligible)
+                {
+                    issues.Add(new(
+                        "romance_continuation_ineligible",
+                        "Romance route is not currently eligible to continue."));
+                }
+
+                break;
+            case EndRomanceRouteAction action:
+                if (TryRequireActiveRomanceRoute(
+                        action.RouteId,
+                        issues,
+                        out RomanceRouteState? endingRoute)
+                    && !Involves(
+                        endingRoute.FirstCharacterId,
+                        endingRoute.SecondCharacterId,
+                        actingCharacterId))
+                {
+                    issues.Add(new(
+                        "romance_participant_authority_required",
+                        "Only a romance-route participant may end it."));
+                }
+
+                break;
             default:
                 issues.Add(new(
                     "unsupported_character_marriage_action",
-                    "Only registered political-marriage actions are supported."));
+                    "Only registered character-marriage actions are supported."));
                 break;
+        }
+    }
+
+    private void ValidateRomanceOffer(
+        EntityId actingCharacterId,
+        OfferRomanceRouteAction action,
+        CampaignDate resolutionDate,
+        ICollection<ValidationIssue> issues)
+    {
+        MarriageEligibilityResult eligibility = EvaluateRomanceEligibility(
+            actingCharacterId,
+            action.RecipientCharacterId,
+            action.PracticeId,
+            resolutionDate);
+        foreach (MarriageEligibilityIssue issue in eligibility.Issues)
+        {
+            issues.Add(new(
+                $"romance_{issue.Reason.ToString().ToLowerInvariant()}",
+                $"Romance invitation is ineligible: {issue.Reason}."));
+        }
+
+        if (romanceInvitations.Values.Any(item => SamePair(
+            item.InitiatorCharacterId,
+            item.RecipientCharacterId,
+            actingCharacterId,
+            action.RecipientCharacterId)))
+        {
+            issues.Add(new(
+                "duplicate_active_romance_invitation",
+                "The participant pair already has an active romance invitation."));
+        }
+
+        if (romanceInvitations.Values.Count(item =>
+                item.RecipientCharacterId == action.RecipientCharacterId)
+            >= CharacterMarriageLimits.ActiveRomanceInvitationsPerRecipient)
+        {
+            issues.Add(new(
+                "active_romance_invitation_recipient_limit_reached",
+                "Romance-invitation recipient has eight active invitations."));
+        }
+
+        foreach (EntityId participantId in new[]
+                 {
+                     actingCharacterId,
+                     action.RecipientCharacterId,
+                 }.Distinct())
+        {
+            if (romanceInvitations.Values.Count(item => Involves(
+                    item.InitiatorCharacterId,
+                    item.RecipientCharacterId,
+                    participantId))
+                >= CharacterMarriageLimits.ActiveRomanceInvitationsPerCharacter)
+            {
+                issues.Add(new(
+                    "active_romance_invitation_character_limit_reached",
+                    $"Character '{participantId}' has the maximum active romance invitations."));
+            }
         }
     }
 
@@ -1043,6 +1410,80 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
         return true;
     }
 
+    private bool TryRequireRomanceInvitation(
+        EntityId invitationId,
+        ICollection<ValidationIssue> issues,
+        [NotNullWhen(true)] out RomanceInvitationState? invitation)
+    {
+        if (!invitationId.IsValid
+            || !romanceInvitations.TryGetValue(invitationId, out invitation))
+        {
+            issues.Add(new(
+                "unknown_romance_invitation",
+                $"Romance invitation '{invitationId}' does not exist."));
+            invitation = null;
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool TryRequireActiveRomanceRoute(
+        EntityId routeId,
+        ICollection<ValidationIssue> issues,
+        [NotNullWhen(true)] out RomanceRouteState? route)
+    {
+        if (!routeId.IsValid || !romanceRoutes.TryGetValue(routeId, out route))
+        {
+            issues.Add(new(
+                "unknown_romance_route",
+                $"Romance route '{routeId}' does not exist."));
+            route = null;
+            return false;
+        }
+
+        if (route.Status != RomanceRouteStatus.Active)
+        {
+            issues.Add(new(
+                "romance_route_not_active",
+                $"Romance route '{routeId}' is already terminal."));
+            route = null;
+            return false;
+        }
+
+        return true;
+    }
+
+    private MarriageEligibilityResult EvaluateRomanceContinuation(
+        RomanceRouteState route,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId)
+    {
+        RomanceRouteState excluded = route with
+        {
+            Status = RomanceRouteStatus.Ended,
+            ResolutionDate = resolutionDate,
+            ResolutionTurnIndex = authoritativeTurnIndex,
+            ResolutionCommandId = commandId,
+        };
+        CharacterMarriageWorldSnapshot temporary = CaptureSnapshot() with
+        {
+            RomanceRoutes = romanceRoutes.Values
+                .Select(item => item.RouteId == route.RouteId ? excluded : Clone(item))
+                .ToArray(),
+        };
+        CampaignCalendar candidateCalendar = new(
+            resolutionDate.CompareTo(calendar.Date) > 0 ? resolutionDate : calendar.Date,
+            Math.Max(calendar.TurnIndex, authoritativeTurnIndex));
+        CharacterMarriageWorldState replacement = new(temporary, characters, candidateCalendar);
+        return replacement.EvaluateRomanceEligibility(
+            route.FirstCharacterId,
+            route.SecondCharacterId,
+            route.PracticeId,
+            resolutionDate);
+    }
+
     private static MarriageProposalState TerminalizeProposal(
         MarriageProposalState proposal,
         MarriageProposalStatus status,
@@ -1102,6 +1543,10 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
         List<MarriageProposalState> proposalList = snapshot.Proposals.Select(Clone).ToList();
         List<PoliticalBetrothalState> betrothalList = snapshot.Betrothals.Select(Clone).ToList();
         List<MarriageUnionState> unionList = snapshot.Unions.Select(Clone).ToList();
+        List<RomanceInvitationState> invitationList = (snapshot.Invitations ?? [])
+            .Select(Clone)
+            .ToList();
+        List<RomanceRouteState> routeList = snapshot.RomanceRoutes.Select(Clone).ToList();
         switch (outcome)
         {
             case MarriageProposalCreatedOutcome value:
@@ -1132,6 +1577,51 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
                 AddNew(proposalList, value.FulfillmentProposal, item => item.ProposalId, "marriage proposal");
                 AddNew(unionList, value.Union, item => item.UnionId, "marriage union");
                 break;
+            case RomanceInvitationCreatedOutcome value:
+                AddNew(
+                    invitationList,
+                    value.Invitation,
+                    item => item.InvitationId,
+                    "romance invitation");
+                break;
+            case RomanceInvitationRefusedOutcome value:
+                Remove(
+                    invitationList,
+                    value.Invitation.InvitationId,
+                    item => item.InvitationId,
+                    "romance invitation");
+                break;
+            case RomanceInvitationWithdrawnOutcome value:
+                Remove(
+                    invitationList,
+                    value.Invitation.InvitationId,
+                    item => item.InvitationId,
+                    "romance invitation");
+                break;
+            case RomanceInvitationCancelledOutcome value:
+                Remove(
+                    invitationList,
+                    value.Invitation.InvitationId,
+                    item => item.InvitationId,
+                    "romance invitation");
+                break;
+            case RomanceRouteStartedOutcome value:
+                Remove(
+                    invitationList,
+                    value.InvitationId,
+                    item => item.InvitationId,
+                    "romance invitation");
+                AddNew(routeList, value.Route, item => item.RouteId, "romance route");
+                break;
+            case RomanceRouteAdvancedOutcome value:
+                Replace(routeList, value.Route, item => item.RouteId, "romance route");
+                break;
+            case RomanceRouteCompletedOutcome value:
+                Replace(routeList, value.Route, item => item.RouteId, "romance route");
+                break;
+            case RomanceRouteEndedOutcome value:
+                Replace(routeList, value.Route, item => item.RouteId, "romance route");
+                break;
             default:
                 throw new SimulationValidationException(
                     $"Unregistered character-marriage outcome '{outcome.GetType().Name}'.");
@@ -1142,6 +1632,8 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
             Proposals = proposalList,
             Betrothals = betrothalList,
             Unions = unionList,
+            RomanceRoutes = routeList,
+            Invitations = invitationList,
         };
     }
 
@@ -1176,6 +1668,22 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
         source[index] = value;
     }
 
+    private static void Remove<T>(
+        IList<T> source,
+        EntityId valueId,
+        Func<T, EntityId> id,
+        string description)
+    {
+        int index = source.ToList().FindIndex(item => id(item) == valueId);
+        if (index < 0)
+        {
+            throw new SimulationValidationException(
+                $"Missing {description} '{valueId}'.");
+        }
+
+        source.RemoveAt(index);
+    }
+
     private void ReplaceFrom(CharacterMarriageWorldState source)
     {
         CharacterMarriageWorldSnapshot snapshot = source.CaptureSnapshot();
@@ -1183,6 +1691,7 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
         proposals.Clear();
         betrothals.Clear();
         unions.Clear();
+        romanceInvitations.Clear();
         romanceRoutes.Clear();
         history.Clear();
         foreach (MarriagePracticeState item in snapshot.Practices)
@@ -1208,6 +1717,11 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
         foreach (RomanceRouteState item in snapshot.RomanceRoutes)
         {
             romanceRoutes.Add(item.RouteId, Clone(item));
+        }
+
+        foreach (RomanceInvitationState item in snapshot.Invitations ?? [])
+        {
+            romanceInvitations.Add(item.InvitationId, Clone(item));
         }
 
         foreach (CharacterMarriageHistoryAggregate item in snapshot.History)
@@ -1649,6 +2163,11 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
         WithdrawPoliticalMarriageProposalAction item => item with { },
         CancelPoliticalBetrothalAction item => item with { },
         FulfillPoliticalBetrothalAction item => item with { },
+        OfferRomanceRouteAction item => item with { },
+        RespondToRomanceInvitationAction item => item with { },
+        WithdrawRomanceInvitationAction item => item with { },
+        AdvanceRomanceRouteAction item => item with { },
+        EndRomanceRouteAction item => item with { },
         _ => throw new SimulationValidationException(
             $"Unregistered character-marriage action '{value.GetType().Name}'."),
     };
@@ -1671,6 +2190,22 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
                 Clone(item.Betrothal),
                 Clone(item.FulfillmentProposal),
                 Clone(item.Union)),
+            RomanceInvitationCreatedOutcome item => new RomanceInvitationCreatedOutcome(
+                Clone(item.Invitation)),
+            RomanceInvitationRefusedOutcome item => new RomanceInvitationRefusedOutcome(
+                Clone(item.Invitation)),
+            RomanceInvitationWithdrawnOutcome item => new RomanceInvitationWithdrawnOutcome(
+                Clone(item.Invitation)),
+            RomanceInvitationCancelledOutcome item => new RomanceInvitationCancelledOutcome(
+                Clone(item.Invitation)),
+            RomanceRouteStartedOutcome item => new RomanceRouteStartedOutcome(
+                item.InvitationId,
+                Clone(item.Route)),
+            RomanceRouteAdvancedOutcome item => new RomanceRouteAdvancedOutcome(
+                Clone(item.Route)),
+            RomanceRouteCompletedOutcome item => new RomanceRouteCompletedOutcome(
+                Clone(item.Route)),
+            RomanceRouteEndedOutcome item => new RomanceRouteEndedOutcome(Clone(item.Route)),
             _ => throw new SimulationValidationException(
                 $"Unregistered character-marriage outcome '{value.GetType().Name}'."),
         };
@@ -1687,12 +2222,14 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
             || snapshot.Proposals is null
             || snapshot.Betrothals is null
             || snapshot.Unions is null
+            || snapshot.Invitations is null
             || snapshot.RomanceRoutes is null
             || snapshot.History is null
             || snapshot.Practices.Any(item => item is null)
             || snapshot.Proposals.Any(item => item is null)
             || snapshot.Betrothals.Any(item => item is null)
             || snapshot.Unions.Any(item => item is null)
+            || snapshot.Invitations.Any(item => item is null)
             || snapshot.RomanceRoutes.Any(item => item is null)
             || snapshot.History.Any(item => item is null))
         {
@@ -1877,15 +2414,88 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
         }
     }
 
+    private void AddRomanceInvitations(IReadOnlyList<RomanceInvitationState> source)
+    {
+        foreach (RomanceInvitationState invitation in source)
+        {
+            RequireVersion(
+                invitation.ContractVersion,
+                CharacterMarriageContractVersions.RomanceInvitationState,
+                "Romance invitation",
+                invitation.InvitationId);
+            RequireNamespacedId(
+                invitation.InvitationId,
+                "romance_invitation:",
+                "Romance invitation ID");
+            RequireNamespacedId(
+                invitation.SourceCommandId,
+                "command:",
+                "Romance invitation source command ID");
+            if (!invitation.InitiatorCharacterId.IsValid
+                || !invitation.RecipientCharacterId.IsValid
+                || invitation.InitiatorCharacterId == invitation.RecipientCharacterId)
+            {
+                throw new SimulationValidationException(
+                    $"Romance invitation '{invitation.InvitationId}' has invalid participants.");
+            }
+
+            RequirePractice(
+                invitation.PracticeId,
+                $"Romance invitation '{invitation.InvitationId}'");
+            ValidateStart(
+                invitation.CreatedDate,
+                invitation.CreatedTurnIndex,
+                $"Romance invitation '{invitation.InvitationId}'");
+            if (invitation.InvitationId != CharacterMarriageIds.DeriveRomanceInvitationId(
+                invitation.CreatedDate,
+                invitation.SourceCommandId))
+            {
+                throw new SimulationValidationException(
+                    $"Romance invitation '{invitation.InvitationId}' does not match its creation evidence.");
+            }
+
+            MarriagePracticeState practice = practices[invitation.PracticeId];
+            AuthoritativeCharacterProfile initiator = RequireBornCharacter(
+                invitation.InitiatorCharacterId,
+                invitation.CreatedDate,
+                $"Romance invitation '{invitation.InvitationId}' initiator");
+            AuthoritativeCharacterProfile recipient = RequireBornCharacter(
+                invitation.RecipientCharacterId,
+                invitation.CreatedDate,
+                $"Romance invitation '{invitation.InvitationId}' recipient");
+            RequireMinimumAge(
+                initiator,
+                invitation.CreatedDate,
+                practice.MinimumRomanceAge,
+                $"Romance invitation '{invitation.InvitationId}' initiator");
+            RequireMinimumAge(
+                recipient,
+                invitation.CreatedDate,
+                practice.MinimumRomanceAge,
+                $"Romance invitation '{invitation.InvitationId}' recipient");
+            ThrowIfProhibitedKinship(
+                practice,
+                initiator,
+                recipient,
+                $"Romance invitation '{invitation.InvitationId}'");
+            if (!romanceInvitations.TryAdd(invitation.InvitationId, Clone(invitation)))
+            {
+                throw new SimulationValidationException(
+                    $"Duplicate romance invitation '{invitation.InvitationId}'.");
+            }
+        }
+    }
+
     private void AddRomanceRoutes(IReadOnlyList<RomanceRouteState> source)
     {
         foreach (RomanceRouteState route in source)
         {
-            RequireVersion(
-                route.ContractVersion,
-                CharacterMarriageContractVersions.State,
-                "Romance route",
-                route.RouteId);
+            if (route.ContractVersion is not CharacterMarriageContractVersions.State
+                and not CharacterMarriageContractVersions.RomanceRouteState)
+            {
+                throw new SimulationValidationException(
+                    $"Romance route '{route.RouteId}' has unsupported contract version {route.ContractVersion}.");
+            }
             RequireNamespacedId(route.RouteId, "romance_route:", "Romance route ID");
             RequireNamespacedId(route.SourceCommandId, "command:", "Romance route source command ID");
             RequireCanonicalPair(
@@ -1909,10 +2519,116 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
                 route.ResolutionTurnIndex,
                 route.ResolutionCommandId,
                 $"Romance route '{route.RouteId}'");
+            ValidateRomanceRouteVersionFields(route);
             if (!romanceRoutes.TryAdd(route.RouteId, Clone(route)))
             {
                 throw new SimulationValidationException($"Duplicate romance route '{route.RouteId}'.");
             }
+        }
+    }
+
+    private void ValidateRomanceRouteVersionFields(RomanceRouteState route)
+    {
+        bool hasAnyV2Field = route.SourceInvitationId is not null
+            || route.InvitationInitiatorCharacterId is not null
+            || route.InvitationCreatedDate is not null
+            || route.InvitationCreatedTurnIndex is not null
+            || route.InvitationSourceCommandId is not null
+            || route.LastPositiveProgressDate is not null
+            || route.LastPositiveProgressTurnIndex is not null
+            || route.LastPositiveProgressCommandId is not null;
+        if (route.ContractVersion == CharacterMarriageContractVersions.State)
+        {
+            if (hasAnyV2Field)
+            {
+                throw new SimulationValidationException(
+                    $"Legacy romance route '{route.RouteId}' cannot contain version-2 evidence.");
+            }
+
+            return;
+        }
+
+        if (route.SourceInvitationId is not EntityId invitationId
+            || route.InvitationInitiatorCharacterId is not EntityId initiatorId
+            || route.InvitationCreatedDate is not CampaignDate invitationDate
+            || route.InvitationCreatedTurnIndex is not long invitationTurn
+            || route.InvitationSourceCommandId is not EntityId invitationCommandId
+            || route.LastPositiveProgressDate is not CampaignDate progressDate
+            || route.LastPositiveProgressTurnIndex is not long progressTurn
+            || route.LastPositiveProgressCommandId is not EntityId progressCommandId)
+        {
+            throw new SimulationValidationException(
+                $"Version-2 romance route '{route.RouteId}' is missing historical invitation or progress evidence.");
+        }
+
+        RequireNamespacedId(invitationId, "romance_invitation:", "Romance-route source invitation ID");
+        RequireNamespacedId(
+            invitationCommandId,
+            "command:",
+            "Romance-route invitation source command ID");
+        RequireNamespacedId(
+            progressCommandId,
+            "command:",
+            "Romance-route last-positive-progress command ID");
+        if (!Involves(route.FirstCharacterId, route.SecondCharacterId, initiatorId)
+            || invitationId != CharacterMarriageIds.DeriveRomanceInvitationId(
+                invitationDate,
+                invitationCommandId)
+            || route.RouteId != CharacterMarriageIds.DeriveRomanceRouteId(
+                invitationId,
+                route.SourceCommandId)
+            || !invitationDate.IsValid
+            || invitationTurn < 0
+            || invitationDate.CompareTo(route.StartDate) > 0
+            || invitationTurn > route.StartTurnIndex
+            || !progressDate.IsValid
+            || progressTurn < route.StartTurnIndex
+            || progressTurn > calendar.TurnIndex
+            || progressDate.CompareTo(route.StartDate) < 0
+            || progressDate.CompareTo(calendar.Date) > 0
+            || route.Status == RomanceRouteStatus.Active
+                && route.ProgressLevel is not (>= 1 and <= 3)
+            || route.Status == RomanceRouteStatus.Completed
+                && route.ProgressLevel != CharacterMarriageLimits.MaximumRomanceProgressLevel
+            || route.Status is RomanceRouteStatus.Ended or RomanceRouteStatus.Invalidated
+                && route.ProgressLevel is not (>= 1 and <= 3))
+        {
+            throw new SimulationValidationException(
+                $"Version-2 romance route '{route.RouteId}' has inconsistent historical evidence or progress state.");
+        }
+
+        if (route.Status == RomanceRouteStatus.Completed
+            && (route.ResolutionDate != progressDate
+                || route.ResolutionTurnIndex != progressTurn
+                || route.ResolutionCommandId != progressCommandId))
+        {
+            throw new SimulationValidationException(
+                $"Completed romance route '{route.RouteId}' must resolve at its last positive progress.");
+        }
+
+        if (route.ProgressLevel == 1
+            && (progressDate != route.StartDate
+                || progressTurn != route.StartTurnIndex
+                || progressCommandId != route.SourceCommandId))
+        {
+            throw new SimulationValidationException(
+                $"Level-1 romance route '{route.RouteId}' must identify acceptance as its last positive progress.");
+        }
+
+        if (route.ProgressLevel >= 2
+            && (progressCommandId == route.SourceCommandId
+                || progressCommandId == invitationCommandId))
+        {
+            throw new SimulationValidationException(
+                $"Progressed romance route '{route.RouteId}' must identify a distinct advance command.");
+        }
+
+        if (route.ResolutionDate is CampaignDate resolutionDate
+            && (progressDate.CompareTo(resolutionDate) > 0
+                || progressTurn > route.ResolutionTurnIndex))
+        {
+            throw new SimulationValidationException(
+                $"Romance route '{route.RouteId}' has progress after its terminal resolution.");
         }
     }
 
@@ -2220,6 +2936,30 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
             RequireMinimumAge(first, route.StartDate, practice.MinimumRomanceAge, $"Romance route '{route.RouteId}' first participant");
             RequireMinimumAge(second, route.StartDate, practice.MinimumRomanceAge, $"Romance route '{route.RouteId}' second participant");
             ThrowIfProhibitedKinship(practice, first, second, $"Romance route '{route.RouteId}'");
+            if (route.ContractVersion
+                == CharacterMarriageContractVersions.RomanceRouteState)
+            {
+                CampaignDate invitationDate = route.InvitationCreatedDate!.Value;
+                AuthoritativeCharacterProfile invitationFirst = RequireBornCharacter(
+                    route.FirstCharacterId,
+                    invitationDate,
+                    $"Romance route '{route.RouteId}' invitation first participant");
+                AuthoritativeCharacterProfile invitationSecond = RequireBornCharacter(
+                    route.SecondCharacterId,
+                    invitationDate,
+                    $"Romance route '{route.RouteId}' invitation second participant");
+                RequireMinimumAge(
+                    invitationFirst,
+                    invitationDate,
+                    practice.MinimumRomanceAge,
+                    $"Romance route '{route.RouteId}' invitation first participant");
+                RequireMinimumAge(
+                    invitationSecond,
+                    invitationDate,
+                    practice.MinimumRomanceAge,
+                    $"Romance route '{route.RouteId}' invitation second participant");
+            }
+
             if (route.Status == RomanceRouteStatus.Active)
             {
                 RequireAlive(first, $"Romance route '{route.RouteId}' first participant");
@@ -2257,11 +2997,31 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
             }
         }
 
+        IEnumerable<(EntityId CommandId, string Label)> creationRecords = proposals.Values
+            .Select(item => (
+                item.SourceCommandId,
+                $"marriage proposal '{item.ProposalId}'"))
+            .Concat(romanceInvitations.Values.Select(item => (
+                item.SourceCommandId,
+                $"romance invitation '{item.InvitationId}'")))
+            .Concat(romanceRoutes.Values.Select(item => (
+                item.SourceCommandId,
+                $"romance route '{item.RouteId}' acceptance")))
+            .Concat(romanceRoutes.Values
+                .Where(item => item.ContractVersion
+                    == CharacterMarriageContractVersions.RomanceRouteState)
+                .Select(item => (
+                    item.InvitationSourceCommandId!.Value,
+                    $"romance route '{item.RouteId}' invitation")))
+            .Concat(romanceRoutes.Values
+                .Where(item => item.ContractVersion
+                    == CharacterMarriageContractVersions.RomanceRouteState
+                    && item.ProgressLevel >= 2)
+                .Select(item => (
+                    item.LastPositiveProgressCommandId!.Value,
+                    $"romance route '{item.RouteId}' last positive progress")));
         HashSet<EntityId> creationCommands = [];
-        foreach ((EntityId commandId, string label) in proposals.Values
-                     .Select(item => (item.SourceCommandId, $"marriage proposal '{item.ProposalId}'"))
-                     .Concat(romanceRoutes.Values.Select(item =>
-                         (item.SourceCommandId, $"romance route '{item.RouteId}'"))))
+        foreach ((EntityId commandId, string label) in creationRecords)
         {
             if (!creationCommands.Add(commandId))
             {
@@ -2276,14 +3036,28 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
                 ? new[] { item.SourceCommandId, resolutionCommandId }
                 : [item.SourceCommandId])
             .ToHashSet();
-        if (romanceRoutes.Values.Any(item =>
-            coerciveCommands.Contains(item.SourceCommandId)
-            || (item.Status == RomanceRouteStatus.Completed
-                && item.ResolutionCommandId is EntityId resolutionCommandId
-                && coerciveCommands.Contains(resolutionCommandId))))
+        if (romanceInvitations.Values.Any(item =>
+                coerciveCommands.Contains(item.SourceCommandId))
+            || romanceRoutes.Values.Any(item =>
+                coerciveCommands.Contains(item.SourceCommandId)
+                || item.InvitationSourceCommandId is EntityId invitationCommandId
+                    && coerciveCommands.Contains(invitationCommandId)
+                || item.LastPositiveProgressCommandId is EntityId progressCommandId
+                    && coerciveCommands.Contains(progressCommandId)
+                || item.Status == RomanceRouteStatus.Completed
+                    && item.ResolutionCommandId is EntityId resolutionCommandId
+                    && coerciveCommands.Contains(resolutionCommandId)))
         {
             throw new SimulationValidationException(
                 "A coercive proposal command cannot create or resolve positive romance-route state.");
+        }
+
+        if (romanceRoutes.Values.Any(item =>
+            item.SourceInvitationId is EntityId invitationId
+            && romanceInvitations.ContainsKey(invitationId)))
+        {
+            throw new SimulationValidationException(
+                "An accepted romance invitation cannot remain active beside its route.");
         }
     }
 
@@ -2305,6 +3079,34 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
             romanceRoutes.Values,
             item => (item.FirstCharacterId, item.SecondCharacterId),
             "romance routes");
+
+        foreach (IGrouping<EntityId, RomanceInvitationState> recipient in
+                 romanceInvitations.Values.GroupBy(item => item.RecipientCharacterId))
+        {
+            if (recipient.Count()
+                > CharacterMarriageLimits.ActiveRomanceInvitationsPerRecipient)
+            {
+                throw new SimulationValidationException(
+                    $"Character '{recipient.Key}' exceeds the active romance-invitation recipient limit of {CharacterMarriageLimits.ActiveRomanceInvitationsPerRecipient}.");
+            }
+        }
+
+        foreach (IGrouping<EntityId, RomanceInvitationState> participant in
+                 romanceInvitations.Values
+                     .SelectMany(item => new[]
+                     {
+                         (CharacterId: item.InitiatorCharacterId, Invitation: item),
+                         (CharacterId: item.RecipientCharacterId, Invitation: item),
+                     })
+                     .GroupBy(item => item.CharacterId, item => item.Invitation))
+        {
+            if (participant.Count()
+                > CharacterMarriageLimits.ActiveRomanceInvitationsPerCharacter)
+            {
+                throw new SimulationValidationException(
+                    $"Character '{participant.Key}' exceeds the active romance-invitation involving limit of {CharacterMarriageLimits.ActiveRomanceInvitationsPerCharacter}.");
+            }
+        }
 
         foreach (IGrouping<EntityId, MarriageProposalState> recipient in proposals.Values
                      .Where(item => item.Status == MarriageProposalStatus.Active)
@@ -2333,6 +3135,24 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
             romanceRoutes.Values.Where(item => item.Status == RomanceRouteStatus.Active),
             item => (item.FirstCharacterId, item.SecondCharacterId),
             "romance route");
+        EnsureUniqueActivePairs(
+            romanceInvitations.Values,
+            item => CanonicalPair(
+                item.InitiatorCharacterId,
+                item.RecipientCharacterId),
+            "romance invitation");
+
+        HashSet<(EntityId First, EntityId Second)> activeRomancePairs = romanceRoutes.Values
+            .Where(item => item.Status == RomanceRouteStatus.Active)
+            .Select(item => (item.FirstCharacterId, item.SecondCharacterId))
+            .ToHashSet();
+        if (romanceInvitations.Values.Any(item => activeRomancePairs.Contains(CanonicalPair(
+            item.InitiatorCharacterId,
+            item.RecipientCharacterId))))
+        {
+            throw new SimulationValidationException(
+                "A character pair cannot have both an active romance invitation and route.");
+        }
 
         HashSet<(EntityId First, EntityId Second)> activeUnionPairs = unions.Values
             .Where(item => item.Status == MarriageUnionStatus.Active)
@@ -3017,6 +3837,8 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
     private static PoliticalBetrothalState Clone(PoliticalBetrothalState value) => value with { };
 
     private static MarriageUnionState Clone(MarriageUnionState value) => value with { };
+
+    private static RomanceInvitationState Clone(RomanceInvitationState value) => value with { };
 
     private static RomanceRouteState Clone(RomanceRouteState value) => value with { };
 

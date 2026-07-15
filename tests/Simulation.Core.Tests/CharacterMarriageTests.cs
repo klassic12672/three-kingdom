@@ -19,22 +19,22 @@ public sealed class CharacterMarriageTests
     }
 
     [Fact]
-    public void ContractIsVersionOneDefaultEmptyPoliticalWorkflowAndPlatformNeutral()
+    public void ContractVersionsAreExplicitDefaultEmptyAndPlatformNeutral()
     {
         CharacterMarriageWorldState state = NewState(CreateCharacters(2));
 
-        Assert.Equal(1, CharacterMarriageContractVersions.Snapshot);
+        Assert.Equal(2, CharacterMarriageContractVersions.Snapshot);
         Assert.Equal(1, CharacterMarriageContractVersions.State);
         Assert.Equal(1, CharacterMarriageContractVersions.Practice);
         Assert.Equal(1, CharacterMarriageContractVersions.Eligibility);
         Assert.Equal(1, CharacterMarriageContractVersions.Action);
         Assert.Equal(1, CharacterMarriageContractVersions.Outcome);
-        Assert.Equal(1, CharacterMarriageContractVersions.AuthoritativeQuery);
+        Assert.Equal(2, CharacterMarriageContractVersions.AuthoritativeQuery);
         Assert.Equal(18, CharacterMarriageLimits.MinimumAdultAge);
         Assert.Equal(64, CharacterMarriageLimits.RetainedRecordsPerCategoryPerCharacter);
         Assert.Equal(64, CharacterMarriageLimits.ActiveLegalRelationshipsPerCharacter);
         Assert.Equal("simulation.character_marriages", CharacterMarriageSystem.SystemId);
-        Assert.Equal(1, CharacterMarriageSystem.Version);
+        Assert.Equal(2, CharacterMarriageSystem.Version);
         Assert.Equal(Serialize(CharacterMarriageWorldSnapshot.Empty), Serialize(state.CaptureSnapshot()));
 
         Assert.Contains(
@@ -65,17 +65,19 @@ public sealed class CharacterMarriageTests
             new CharacterMarriageWorldState(CharacterMarriageWorldSnapshot.Empty, null!, Calendar));
         Assert.Throws<SimulationValidationException>(() =>
             new CharacterMarriageWorldState(CharacterMarriageWorldSnapshot.Empty, characters, default));
-        AssertInvalid(CharacterMarriageWorldSnapshot.Empty with { ContractVersion = 2 }, characters);
+        AssertInvalid(CharacterMarriageWorldSnapshot.Empty with { ContractVersion = 3 }, characters);
         AssertInvalid(CharacterMarriageWorldSnapshot.Empty with { Practices = null! }, characters);
         AssertInvalid(CharacterMarriageWorldSnapshot.Empty with { Proposals = null! }, characters);
         AssertInvalid(CharacterMarriageWorldSnapshot.Empty with { Betrothals = null! }, characters);
         AssertInvalid(CharacterMarriageWorldSnapshot.Empty with { Unions = null! }, characters);
+        AssertInvalid(CharacterMarriageWorldSnapshot.Empty with { Invitations = null! }, characters);
         AssertInvalid(CharacterMarriageWorldSnapshot.Empty with { RomanceRoutes = null! }, characters);
         AssertInvalid(CharacterMarriageWorldSnapshot.Empty with { History = null! }, characters);
         AssertInvalid(CharacterMarriageWorldSnapshot.Empty with { Practices = [null!] }, characters);
         AssertInvalid(CharacterMarriageWorldSnapshot.Empty with { Proposals = [null!] }, characters);
         AssertInvalid(CharacterMarriageWorldSnapshot.Empty with { Betrothals = [null!] }, characters);
         AssertInvalid(CharacterMarriageWorldSnapshot.Empty with { Unions = [null!] }, characters);
+        AssertInvalid(CharacterMarriageWorldSnapshot.Empty with { Invitations = [null!] }, characters);
         AssertInvalid(CharacterMarriageWorldSnapshot.Empty with { RomanceRoutes = [null!] }, characters);
         AssertInvalid(CharacterMarriageWorldSnapshot.Empty with { History = [null!] }, characters);
     }
@@ -773,6 +775,76 @@ public sealed class CharacterMarriageTests
                 []),
             characters);
 
+        RomanceRouteState coerciveAdvance = VersionTwoRoute(
+            "causal_coercive_advance",
+            Character(4),
+            Character(5),
+            practice.PracticeId) with
+        {
+            LastPositiveProgressCommandId = coerced.SourceCommandId,
+        };
+        AssertInvalid(
+            Snapshot(
+                [practice],
+                [coerced],
+                [],
+                [Union("causal_coerced", coerced)],
+                [coerciveAdvance],
+                []),
+            characters);
+
+        CampaignDate invitationDate = Date.AddDays(-1);
+        EntityId coerciveInvitationId = CharacterMarriageIds.DeriveRomanceInvitationId(
+            invitationDate,
+            coerced.SourceCommandId);
+        RomanceInvitationState coerciveInvitation = new(
+            CharacterMarriageContractVersions.RomanceInvitationState,
+            coerciveInvitationId,
+            Character(4),
+            Character(5),
+            practice.PracticeId,
+            invitationDate,
+            1,
+            coerced.SourceCommandId);
+        AssertInvalid(
+            new CharacterMarriageWorldSnapshot(
+                CharacterMarriageContractVersions.Snapshot,
+                [practice],
+                [coerced],
+                [],
+                [Union("causal_coerced", coerced)],
+                [],
+                [],
+                [coerciveInvitation]),
+            characters);
+
+        RomanceRouteState copiedCoerciveInvitation = VersionTwoRoute(
+            "causal_coercive_invitation",
+            Character(4),
+            Character(5),
+            practice.PracticeId) with
+        {
+            SourceInvitationId = coerciveInvitationId,
+            InvitationCreatedDate = invitationDate,
+            InvitationCreatedTurnIndex = 1,
+            InvitationSourceCommandId = coerced.SourceCommandId,
+        };
+        copiedCoerciveInvitation = copiedCoerciveInvitation with
+        {
+            RouteId = CharacterMarriageIds.DeriveRomanceRouteId(
+                coerciveInvitationId,
+                copiedCoerciveInvitation.SourceCommandId),
+        };
+        AssertInvalid(
+            Snapshot(
+                [practice],
+                [coerced],
+                [],
+                [Union("causal_coerced", coerced)],
+                [copiedCoerciveInvitation],
+                []),
+            characters);
+
         RomanceRouteState invalidatedByCoercion = Route(
             "causal_invalidated",
             Character(4),
@@ -1353,6 +1425,166 @@ public sealed class CharacterMarriageTests
     }
 
     [Fact]
+    public void RomanceInvitationAndVersionTwoRouteQueriesAreCanonicalAndDefensive()
+    {
+        CharacterWorldState characters = CreateCharacters(4);
+        MarriagePracticeState practice = Practice();
+        EntityId offerCommand = new("command:test/query-romance-offer");
+        RomanceInvitationState invitation = new(
+            CharacterMarriageContractVersions.RomanceInvitationState,
+            CharacterMarriageIds.DeriveRomanceInvitationId(Date.AddDays(-1), offerCommand),
+            Character(2),
+            Character(3),
+            practice.PracticeId,
+            Date.AddDays(-1),
+            0,
+            offerCommand);
+        RomanceRouteState route = VersionTwoRoute(
+            "query-v2",
+            Character(0),
+            Character(1),
+            practice.PracticeId);
+        CharacterMarriageWorldState state = new(
+            new CharacterMarriageWorldSnapshot(
+                CharacterMarriageContractVersions.Snapshot,
+                [practice],
+                [],
+                [],
+                [],
+                [route],
+                [],
+                [invitation]),
+            characters,
+            Calendar);
+
+        RomanceInvitationState[] invitations = Assert.IsType<RomanceInvitationState[]>(
+            state.RomanceInvitations);
+        invitations[0] = invitations[0] with { RecipientCharacterId = Character(0) };
+        RomanceRouteState[] routes = Assert.IsType<RomanceRouteState[]>(state.RomanceRoutes);
+        routes[0] = routes[0] with { ProgressLevel = 3 };
+        CharacterMarriageWorldSnapshot captured = state.CaptureSnapshot();
+        RomanceInvitationState[] capturedInvitations = Assert.IsType<
+            RomanceInvitationState[]>(captured.Invitations);
+        capturedInvitations[0] = capturedInvitations[0] with
+        {
+            RecipientCharacterId = Character(0),
+        };
+
+        Assert.Equal(invitation, Assert.Single(state.RomanceInvitations));
+        Assert.Equal(route, Assert.Single(state.RomanceRoutes));
+        Assert.True(state.TryGetRomanceInvitation(
+            invitation.InvitationId,
+            out RomanceInvitationState? queriedInvitation));
+        Assert.Equal(invitation, queriedInvitation);
+        Assert.True(state.TryGetRomanceRoute(route.RouteId, out RomanceRouteState? queriedRoute));
+        Assert.Equal(route, queriedRoute);
+        Assert.Equal(
+            invitation,
+            Assert.Single(state.GetRomanceInvitationsInvolving(Character(2))));
+    }
+
+    [Fact]
+    public void VersionTwoRomanceRoutesRequireExactInvitationIdentityAndProgressSemantics()
+    {
+        CharacterWorldState characters = CreateCharacters(2);
+        MarriagePracticeState practice = Practice();
+        RomanceRouteState valid = VersionTwoRoute(
+            "validation-v2",
+            Character(0),
+            Character(1),
+            practice.PracticeId);
+        CharacterMarriageWorldSnapshot snapshot = Snapshot(
+            [practice],
+            [],
+            [],
+            [],
+            [valid],
+            []);
+        _ = new CharacterMarriageWorldState(snapshot, characters, Calendar);
+
+        AssertInvalid(snapshot with
+        {
+            RomanceRoutes = [valid with { RouteId = new EntityId("romance_route:test/wrong-v2") }],
+        }, characters);
+        AssertInvalid(snapshot with
+        {
+            RomanceRoutes = [valid with { SourceInvitationId = new EntityId("romance_invitation:test/wrong") }],
+        }, characters);
+        AssertInvalid(snapshot with
+        {
+            RomanceRoutes = [valid with { ProgressLevel = 4 }],
+        }, characters);
+        AssertInvalid(snapshot with
+        {
+            RomanceRoutes =
+            [
+                valid with
+                {
+                    Status = RomanceRouteStatus.Completed,
+                    ProgressLevel = 3,
+                    ResolutionDate = Date,
+                    ResolutionTurnIndex = 1,
+                    ResolutionCommandId = valid.LastPositiveProgressCommandId,
+                },
+            ],
+        }, characters);
+        AssertInvalid(snapshot with
+        {
+            RomanceRoutes = [valid with { InvitationSourceCommandId = null }],
+        }, characters);
+
+        RomanceRouteState levelOne = valid with
+        {
+            ProgressLevel = 1,
+            LastPositiveProgressDate = valid.StartDate,
+            LastPositiveProgressTurnIndex = valid.StartTurnIndex,
+            LastPositiveProgressCommandId = valid.SourceCommandId,
+        };
+        _ = new CharacterMarriageWorldState(
+            snapshot with { RomanceRoutes = [levelOne] },
+            characters,
+            Calendar);
+        AssertInvalid(snapshot with
+        {
+            RomanceRoutes =
+            [
+                levelOne with
+                {
+                    LastPositiveProgressCommandId = new EntityId(
+                        "command:test/validation-v2/false-level-one-progress"),
+                },
+            ],
+        }, characters);
+        AssertInvalid(snapshot with
+        {
+            RomanceRoutes = [valid with { LastPositiveProgressCommandId = valid.SourceCommandId }],
+        }, characters);
+        AssertInvalid(snapshot with
+        {
+            RomanceRoutes =
+            [
+                valid with
+                {
+                    LastPositiveProgressCommandId = valid.InvitationSourceCommandId,
+                },
+            ],
+        }, characters);
+
+        CharacterWorldState fourCharacters = CreateCharacters(4);
+        RomanceRouteState second = VersionTwoRoute(
+            "validation-v2-second",
+            Character(2),
+            Character(3),
+            practice.PracticeId) with
+        {
+            LastPositiveProgressCommandId = valid.LastPositiveProgressCommandId,
+        };
+        AssertInvalid(
+            snapshot with { RomanceRoutes = [valid, second] },
+            fourCharacters);
+    }
+
+    [Fact]
     public void FoldedHistoryCannotPredateItsCharacterBirth()
     {
         CharacterWorldState characters = CreateCharacters(
@@ -1765,6 +1997,42 @@ public sealed class CharacterMarriageTests
             ResolutionTurnIndex = 1,
             ResolutionCommandId = new EntityId($"command:test/{suffix}/romance_end"),
         };
+
+    private static RomanceRouteState VersionTwoRoute(
+        string suffix,
+        EntityId first,
+        EntityId second,
+        EntityId practiceId)
+    {
+        CampaignDate invitationDate = Date.AddDays(-2);
+        EntityId invitationCommand = new($"command:test/{suffix}/invitation");
+        EntityId invitationId = CharacterMarriageIds.DeriveRomanceInvitationId(
+            invitationDate,
+            invitationCommand);
+        EntityId acceptanceCommand = new($"command:test/{suffix}/acceptance");
+        return new RomanceRouteState(
+            CharacterMarriageContractVersions.RomanceRouteState,
+            CharacterMarriageIds.DeriveRomanceRouteId(invitationId, acceptanceCommand),
+            Min(first, second),
+            Max(first, second),
+            practiceId,
+            2,
+            Date.AddDays(-1),
+            1,
+            acceptanceCommand,
+            RomanceRouteStatus.Active,
+            null,
+            null,
+            null,
+            invitationId,
+            first,
+            invitationDate,
+            0,
+            invitationCommand,
+            Date,
+            2,
+            new EntityId($"command:test/{suffix}/advance"));
+    }
 
     private static MarriageEligibilityRequest Eligibility(
         MarriageEligibilityCategory category,

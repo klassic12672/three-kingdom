@@ -65,6 +65,8 @@ SP-04D0's immutable practice/proposal/betrothal/union/romance/history contracts,
 
 SP-04D1's participant-issued political proposal/response/withdrawal, betrothal cancellation, adult fulfillment, deterministic causal-group retention, registered command/event, pending replay, and authenticated schema-10-to-11 package has passing [exact-SHA hosted macOS arm64/Windows x64 evidence](evidence/SP-04D1-EXACT-SHA-653ce71.md) at `653ce71d24bd81435ded9e65022dc29afd8f4810`. D1 adds no adult romance progression, household decision or movement, relationship consequence, lifecycle, succession, content, UI, AI, or platform behavior; the full SP-04 criteria and three-second turn budget remain unchecked.
 
+SP-04D2's mutual-consent adult romance invitation/acceptance, one-step progression, completion/ending, deterministic race handling, bounded retention, legacy-route compatibility, and authenticated schema-11-to-12 package are implemented and locally verified as a candidate. The package adds no proposal/union, relationship or memory effect, household decision/movement, coercion consequence, lifecycle, succession, content, UI, AI, or platform behavior. Exact-SHA hosted macOS arm64/Windows x64 evidence is pending; the full SP-04 criteria and three-second turn budget remain unchecked.
+
 ## Platform verification gates
 
 - Through M3, Apple Silicon macOS is the primary interactive and visual development platform.
@@ -88,8 +90,8 @@ Before M4, estimates are internal ranges only. After M4, record measured velocit
 8. Preserve SP-04C3's opaque owner-independent estate identities, dead-owner persistence seam, accepted 64-holding bound, authenticated schema-8-to-9 migration, and exact-SHA hosted evidence at `7b9f795320e5f4c14aa7e14185e7ba035fdf6847`.
 9. Preserve SP-04D0's immutable marriage foundation, authenticated schema-9-to-10 migration, independent-remediation record, and exact-SHA hosted evidence at `f7fef247178776d7c6fb1c4bed56f09dece76ff4`.
 10. Preserve SP-04D1's political proposal/response/betrothal/union workflow, causal-group retention, authenticated schema-10-to-11 compatibility package, and exact-SHA hosted evidence at `653ce71d24bd81435ded9e65022dc29afd8f4810`.
-11. Implement adult non-explicit romance progression as SP-04D2 without importing household decisions or coercion effects.
+11. Close SP-04D2's locally verified adult non-explicit mutual-consent romance workflow with exact-SHA hosted macOS arm64/Windows x64 evidence before beginning D3.
 
-M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A, SP-04B-L, SP-04C0, SP-04C1, SP-04C2, SP-04C3, SP-04D0, and SP-04D1 have passing exact-SHA hosted macOS arm64/Windows x64 evidence at their accepted revisions. SP-05 remains blocked, and later SP-04 packages remain pending.
+M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A, SP-04B-L, SP-04C0, SP-04C1, SP-04C2, SP-04C3, SP-04D0, and SP-04D1 have passing exact-SHA hosted macOS arm64/Windows x64 evidence at their accepted revisions; D2 is a locally verified candidate awaiting exact-SHA hosted evidence. SP-05 remains blocked, and later SP-04 packages remain pending.
 
 See the [subsystem plan index](plans/README.md) for dependency status.
