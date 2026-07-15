@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — through SP-04E2 exact-SHA hosted; SP-04E3 locally verified with exact-SHA hosted evidence pending |
+| Status | Active — through SP-04E3 exact-SHA hosted; later packages pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -597,7 +597,7 @@ One final wrapper invocation failed before build or tests when `dotnet restore` 
 
 Accepted revision `7491da89985fedb18e423082a2fd9187b8899e52` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04E2-EXACT-SHA-7491da8.md). E214 therefore passes at that revision. Every full SP-04 acceptance criterion remains unchecked. Later E/F/G/X packages, physical Windows, signing, and Steam remain open under their existing gates; SP-05 remains blocked.
 
-## Locally verified package: SP-04E3 deterministic coming of age
+## Accepted package: SP-04E3 deterministic coming of age
 
 SP-04E3 adds one internal Systems-phase lifecycle transition for a living character whose exact age changes from 17 to 18 on the resolution date. The reserved `system:simulation/character_lifecycle` actor generates a priority-zero `character_coming_of_age.v1` command with a date-and-character-derived ID. Resolution emits one causally linked `character_came_of_age.v1` event with exact affected IDs. External submission of the reserved command and restoration of it as pending work fail closed. The transition is date-derived rather than persistent character state: it fires once on the exact birthday, uses March 1 for a February 29 birth in non-leap years, works on later days inside a multi-day turn, and never backfills a character already 18 or older.
 
@@ -623,11 +623,13 @@ Save schema 17 advances only outer lifecycle command/event vocabulary. Its 16→
 | E312 | Existing schema-16 `WardCameOfAge` terminal state remains compatible without adding an adult flag or new subsystem version | Historical fixture and restore tests | Local pass |
 | E313 | A 1,000-character birthday batch records raw workflow/checksum/JSON/gzip behavior without a time threshold | Local Apple Silicon measurement | Local macOS pass; full SP-04 budget unmet |
 | E314 | Repository gates and independent read-only review find no remaining correctness or package-boundary blocker | Local gates and independent review | Local pass after evidence remediation |
-| E315 | The same accepted revision passes hosted macOS arm64 and Windows x64 | Exact-SHA clean-checkout hosted evidence | Pending implementation commit |
+| E315 | The same accepted revision passes hosted macOS arm64 and Windows x64 | Exact-SHA clean-checkout hosted evidence | Pass at `59588be9d277dc4c4cb7ec98ef99e33591b0eeda` |
 
 The representative local Release fixture contains 1,000 characters all turning 18 on the resolved day and emits 1,000 lifecycle events. The latest raw run measured 99.445 ms for workflow and 124.389 ms for snapshot/checksum, serialized to 866,928 JSON bytes and 16,868 gzip bytes, and produced checksum `aa23110c1f48af3ef1242bc06e20ddcd22ef0d82f0414ddf7a7db4813d1b88b8`. The test asserts exact shape and correctness, not a wall-clock threshold. These working-tree measurements do not establish the full SP-04 three-second campaign-turn budget.
 
-Local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 625 Simulation.Core, 71 Game.Content, 6 Game.Application, and 18 repository tests. Touched-file formatting, `git diff --check`, and `git lfs fsck` pass. The existing marriage helper now selects its own event on birthday turns. Independent review found and remediated missing exact-birthday replacement evidence and missing schema-15/16 frozen-fixture corruption cases; the expanded focused slice passes 37 tests. Exact-SHA hosted evidence remains pending before E315 or package acceptance can close. Pregnancy/birth, education, mutable abilities or traits, public death, inheritance, succession, culture-specific adulthood, ceremony, content, presentation, physical Windows, signing, and Steam remain outside E3.
+Local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 625 Simulation.Core, 71 Game.Content, 6 Game.Application, and 18 repository tests. Touched-file formatting, `git diff --check`, and `git lfs fsck` pass. The existing marriage helper now selects its own event on birthday turns. Independent review found and remediated missing exact-birthday replacement evidence and missing schema-15/16 frozen-fixture corruption cases; the expanded focused slice passes 37 tests.
+
+Accepted revision `59588be9d277dc4c4cb7ec98ef99e33591b0eeda` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04E3-EXACT-SHA-59588be.md). E315 therefore passes at that revision. Pregnancy/birth, education, mutable abilities or traits, public death, inheritance, succession, culture-specific adulthood, ceremony, content, presentation, physical Windows, signing, and Steam remain outside E3. Every full SP-04 acceptance criterion remains unchecked; later E/F/G/X packages remain open and SP-05 remains blocked.
 
 ## Edge cases and failure handling
 
