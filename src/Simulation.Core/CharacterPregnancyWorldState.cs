@@ -321,6 +321,53 @@ public sealed class CharacterPregnancyWorldState
                     candidateCalendar)));
     }
 
+    internal CharacterPregnancyDeathPlan PrepareCharacterDeath(
+        EntityId deadCharacterId,
+        IAuthoritativeCharacterWorldQuery candidateCharacters,
+        IAuthoritativeCharacterMarriageWorldQuery candidateMarriages,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        ValidateDeathPreparation(
+            deadCharacterId,
+            candidateCharacters,
+            candidateMarriages,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+        CharacterPregnancyState[] removed = activePregnancies.Values
+            .Where(item => item.GestationalParentCharacterId == deadCharacterId
+                || item.OtherBiologicalParentCharacterId == deadCharacterId)
+            .OrderBy(item => item.PregnancyId)
+            .Select(Clone)
+            .ToArray();
+        HashSet<EntityId> removedIds = removed
+            .Select(item => item.PregnancyId)
+            .ToHashSet();
+        CharacterPregnancyState[] retained = activePregnancies.Values
+            .Where(item => !removedIds.Contains(item.PregnancyId))
+            .OrderBy(item => item.PregnancyId)
+            .Select(Clone)
+            .ToArray();
+        CharacterPregnancyWorldState candidate = new(
+            new CharacterPregnancyWorldSnapshot(
+                CharacterPregnancyContractVersions.Snapshot,
+                retained),
+            candidateCharacters,
+            candidateMarriages,
+            new CampaignCalendar(
+                resolutionDate.CompareTo(calendar.Date) > 0
+                    ? resolutionDate
+                    : calendar.Date,
+                Math.Max(calendar.TurnIndex, authoritativeTurnIndex)));
+        return new CharacterPregnancyDeathPlan(
+            Array.AsReadOnly(removed.Select(Clone).ToArray()),
+            new CharacterPregnancyWorldUpdatePlan(candidate));
+    }
+
     internal void ApplyPrepared(CharacterPregnancyWorldUpdatePlan plan)
     {
         if (plan?.Candidate is null)
@@ -345,6 +392,48 @@ public sealed class CharacterPregnancyWorldState
         {
             throw new SimulationValidationException(
                 "Active-pregnancy snapshot collection and entries cannot be null.");
+        }
+    }
+
+    private void ValidateDeathPreparation(
+        EntityId deadCharacterId,
+        IAuthoritativeCharacterWorldQuery candidateCharacters,
+        IAuthoritativeCharacterMarriageWorldQuery candidateMarriages,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (candidateCharacters is null || candidateMarriages is null)
+        {
+            throw new SimulationValidationException(
+                "Character-death pregnancy preparation requires candidate characters and marriages.");
+        }
+
+        if (!deadCharacterId.IsValid
+            || !resolutionDate.IsValid
+            || resolutionDate.CompareTo(calendar.Date) < 0
+            || authoritativeTurnIndex < calendar.TurnIndex
+            || !commandId.IsValid
+            || eventId != CharacterConditionIds.DeriveActionEventId(
+                resolutionDate,
+                commandId))
+        {
+            throw new SimulationValidationException(
+                "Character-death pregnancy preparation requires exact current coordinates and condition-event identity.");
+        }
+
+        AuthoritativeCharacterProfile current = RequireCharacter(
+            deadCharacterId,
+            "Character-death pregnancy target");
+        if (current.Condition.VitalStatus != CharacterVitalStatus.Alive
+            || !candidateCharacters.TryGetCharacterProfile(
+                deadCharacterId,
+                out AuthoritativeCharacterProfile? candidate)
+            || candidate.Condition.VitalStatus != CharacterVitalStatus.Dead)
+        {
+            throw new SimulationValidationException(
+                $"Character-death pregnancy target '{deadCharacterId}' is stale or lacks an exact dead candidate.");
         }
     }
 
@@ -632,4 +721,8 @@ internal sealed record CharacterPregnancyRegistrationPlan(
 
 internal sealed record CharacterPregnancyBirthResolutionPlan(
     CharacterPregnancyState ResolvedPregnancy,
+    CharacterPregnancyWorldUpdatePlan PregnancyPlan);
+
+internal sealed record CharacterPregnancyDeathPlan(
+    IReadOnlyList<CharacterPregnancyState> RemovedPregnancies,
     CharacterPregnancyWorldUpdatePlan PregnancyPlan);

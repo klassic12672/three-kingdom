@@ -492,7 +492,7 @@ public sealed class CharacterEducationCampaignTests
             IReadOnlyList<CampaignEvent> originalEvents = original.ResolveTurn();
             IReadOnlyList<CampaignEvent> replayEvents = replay.ResolveTurn();
 
-            Assert.Equal(20, pending.SchemaVersion);
+            Assert.Equal(SaveEnvelope.CurrentSchemaVersion, pending.SchemaVersion);
             Assert.IsType<CompletePrimaryGuardianEducationAction>(Assert.IsType<
                 CharacterFamilyActionCommandPayload>(Assert.Single(
                     pending.Snapshot.PendingCommands).Payload).Action);

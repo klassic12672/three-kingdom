@@ -18,7 +18,7 @@ public readonly record struct SimulationChecksum(string Value)
 
     internal static SimulationChecksum ComputeForSaveSchema(WorldSnapshot snapshot, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 19)
+        if (schemaVersion is < 1 or > 20)
         {
             throw new ArgumentOutOfRangeException(nameof(schemaVersion));
         }
@@ -45,7 +45,9 @@ public readonly record struct SimulationChecksum(string Value)
         // Schema 18 is the exact E4 world shape and differs from schema 19
         // only in the registered pregnancy-birth command/event vocabulary.
         // Schema 19 is the exact E5 world shape and predates runtime
-        // character-v3 education attainments.
+        // character-v3 education attainments. Schema 20 is the exact E6
+        // world shape and differs from schema 21 only in registered public
+        // death vocabulary.
         if (schemaVersion < 18)
         {
             canonical.Remove("characterPregnancies");
@@ -92,7 +94,7 @@ public readonly record struct SimulationChecksum(string Value)
         {
             canonical.Remove("characters");
         }
-        else
+        else if (schemaVersion < 20)
         {
             StripCharacterV3Fields(canonical);
             if (schemaVersion < 6)

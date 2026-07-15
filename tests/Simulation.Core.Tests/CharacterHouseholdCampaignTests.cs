@@ -702,7 +702,7 @@ public sealed class CharacterHouseholdCampaignTests
     }
 
     [Fact]
-    public void D305_DeathPreviewIsInternalOnlyAndPlansCompleteLifecycleWithoutMutation()
+    public void D305_InternalDeathPreviewPlansCompleteMarriageLifecycleWithoutMutation()
     {
         CampaignSimulation simulation = CreateSimulation(12);
         MarriageUnionState firstUnion = CreateDirectUnion(
@@ -861,10 +861,6 @@ public sealed class CharacterHouseholdCampaignTests
         Assert.Equal(beforeSnapshot, SnapshotJson(simulation));
         Assert.All(simulation.World.CharacterMarriages.Unions, union =>
             Assert.Equal(MarriageUnionStatus.Active, union.Status));
-        Assert.DoesNotContain(
-            typeof(ICharacterConditionAction).Assembly.GetTypes(),
-            type => typeof(ICharacterConditionAction).IsAssignableFrom(type)
-                && type.Name.Contains("Death", StringComparison.Ordinal));
     }
 
     [Fact]

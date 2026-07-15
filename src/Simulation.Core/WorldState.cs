@@ -628,6 +628,17 @@ public sealed class WorldState : IWorldQuery
                 "Character-condition actions require the reserved authoritative simulation actor and exact event identity.");
         }
 
+        if (payload.Action is ResolveCharacterDeathAction death)
+        {
+            return PrepareCharacterDeathAction(
+                actingActorId,
+                death,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId,
+                eventId);
+        }
+
         CharacterConditionMutationPlan character = Characters.PrepareConditionAction(
             payload.Action,
             resolutionDate,
@@ -675,7 +686,122 @@ public sealed class WorldState : IWorldQuery
             resolved,
             character.CharacterPlan,
             marriage.MarriagePlan,
-            relationship);
+            relationship,
+            null,
+            null);
+    }
+
+    private CharacterConditionAggregatePlan PrepareCharacterDeathAction(
+        EntityId actingActorId,
+        ResolveCharacterDeathAction action,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        ValidateCharacterDeathBlockers(action.CharacterId);
+        CharacterConditionMutationPlan character = Characters.PrepareConditionAction(
+            action,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+        CharacterMarriageLifecycleUpdatePlan marriage = CharacterMarriages.PrepareLifecycleChange(
+            character.CharacterPlan.Candidate,
+            character.Change.CharacterId,
+            CharacterMarriageLifecycleReason.CharacterDied,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId);
+        CharacterGuardianshipDeathPlan guardianship =
+            CharacterGuardianships.PrepareCharacterDeath(
+                action.CharacterId,
+                character.CharacterPlan.Candidate,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId,
+                eventId);
+        CharacterPregnancyDeathPlan pregnancy = CharacterPregnancies.PrepareCharacterDeath(
+            action.CharacterId,
+            character.CharacterPlan.Candidate,
+            marriage.MarriagePlan.Candidate,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+        CharacterDeathChange death = new(
+            CharacterConditionContractVersions.Death,
+            CharacterConditionIds.DeriveDeathId(eventId, action.CharacterId),
+            character.Change,
+            marriage.Changes,
+            guardianship.EndedGuardianships,
+            pregnancy.RemovedPregnancies,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+        CharacterConditionActionResolvedEventPayload resolved = new(
+            actingActorId,
+            action,
+            new CharacterDeathResolvedOutcome(death));
+        return new CharacterConditionAggregatePlan(
+            resolved,
+            character.CharacterPlan,
+            marriage.MarriagePlan,
+            null,
+            guardianship.GuardianshipPlan,
+            pregnancy.PregnancyPlan);
+    }
+
+    private void ValidateCharacterDeathBlockers(EntityId characterId)
+    {
+        if (!characterId.IsValid)
+        {
+            throw new SimulationValidationException(
+                "Character-death target ID is invalid.");
+        }
+
+        if (Characters.Households.Any(item => item.HeadCharacterId == characterId))
+        {
+            throw new SimulationValidationException(
+                $"Character-death target '{characterId}' is a household head and requires later succession policy.");
+        }
+
+        if (Characters.Profiles.Any(item => item.CharacterId != characterId
+            && item.Condition.CustodyStatus != CharacterCustodyStatus.Free
+            && item.Condition.CustodianId == characterId))
+        {
+            throw new SimulationValidationException(
+                $"Character-death target '{characterId}' is the current custodian of another character.");
+        }
+
+        bool activeProposal = Careers.Proposals.Any(item =>
+            item.Status == CareerProposalStatus.Active
+            && (item.ProposerCharacterId == characterId
+                || item.RecipientCharacterId == characterId
+                || item.Principal.Kind == ServicePrincipalKind.Character
+                    && item.Principal.PrincipalId == characterId));
+        bool retainedRetinue = Careers.Retinues.Any(item =>
+            item.LeaderCharacterId == characterId);
+        bool activeMembership = Careers.RetinueMemberships.Any(item => item.IsActive
+            && (item.LeaderCharacterId == characterId
+                || item.MemberCharacterId == characterId));
+        bool activePatronage = Careers.PatronageBonds.Any(item => item.IsActive
+            && (item.PatronCharacterId == characterId
+                || item.BeneficiaryCharacterId == characterId));
+        bool activeEmployment = Careers.EmploymentTenures.Any(item => item.IsActive
+            && (item.EmployeeCharacterId == characterId
+                || item.Employer.Kind == ServicePrincipalKind.Character
+                    && item.Employer.PrincipalId == characterId));
+        if (activeProposal
+            || retainedRetinue
+            || activeMembership
+            || activePatronage
+            || activeEmployment)
+        {
+            throw new SimulationValidationException(
+                $"Character-death target '{characterId}' has an active or retained career/retinue obligation requiring a later lifecycle package.");
+        }
     }
 
     internal CharacterFamilyAggregatePlan PrepareCharacterFamilyAction(
@@ -1209,6 +1335,16 @@ public sealed class WorldState : IWorldQuery
 
         Characters.ApplyPrepared(aggregate.CharacterPlan);
         CharacterMarriages.ApplyPrepared(aggregate.MarriagePlan);
+        if (aggregate.GuardianshipPlan is not null)
+        {
+            CharacterGuardianships.ApplyPrepared(aggregate.GuardianshipPlan);
+        }
+
+        if (aggregate.PregnancyPlan is not null)
+        {
+            CharacterPregnancies.ApplyPrepared(aggregate.PregnancyPlan);
+        }
+
         if (aggregate.RelationshipPlan is not null)
         {
             Relationships.ApplyPrepared(aggregate.RelationshipPlan);
@@ -1524,26 +1660,49 @@ public sealed class WorldState : IWorldQuery
         CharacterConditionActionResolvedEventPayload payload,
         EntityId? eventId = null)
     {
-        if (payload?.Action is null
-            || payload.Outcome is not CharacterConditionChangedOutcome outcome
-            || outcome.Change is null
-            || outcome.MarriageChanges is null)
+        if (payload?.Action is null || payload.Outcome is null)
         {
             throw new SimulationValidationException(
                 "Character-condition action event contains null or unsupported data.");
         }
 
-        HashSet<EntityId> affected =
-        [
-            payload.ActingActorId,
-            outcome.Change.ChangeId,
-            outcome.Change.CharacterId,
-        ];
-        AddConditionCustodian(affected, outcome.Change.PreviousCondition);
-        AddConditionCustodian(affected, outcome.Change.CurrentCondition);
-        AddMarriageLifecycleChanges(affected, outcome.MarriageChanges);
+        HashSet<EntityId> affected = [payload.ActingActorId];
+        switch (payload.Action, payload.Outcome)
+        {
+            case (ResolveCharacterDeathAction action, CharacterDeathResolvedOutcome outcome)
+                when outcome.Death is not null
+                    && outcome.Death.ConditionChange is not null
+                    && outcome.Death.MarriageChanges is not null
+                    && outcome.Death.EndedGuardianships is not null
+                    && outcome.Death.RemovedPregnancies is not null
+                    && outcome.Death.ConditionChange.CharacterId == action.CharacterId:
+                AddCharacterDeath(affected, outcome.Death, eventId);
+                break;
+            case (ResolveCharacterDeathAction, _):
+            case (_, CharacterDeathResolvedOutcome):
+                throw new SimulationValidationException(
+                    "Character-death action and outcome do not match.");
+            case (_, CharacterConditionChangedOutcome outcome)
+                when outcome.Change is not null && outcome.MarriageChanges is not null:
+                affected.Add(outcome.Change.ChangeId);
+                affected.Add(outcome.Change.CharacterId);
+                AddConditionCustodian(affected, outcome.Change.PreviousCondition);
+                AddConditionCustodian(affected, outcome.Change.CurrentCondition);
+                AddMarriageLifecycleChanges(affected, outcome.MarriageChanges);
+                break;
+            default:
+                throw new SimulationValidationException(
+                    "Character-condition action event contains an unsupported outcome.");
+        }
+
         if (payload.RelationshipMemoryConsequence is not null)
         {
+            if (payload.Outcome is CharacterDeathResolvedOutcome)
+            {
+                throw new SimulationValidationException(
+                    "Character-death outcomes cannot contain a relationship consequence in SP-04F0.");
+            }
+
             if (eventId is not EntityId sourceEventId || !sourceEventId.IsValid)
             {
                 throw new SimulationValidationException(
@@ -1564,6 +1723,69 @@ public sealed class WorldState : IWorldQuery
         }
 
         return affected.Order().ToArray();
+    }
+
+    private static void AddCharacterDeath(
+        ISet<EntityId> affected,
+        CharacterDeathChange death,
+        EntityId? eventId)
+    {
+        CharacterConditionChange change = death.ConditionChange;
+        if (eventId is not EntityId sourceEventId
+            || !sourceEventId.IsValid
+            || death.ContractVersion != CharacterConditionContractVersions.Death
+            || death.DeathId != CharacterConditionIds.DeriveDeathId(
+                sourceEventId,
+                change.CharacterId)
+            || death.SourceEventId != sourceEventId
+            || death.SourceCommandId != change.SourceCommandId
+            || death.ResolutionDate != change.ResolutionDate
+            || death.ResolutionTurnIndex != change.ResolutionTurnIndex
+            || change.ChangeId != CharacterConditionIds.DeriveChangeId(
+                sourceEventId,
+                change.CharacterId)
+            || change.CurrentCondition?.VitalStatus != CharacterVitalStatus.Dead
+            || !death.EndedGuardianships.SequenceEqual(
+                death.EndedGuardianships.OrderBy(item => item.GuardianshipId))
+            || !death.RemovedPregnancies.SequenceEqual(
+                death.RemovedPregnancies.OrderBy(item => item.PregnancyId)))
+        {
+            throw new SimulationValidationException(
+                "Character-death change contract, identity, coordinates, condition, or canonical order is invalid.");
+        }
+
+        affected.Add(death.DeathId);
+        affected.Add(change.ChangeId);
+        affected.Add(change.CharacterId);
+        AddConditionCustodian(affected, change.PreviousCondition);
+        AddConditionCustodian(affected, change.CurrentCondition);
+        AddMarriageLifecycleChanges(affected, death.MarriageChanges);
+        foreach (CharacterGuardianshipState guardianship in death.EndedGuardianships)
+        {
+            if (guardianship is null)
+            {
+                throw new SimulationValidationException(
+                    "Character-death ended-guardianship evidence cannot contain null.");
+            }
+
+            affected.Add(guardianship.GuardianshipId);
+            affected.Add(guardianship.WardCharacterId);
+            affected.Add(guardianship.GuardianCharacterId);
+        }
+
+        foreach (CharacterPregnancyState pregnancy in death.RemovedPregnancies)
+        {
+            if (pregnancy is null)
+            {
+                throw new SimulationValidationException(
+                    "Character-death removed-pregnancy evidence cannot contain null.");
+            }
+
+            affected.Add(pregnancy.PregnancyId);
+            affected.Add(pregnancy.GestationalParentCharacterId);
+            affected.Add(pregnancy.OtherBiologicalParentCharacterId);
+            affected.Add(pregnancy.SourceUnionId);
+        }
     }
 
     internal static EntityId[] GetCharacterFamilyActionAffectedIds(
@@ -2627,7 +2849,9 @@ internal sealed record CharacterConditionAggregatePlan(
     CharacterConditionActionResolvedEventPayload ResolvedPayload,
     CharacterWorldUpdatePlan CharacterPlan,
     CharacterMarriageWorldUpdatePlan MarriagePlan,
-    RelationshipWorldUpdatePlan? RelationshipPlan);
+    RelationshipWorldUpdatePlan? RelationshipPlan,
+    CharacterGuardianshipWorldUpdatePlan? GuardianshipPlan,
+    CharacterPregnancyWorldUpdatePlan? PregnancyPlan);
 
 internal sealed record CharacterFamilyAggregatePlan(
     CharacterFamilyActionResolvedEventPayload ResolvedPayload,

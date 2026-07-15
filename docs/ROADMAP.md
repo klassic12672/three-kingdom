@@ -83,6 +83,8 @@ SP-04E5's deterministic due/overdue pregnancy resolution, generated-child insert
 
 SP-04E6's source-backed primary-guardian education attainment, runtime character-v3 effective abilities, authored v1/v2 separation, and authenticated schema-19-to-20 migration have passing [exact-SHA hosted macOS arm64/Windows x64 evidence](evidence/SP-04E6-EXACT-SHA-0928e44.md) at `0928e4484ef41da5ac31f5683af5347800a92dec`. The package adds no education scheduler/progress/levels, mutable definitions, relationship effects, public death, inheritance, succession, content, UI, or AI. The full SP-04 criteria and three-second turn budget remain unchecked.
 
+SP-04F0 is a locally verified candidate for restricted public death. It adds one reserved-system death action/outcome, atomic character/marriage/guardianship/pregnancy lifecycle resolution, explicit household-head/custodian/career/retinue fail-closed seams, dead-owned wealth/estate preservation, and authenticated vocabulary-only schema-20-to-21 migration. Its 39-test focused slice, complete local repository gates, and independent architecture/schema/verification reviews pass; the implementation commit and exact-SHA hosted macOS/Windows evidence remain pending. Inheritance, successor selection, career death closure, household-head/captive disposition, player continuity, full SP-04 acceptance, and the three-second budget remain open.
+
 ## Platform verification gates
 
 - Through M3, Apple Silicon macOS is the primary interactive and visual development platform.
@@ -115,8 +117,8 @@ Before M4, estimates are internal ranges only. After M4, record measured velocit
 17. Preserve SP-04E4's active-only pregnancy registration, schema-17-to-18 compatibility, independent-remediation record, and exact-SHA hosted evidence at `177346b7358e84da358f3bfac8057b6ea70ed412`.
 18. Preserve SP-04E5's deterministic pregnancy birth resolution, generated-child insertion, schema-18-to-19 compatibility, independent-remediation record, and exact-SHA hosted evidence at `4b28fb74bed9181ce021e1c5e32ef9d039b4e2e1`.
 19. Preserve SP-04E6's primary-guardian education attainment, runtime-v3/authored-v1-v2 separation, schema-19-to-20 compatibility, independent-remediation record, and exact-SHA hosted evidence at `0928e4484ef41da5ac31f5683af5347800a92dec`.
-20. Select the next dependency-ordered SP-04 package.
+20. Verify, independently review, commit, push, and collect exact-SHA hosted macOS/Windows evidence for the bounded SP-04F0 restricted public-death candidate.
 
-M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A through SP-04E6 have passing exact-SHA hosted macOS arm64/Windows x64 evidence at their accepted revisions. SP-05 remains blocked, and later SP-04 packages remain pending.
+M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A through SP-04E6 have passing exact-SHA hosted macOS arm64/Windows x64 evidence at their accepted revisions, while SP-04F0 remains a local candidate pending implementation commit and hosted evidence. SP-05 remains blocked, and later SP-04 packages remain pending.
 
 See the [subsystem plan index](plans/README.md) for dependency status.

@@ -249,6 +249,17 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
             throw new SimulationValidationException("Character-condition action cannot be null.");
         }
 
+        if (action is ResolveCharacterDeathAction death)
+        {
+            return PrepareDeathPreview(
+                death.CharacterId,
+                death.ExpectedCurrent,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId,
+                eventId);
+        }
+
         EntityId characterId = action switch
         {
             IncapacitateCharacterAction value => value.CharacterId,
@@ -347,7 +358,7 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
         if (profile.Condition.VitalStatus != CharacterVitalStatus.Alive)
         {
             throw new SimulationValidationException(
-                $"Character-death preview target '{characterId}' must be alive.");
+                $"Character-death target '{characterId}' must be alive.");
         }
 
         CharacterConditionState deceased = new(

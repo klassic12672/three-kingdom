@@ -18,7 +18,7 @@ public sealed record SaveEnvelope(
     IReadOnlyList<CampaignEvent> DiagnosticEvents,
     string Checksum)
 {
-    public const int CurrentSchemaVersion = 20;
+    public const int CurrentSchemaVersion = 21;
 
     public static SaveEnvelope Create(
         string gameVersion,

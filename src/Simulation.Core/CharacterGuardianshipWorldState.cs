@@ -435,6 +435,62 @@ public sealed class CharacterGuardianshipWorldState
                 authoritativeTurnIndex));
     }
 
+    internal CharacterGuardianshipDeathPlan PrepareCharacterDeath(
+        EntityId deadCharacterId,
+        IAuthoritativeCharacterWorldQuery candidateCharacters,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        ValidateDeathPreparation(
+            deadCharacterId,
+            candidateCharacters,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+        CharacterGuardianshipState[] ended = guardianships.Values
+            .Where(item => item.Status == CharacterGuardianshipStatus.Active
+                && (item.WardCharacterId == deadCharacterId
+                    || item.GuardianCharacterId == deadCharacterId))
+            .Select(item => EndGuardianship(
+                item,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId,
+                eventId,
+                item.WardCharacterId == deadCharacterId
+                    ? CharacterGuardianshipEndReason.WardDied
+                    : CharacterGuardianshipEndReason.GuardianDied))
+            .OrderBy(item => item.GuardianshipId)
+            .Select(Clone)
+            .ToArray();
+        Dictionary<EntityId, CharacterGuardianshipState> endedById = ended
+            .ToDictionary(item => item.GuardianshipId, Clone);
+        CharacterGuardianshipState[] updated = guardianships.Values
+            .Select(item => endedById.TryGetValue(
+                    item.GuardianshipId,
+                    out CharacterGuardianshipState? replacement)
+                ? Clone(replacement)
+                : Clone(item))
+            .OrderBy(item => item.GuardianshipId)
+            .ToArray();
+        CharacterGuardianshipWorldState candidate = new(
+            new CharacterGuardianshipWorldSnapshot(
+                CharacterGuardianshipContractVersions.Snapshot,
+                updated),
+            candidateCharacters,
+            new CampaignCalendar(
+                resolutionDate.CompareTo(calendar.Date) > 0
+                    ? resolutionDate
+                    : calendar.Date,
+                Math.Max(calendar.TurnIndex, authoritativeTurnIndex)));
+        return new CharacterGuardianshipDeathPlan(
+            Array.AsReadOnly(ended.Select(Clone).ToArray()),
+            new CharacterGuardianshipWorldUpdatePlan(candidate));
+    }
+
     internal void ApplyPrepared(CharacterGuardianshipWorldUpdatePlan plan)
     {
         if (plan?.Candidate is null)
@@ -468,6 +524,47 @@ public sealed class CharacterGuardianshipWorldState
         {
             throw new SimulationValidationException(
                 $"Primary-guardianship {operation} command or family-event identity is invalid.");
+        }
+    }
+
+    private void ValidateDeathPreparation(
+        EntityId deadCharacterId,
+        IAuthoritativeCharacterWorldQuery candidateCharacters,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (candidateCharacters is null)
+        {
+            throw new SimulationValidationException(
+                "Character-death guardianship preparation requires candidate characters.");
+        }
+
+        if (!deadCharacterId.IsValid
+            || !resolutionDate.IsValid
+            || resolutionDate.CompareTo(calendar.Date) < 0
+            || authoritativeTurnIndex < calendar.TurnIndex
+            || !commandId.IsValid
+            || eventId != CharacterConditionIds.DeriveActionEventId(
+                resolutionDate,
+                commandId))
+        {
+            throw new SimulationValidationException(
+                "Character-death guardianship preparation requires exact current coordinates and condition-event identity.");
+        }
+
+        AuthoritativeCharacterProfile current = RequireCharacter(
+            deadCharacterId,
+            "Character-death guardianship target");
+        if (current.Condition.VitalStatus != CharacterVitalStatus.Alive
+            || !candidateCharacters.TryGetCharacterProfile(
+                deadCharacterId,
+                out AuthoritativeCharacterProfile? candidate)
+            || candidate.Condition.VitalStatus != CharacterVitalStatus.Dead)
+        {
+            throw new SimulationValidationException(
+                $"Character-death guardianship target '{deadCharacterId}' is stale or lacks an exact dead candidate.");
         }
     }
 
@@ -822,4 +919,8 @@ internal sealed record CharacterGuardianshipReplacementPlan(
 
 internal sealed record CharacterGuardianshipComingOfAgePlan(
     CharacterGuardianshipState EndedPrimaryGuardianship,
+    CharacterGuardianshipWorldUpdatePlan GuardianshipPlan);
+
+internal sealed record CharacterGuardianshipDeathPlan(
+    IReadOnlyList<CharacterGuardianshipState> EndedGuardianships,
     CharacterGuardianshipWorldUpdatePlan GuardianshipPlan);

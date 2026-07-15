@@ -39,6 +39,7 @@ public sealed class SaveSchemaRegistry
             new SaveMigrationV17ToV18(),
             new SaveMigrationV18ToV19(),
             new SaveMigrationV19ToV20(),
+            new SaveMigrationV20ToV21(),
         ]).ToArray();
         if (registered.Any(item => item.ToSchemaVersion != item.FromSchemaVersion + 1))
         {
@@ -108,7 +109,7 @@ public sealed class SaveSchemaRegistry
 
     internal static void ValidateHistoricalSourceChecksum(JsonObject source, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 19)
+        if (schemaVersion is < 1 or > 20)
         {
             throw new SaveCompatibilityException($"Save schema {schemaVersion} has no historical checksum contract.");
         }
@@ -253,7 +254,7 @@ public sealed class SaveSchemaRegistry
                 $"Schema {schemaVersion} unexpectedly contains schema 10 character-marriage data.");
         }
 
-        if (schemaVersion is >= 10 and <= 19)
+        if (schemaVersion is >= 10 and <= 20)
         {
             ValidateCharacterMarriageSnapshotShape(
                 RequireHistoricalObject(
@@ -358,9 +359,13 @@ public sealed class SaveSchemaRegistry
                 RejectE5Discriminators(diagnosticCommands, "diagnostic commands");
                 RejectE5Discriminators(diagnosticEvents, "diagnostic events");
             }
-            else
+            else if (schemaVersion == 19)
             {
                 RejectE6Discriminators(source, "save payload");
+            }
+            else
+            {
+                RejectF0Discriminators(source, "save payload");
             }
         }
 
@@ -510,21 +515,27 @@ public sealed class SaveSchemaRegistry
         ValidateCharacterSnapshotShape(
             characters,
             $"Save schema {schemaVersion}",
-            schemaVersion >= 6
+            schemaVersion >= 20
+                ? CharacterContractVersions.Snapshot
+                : schemaVersion >= 6
                 ? CharacterContractVersions.PreviousSnapshot
                 : CharacterContractVersions.LegacySnapshot,
             schemaVersion >= 6
                 ? CharacterContractVersions.Definition
                 : CharacterContractVersions.LegacyDefinition,
-            schemaVersion >= 6
+            schemaVersion >= 20
+                ? CharacterContractVersions.State
+                : schemaVersion >= 6
                 ? CharacterContractVersions.PreviousState
                 : CharacterContractVersions.LegacyState,
             requireVersionTwoFields: schemaVersion >= 6,
-            requireEducationAttainments: false);
+            requireEducationAttainments: schemaVersion >= 20);
         if (!systemVersions.Any(version => IsSystemVersion(
                 version,
                 "simulation.characters",
-                schemaVersion >= 6
+                schemaVersion >= 20
+                    ? CharacterContractVersions.Snapshot
+                    : schemaVersion >= 6
                     ? CharacterContractVersions.PreviousSnapshot
                     : CharacterContractVersions.LegacySnapshot)))
         {
@@ -1954,6 +1965,15 @@ public sealed class SaveSchemaRegistry
         }
     }
 
+    private static void RejectF0Discriminators(JsonNode node, string description)
+    {
+        if (ContainsF0Discriminator(node) || ContainsF0Property(node))
+        {
+            throw new SaveCompatibilityException(
+                $"Save schema 20 unexpectedly contains schema 21 character-death data in {description}.");
+        }
+    }
+
     private static bool ContainsD1Discriminator(JsonNode? node)
     {
         if (node is JsonObject value)
@@ -2298,6 +2318,43 @@ public sealed class SaveSchemaRegistry
         }
 
         return node is JsonArray array && array.Any(ContainsE6Property);
+    }
+
+    private static bool ContainsF0Discriminator(JsonNode? node)
+    {
+        if (node is JsonObject value)
+        {
+            if (value["$type"] is JsonValue discriminator
+                && discriminator.TryGetValue(out string? type)
+                && type is "resolve_character_death.v1"
+                    or "character_death_resolved.v1")
+            {
+                return true;
+            }
+
+            return value.Any(property => ContainsF0Discriminator(property.Value));
+        }
+
+        return node is JsonArray array && array.Any(ContainsF0Discriminator);
+    }
+
+    private static bool ContainsF0Property(JsonNode? node)
+    {
+        if (node is JsonObject value)
+        {
+            if (value.ContainsKey("death")
+                || value.ContainsKey("deathId")
+                || value.ContainsKey("conditionChange")
+                || value.ContainsKey("endedGuardianships")
+                || value.ContainsKey("removedPregnancies"))
+            {
+                return true;
+            }
+
+            return value.Any(property => ContainsF0Property(property.Value));
+        }
+
+        return node is JsonArray array && array.Any(ContainsF0Property);
     }
 
     private static bool ContainsPostD2RelationshipSourceKind(JsonNode? node)
@@ -3256,5 +3313,24 @@ public sealed class SaveMigrationV19ToV20 : ISaveMigration
         {
             UpgradeEmbeddedBirthChildStates(child);
         }
+    }
+}
+
+public sealed class SaveMigrationV20ToV21 : ISaveMigration
+{
+    public int FromSchemaVersion => 20;
+
+    public int ToSchemaVersion => 21;
+
+    public JsonObject Migrate(JsonObject source)
+    {
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(source, FromSchemaVersion);
+        WorldSnapshot snapshot = (source["snapshot"] as JsonObject)?.Deserialize<WorldSnapshot>(
+            SimulationJson.CreateOptions())
+            ?? throw new SaveCompatibilityException(
+                "Schema 20 save is missing its authoritative snapshot.");
+        source["checksum"] = SimulationChecksum.Compute(snapshot).Value;
+        source["schemaVersion"] = ToSchemaVersion;
+        return source;
     }
 }

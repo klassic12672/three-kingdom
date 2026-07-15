@@ -10,6 +10,7 @@ public static class CharacterConditionContractVersions
     public const int Action = 1;
     public const int Outcome = 1;
     public const int Change = 1;
+    public const int Death = 1;
 }
 
 public static class CharacterConditionSystem
@@ -25,6 +26,7 @@ public static class CharacterConditionSystem
 [JsonDerivedType(typeof(RestoreCharacterCapacityAction), "restore_character_capacity.v1")]
 [JsonDerivedType(typeof(EnterCharacterCustodyAction), "enter_character_custody.v1")]
 [JsonDerivedType(typeof(ReleaseCharacterCustodyAction), "release_character_custody.v1")]
+[JsonDerivedType(typeof(ResolveCharacterDeathAction), "resolve_character_death.v1")]
 public interface ICharacterConditionAction;
 
 public sealed record IncapacitateCharacterAction(
@@ -42,6 +44,10 @@ public sealed record EnterCharacterCustodyAction(
     EntityId CustodianCharacterId) : ICharacterConditionAction;
 
 public sealed record ReleaseCharacterCustodyAction(
+    EntityId CharacterId,
+    CharacterConditionState ExpectedCurrent) : ICharacterConditionAction;
+
+public sealed record ResolveCharacterDeathAction(
     EntityId CharacterId,
     CharacterConditionState ExpectedCurrent) : ICharacterConditionAction;
 
@@ -63,11 +69,27 @@ public sealed record CharacterConditionChange(
     TypeDiscriminatorPropertyName = "$type",
     UnknownDerivedTypeHandling = JsonUnknownDerivedTypeHandling.FailSerialization)]
 [JsonDerivedType(typeof(CharacterConditionChangedOutcome), "character_condition_changed.v1")]
+[JsonDerivedType(typeof(CharacterDeathResolvedOutcome), "character_death_resolved.v1")]
 public interface ICharacterConditionActionOutcome;
 
 public sealed record CharacterConditionChangedOutcome(
     CharacterConditionChange Change,
     CharacterMarriageLifecycleChangeSet MarriageChanges)
+    : ICharacterConditionActionOutcome;
+
+public sealed record CharacterDeathChange(
+    int ContractVersion,
+    EntityId DeathId,
+    CharacterConditionChange ConditionChange,
+    CharacterMarriageLifecycleChangeSet MarriageChanges,
+    IReadOnlyList<CharacterGuardianshipState> EndedGuardianships,
+    IReadOnlyList<CharacterPregnancyState> RemovedPregnancies,
+    CampaignDate ResolutionDate,
+    long ResolutionTurnIndex,
+    EntityId SourceCommandId,
+    EntityId SourceEventId);
+
+public sealed record CharacterDeathResolvedOutcome(CharacterDeathChange Death)
     : ICharacterConditionActionOutcome;
 
 public sealed record CharacterConditionActionResolvedEventPayload(
@@ -150,6 +172,13 @@ public static class CharacterConditionIds
         StableId.Hash(
             "character_condition_change",
             "character-condition-change.v1",
+            StableId.RequireId(eventId, nameof(eventId)).Value,
+            StableId.RequireId(characterId, nameof(characterId)).Value);
+
+    public static EntityId DeriveDeathId(EntityId eventId, EntityId characterId) =>
+        StableId.Hash(
+            "character_death",
+            "character-death.v1",
             StableId.RequireId(eventId, nameof(eventId)).Value,
             StableId.RequireId(characterId, nameof(characterId)).Value);
 
