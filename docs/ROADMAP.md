@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Master-plan version | 0.2.0 |
-| Updated | 2026-07-15 |
+| Updated | 2026-07-16 |
 | Active milestone | **M2 — 191 campaign slice** |
 | Scheduling policy | Milestone gates; no public dates before M4 |
 
@@ -69,7 +69,7 @@ SP-04D2's mutual-consent adult romance invitation/acceptance, one-step progressi
 
 SP-04D3's narrow head-authorized household decisions, exact-custodian coerced political unions, harmful target-to-actor memories with zero attraction, system-authoritative condition changes, atomic marriage-lifecycle invalidation, internal death preview, and authenticated schema-12-to-13 compatibility package have passing [exact-SHA hosted macOS arm64/Windows x64 evidence](evidence/SP-04D3-EXACT-SHA-93d3881.md) at `93d38810a87707a7c4c98c7392e2a2f20dc030fb`. Public death, succession/inheritance, later character packages, the full SP-04 criteria, and the three-second turn budget remain pending.
 
-SP-04E0's reserved-system establishment of current legal-adoptive parentage, complete retained-marriage preflight, action-local parent bounds, and authenticated vocabulary-only schema-13-to-14 migration are implemented as a local candidate. It adds no guardianship, residence/family movement, effective-dated adoption history, pregnancy/birth, education, coming of age, inheritance, succession, content, UI, or platform behavior. Exact-SHA hosted evidence remains pending; the full SP-04 criteria and three-second turn budget remain unchecked.
+SP-04E0's reserved-system establishment of current legal-adoptive parentage, complete retained-marriage preflight, action-local parent bounds, and authenticated vocabulary-only schema-13-to-14 migration have passing [exact-SHA hosted macOS arm64/Windows x64 evidence](evidence/SP-04E0-EXACT-SHA-30fd0ad.md) at `30fd0ad5f9a47eb15c0af27360ae31d72414a8ed`. It adds no guardianship, residence/family movement, effective-dated adoption history, pregnancy/birth, education, coming of age, inheritance, succession, content, UI, or platform behavior. The full SP-04 criteria and three-second turn budget remain unchecked.
 
 ## Platform verification gates
 
@@ -96,9 +96,9 @@ Before M4, estimates are internal ranges only. After M4, record measured velocit
 10. Preserve SP-04D1's political proposal/response/betrothal/union workflow, causal-group retention, authenticated schema-10-to-11 compatibility package, and exact-SHA hosted evidence at `653ce71d24bd81435ded9e65022dc29afd8f4810`.
 11. Preserve SP-04D2's adult non-explicit mutual-consent romance workflow, authenticated schema-11-to-12 compatibility package, and exact-SHA hosted evidence at `62a50075ca86b3466cca9c05825d4374e6cac366`.
 12. Preserve SP-04D3's household/coercion/condition-lifecycle package, authenticated schema-12-to-13 compatibility, independent-remediation record, and exact-SHA hosted evidence at `93d38810a87707a7c4c98c7392e2a2f20dc030fb`.
-13. Verify and accept SP-04E0's legal-adoptive-parent establishment and schema-13-to-14 compatibility package at one exact SHA on hosted macOS arm64 and Windows x64.
-14. Implement the next dependency-ordered SP-04E package as a bounded, independently verifiable package.
+13. Preserve SP-04E0's legal-adoptive-parent establishment, authenticated vocabulary-only schema-13-to-14 compatibility, independent-remediation record, and exact-SHA hosted evidence at `30fd0ad5f9a47eb15c0af27360ae31d72414a8ed`.
+14. Implement SP-04E1 as the next dependency-ordered, bounded, independently verifiable SP-04E package.
 
-M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A, SP-04B-L, SP-04C0, SP-04C1, SP-04C2, SP-04C3, SP-04D0, SP-04D1, SP-04D2, and SP-04D3 have passing exact-SHA hosted macOS arm64/Windows x64 evidence at their accepted revisions. SP-04E0 is locally implemented with hosted evidence pending; SP-05 remains blocked, and later SP-04 packages remain pending.
+M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A, SP-04B-L, SP-04C0, SP-04C1, SP-04C2, SP-04C3, SP-04D0, SP-04D1, SP-04D2, SP-04D3, and SP-04E0 have passing exact-SHA hosted macOS arm64/Windows x64 evidence at their accepted revisions. SP-05 remains blocked, and later SP-04 packages remain pending.
 
 See the [subsystem plan index](plans/README.md) for dependency status.

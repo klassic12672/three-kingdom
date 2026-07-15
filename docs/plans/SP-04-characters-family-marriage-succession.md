@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2/SP-04C3/SP-04D0/SP-04D1/SP-04D2/SP-04D3 exact-SHA hosted verified; SP-04E0 local candidate; later packages pending |
+| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2/SP-04C3/SP-04D0/SP-04D1/SP-04D2/SP-04D3/SP-04E0 exact-SHA hosted verified; later packages pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -486,7 +486,7 @@ The representative local Release fixture contains 1,000 characters, 200 coerced 
 
 Accepted revision `93d38810a87707a7c4c98c7392e2a2f20dc030fb` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04D3-EXACT-SHA-93d3881.md). D314 and D318 therefore pass at that revision. Physical Windows remains an M4 gate, production signing and Steam remain SP-15 gates, and the full SP-04 three-second budget remains unmet. Every full SP-04 acceptance criterion remains unchecked, SP-05 remains blocked, and the next dependency-ordered SP-04E package may begin.
 
-## Active package: SP-04E0 legal-adoptive parent establishment
+## Accepted package: SP-04E0 legal-adoptive parent establishment
 
 SP-04E0 is the first bounded E package on accepted D3 revision `93d38810a87707a7c4c98c7392e2a2f20dc030fb`. It registers one Commands-phase, reserved-system `character_family_action.v1`: `EstablishLegalAdoptiveParentAction`. The action carries the exact canonical current parent links and may append one `LegalAdoptive` link. Its resolved event records a versioned parentage change with exact previous/current links, resolution date/turn, source command, and stable change identity. Successful application replaces the existing `CharacterWorldState` contents in place so all inward subsystem references continue to observe the same authoritative query object.
 
@@ -514,15 +514,15 @@ Save schema 14 changes vocabulary only: character, relationship, career, resourc
 | E010 | No guardianship, pregnancy/birth, education, coming-of-age, inheritance, succession, content, UI, AI, battle, or platform surface enters E0 | Reflection and diff review | Local pass |
 | E011 | A 1,000-character/64-adoption fixture records raw workflow/checksum/serialization behavior without a brittle threshold | Local Apple Silicon measurement | Local macOS pass; full SP-04 budget unmet |
 | E012 | Repository validation, complete Release suites, diff, and LFS gates pass | Local repository gates | Local pass |
-| E013 | The same accepted revision passes hosted macOS arm64 and Windows x64 | Exact-SHA clean-checkout hosted evidence | Pending implementation commit |
+| E013 | The same accepted revision passes hosted macOS arm64 and Windows x64 | Exact-SHA clean-checkout hosted evidence | Pass at `30fd0ad5f9a47eb15c0af27360ae31d72414a8ed` |
 
 The final focused local Release run passes 48 family/schema-13 tests. Its fictional 1,000-character fixture resolves 64 bounded legal adoptions in 1,070.225 ms, captures and checksums in 7.789 ms, serializes to 881,800 JSON bytes and 23,579 gzip bytes, and produces checksum `fa8e08d551b8e3fe3e5b3d066b418aed6e2d68526c36320b2b8f0c5bf7d94e8f`. Timings are raw Apple Silicon observations without a threshold and do not establish the full SP-04 three-second campaign-turn budget.
 
-Final local repository verification on 2026-07-15 passes the zero-warning Release build and 539 Simulation.Core, 71 Game.Content, 6 Game.Application, and 18 repository tests. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. Touched-file formatting, `git diff --check`, and `git lfs fsck` pass. These results are local working-tree evidence until the implementation is committed and verified at one exact SHA on both hosted platforms.
+Final local repository verification on 2026-07-15 passes the zero-warning Release build and 539 Simulation.Core, 71 Game.Content, 6 Game.Application, and 18 repository tests. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. Touched-file formatting, `git diff --check`, and `git lfs fsck` pass.
 
 Independent review found that the first action contract retained the caller's mutable expected-parent list after submission. The final contract clones each link into an `Array.AsReadOnly` collection. Post-submit mutation/race/checksum coverage proves pending commands and resolved diagnostics no longer share caller-owned state; a final read-only re-review reports no remaining blocker.
 
-Every full SP-04 acceptance criterion remains unchecked. Pregnancy/birth, guardianship, education, coming of age, public death, inheritance, succession, content, presentation, and platform work remain later E/F/G/X packages; SP-05 remains blocked.
+Accepted revision `30fd0ad5f9a47eb15c0af27360ae31d72414a8ed` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04E0-EXACT-SHA-30fd0ad.md). E013 therefore passes at that revision. Every full SP-04 acceptance criterion remains unchecked. Pregnancy/birth, guardianship, education, coming of age, public death, inheritance, succession, content, presentation, and platform work remain later E/F/G/X packages; SP-05 remains blocked.
 
 ## Edge cases and failure handling
 
