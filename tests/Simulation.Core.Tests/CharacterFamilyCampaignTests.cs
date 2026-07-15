@@ -348,14 +348,20 @@ public sealed class CharacterFamilyCampaignTests
             "character_parentage_change:sha256/5bcfe63bccdabdb69c13b5e90931af9ab450576689a5df128051796ebd989cd7",
             changeId.Value);
         Assert.Equal(
-            [typeof(EstablishLegalAdoptiveParentAction)],
+            [
+                typeof(EstablishLegalAdoptiveParentAction),
+                typeof(EstablishPrimaryGuardianshipAction),
+            ],
             typeof(ICharacterFamilyAction).Assembly.GetTypes()
                 .Where(type => typeof(ICharacterFamilyAction).IsAssignableFrom(type)
                     && type is { IsInterface: false, IsAbstract: false })
                 .OrderBy(type => type.FullName)
                 .ToArray());
         Assert.Equal(
-            [typeof(LegalAdoptiveParentEstablishedOutcome)],
+            [
+                typeof(LegalAdoptiveParentEstablishedOutcome),
+                typeof(PrimaryGuardianshipEstablishedOutcome),
+            ],
             typeof(ICharacterFamilyActionOutcome).Assembly.GetTypes()
                 .Where(type => typeof(ICharacterFamilyActionOutcome).IsAssignableFrom(type)
                     && type is { IsInterface: false, IsAbstract: false })

@@ -44,9 +44,9 @@ public sealed class TierAndSoakTests
 
         Assert.True(result.Turns > 1_000);
         Assert.Equal(200, result.FinalDate.Year);
-        // SP-04D2 advances the character-marriage snapshot and system identity to v2, so the
-        // canonical golden changes without altering the soak inputs or simulated outcomes.
-        Assert.Equal("ba4eccd512e7bf699c3360032f2a5f007b362cc16ff718a487a6d082357e65b2", result.Checksum.Value);
+        // SP-04E1 adds the default-empty character-guardianship snapshot and system identity,
+        // so the canonical golden changes without altering the soak inputs or simulated outcomes.
+        Assert.Equal("95d559c0ebcf51f854ad563a12c00a4ab49a68c38c69fa6508c523e9a7b83e1d", result.Checksum.Value);
     }
 
     [Theory]

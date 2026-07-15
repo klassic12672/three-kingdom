@@ -21,6 +21,9 @@ public static class CharacterFamilySystem
 [JsonDerivedType(
     typeof(EstablishLegalAdoptiveParentAction),
     "establish_legal_adoptive_parent.v1")]
+[JsonDerivedType(
+    typeof(EstablishPrimaryGuardianshipAction),
+    "establish_primary_guardianship.v1")]
 public interface ICharacterFamilyAction;
 
 public sealed record EstablishLegalAdoptiveParentAction : ICharacterFamilyAction
@@ -67,6 +70,9 @@ public sealed record CharacterParentageChange(
 [JsonDerivedType(
     typeof(LegalAdoptiveParentEstablishedOutcome),
     "legal_adoptive_parent_established.v1")]
+[JsonDerivedType(
+    typeof(PrimaryGuardianshipEstablishedOutcome),
+    "primary_guardianship_established.v1")]
 public interface ICharacterFamilyActionOutcome;
 
 public sealed record LegalAdoptiveParentEstablishedOutcome(CharacterParentageChange Change)

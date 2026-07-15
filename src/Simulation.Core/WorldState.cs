@@ -23,6 +23,8 @@ public interface IWorldQuery
 
     IAuthoritativeCharacterMarriageWorldQuery CharacterMarriages { get; }
 
+    IAuthoritativeCharacterGuardianshipWorldQuery CharacterGuardianships { get; }
+
     bool TryGetEntity(EntityId id, [NotNullWhen(true)] out SyntheticEntitySnapshot? entity);
 }
 
@@ -40,6 +42,7 @@ public sealed class WorldState : IWorldQuery
         new(CharacterResourceSystem.SystemId, CharacterResourceSystem.Version),
         new(CharacterEstateHoldingSystem.SystemId, CharacterEstateHoldingSystem.Version),
         new(CharacterMarriageSystem.SystemId, CharacterMarriageSystem.Version),
+        new(CharacterGuardianshipSystem.SystemId, CharacterGuardianshipSystem.Version),
     ];
 
     private readonly SortedDictionary<EntityId, SyntheticEntitySnapshot> entities = [];
@@ -59,7 +62,8 @@ public sealed class WorldState : IWorldQuery
         CareerWorldSnapshot careers,
         CharacterResourceWorldSnapshot characterResources,
         CharacterEstateHoldingWorldSnapshot characterEstateHoldings,
-        CharacterMarriageWorldSnapshot characterMarriages)
+        CharacterMarriageWorldSnapshot characterMarriages,
+        CharacterGuardianshipWorldSnapshot characterGuardianships)
     {
         if (!calendar.Date.IsValid || calendar.TurnIndex < 0)
         {
@@ -85,6 +89,10 @@ public sealed class WorldState : IWorldQuery
             characterMarriages,
             Characters,
             calendar);
+        CharacterGuardianships = new CharacterGuardianshipWorldState(
+            characterGuardianships,
+            Characters,
+            calendar);
     }
 
     public CampaignCalendar Calendar { get; private set; }
@@ -107,6 +115,8 @@ public sealed class WorldState : IWorldQuery
 
     public CharacterMarriageWorldState CharacterMarriages { get; }
 
+    public CharacterGuardianshipWorldState CharacterGuardianships { get; }
+
     IGeographicWorldQuery IWorldQuery.Geography => Geography;
 
     IAuthoritativeCharacterWorldQuery IWorldQuery.Characters => Characters;
@@ -122,6 +132,9 @@ public sealed class WorldState : IWorldQuery
 
     IAuthoritativeCharacterMarriageWorldQuery IWorldQuery.CharacterMarriages =>
         CharacterMarriages;
+
+    IAuthoritativeCharacterGuardianshipWorldQuery IWorldQuery.CharacterGuardianships =>
+        CharacterGuardianships;
 
     public IReadOnlyList<SyntheticEntitySnapshot> Entities => entities.Values.Select(CloneEntity).ToArray();
 
@@ -139,7 +152,8 @@ public sealed class WorldState : IWorldQuery
             CareerWorldSnapshot.Empty,
             CharacterResourceWorldSnapshot.Empty,
             CharacterEstateHoldingWorldSnapshot.Empty,
-            CharacterMarriageWorldSnapshot.Empty);
+            CharacterMarriageWorldSnapshot.Empty,
+            CharacterGuardianshipWorldSnapshot.Empty);
 
     public static WorldState Create(
         CampaignDate startDate,
@@ -156,7 +170,8 @@ public sealed class WorldState : IWorldQuery
             CareerWorldSnapshot.Empty,
             CharacterResourceWorldSnapshot.Empty,
             CharacterEstateHoldingWorldSnapshot.Empty,
-            CharacterMarriageWorldSnapshot.Empty);
+            CharacterMarriageWorldSnapshot.Empty,
+            CharacterGuardianshipWorldSnapshot.Empty);
 
     public static WorldState Create(
         CampaignDate startDate,
@@ -174,7 +189,8 @@ public sealed class WorldState : IWorldQuery
             CareerWorldSnapshot.Empty,
             CharacterResourceWorldSnapshot.Empty,
             CharacterEstateHoldingWorldSnapshot.Empty,
-            CharacterMarriageWorldSnapshot.Empty);
+            CharacterMarriageWorldSnapshot.Empty,
+            CharacterGuardianshipWorldSnapshot.Empty);
 
     public static WorldState Create(
         CampaignDate startDate,
@@ -193,7 +209,8 @@ public sealed class WorldState : IWorldQuery
             careers,
             CharacterResourceWorldSnapshot.Empty,
             CharacterEstateHoldingWorldSnapshot.Empty,
-            CharacterMarriageWorldSnapshot.Empty);
+            CharacterMarriageWorldSnapshot.Empty,
+            CharacterGuardianshipWorldSnapshot.Empty);
 
     public static WorldState Create(
         CampaignDate startDate,
@@ -213,7 +230,8 @@ public sealed class WorldState : IWorldQuery
             careers,
             characterResources,
             CharacterEstateHoldingWorldSnapshot.Empty,
-            CharacterMarriageWorldSnapshot.Empty);
+            CharacterMarriageWorldSnapshot.Empty,
+            CharacterGuardianshipWorldSnapshot.Empty);
 
     public static WorldState Create(
         CampaignDate startDate,
@@ -234,7 +252,8 @@ public sealed class WorldState : IWorldQuery
             careers,
             characterResources,
             characterEstateHoldings,
-            CharacterMarriageWorldSnapshot.Empty);
+            CharacterMarriageWorldSnapshot.Empty,
+            CharacterGuardianshipWorldSnapshot.Empty);
 
     public static WorldState Create(
         CampaignDate startDate,
@@ -247,6 +266,31 @@ public sealed class WorldState : IWorldQuery
         CharacterResourceWorldSnapshot characterResources,
         CharacterEstateHoldingWorldSnapshot characterEstateHoldings,
         CharacterMarriageWorldSnapshot characterMarriages)
+        => Create(
+            startDate,
+            seed,
+            initialEntities,
+            geography,
+            characters,
+            relationships,
+            careers,
+            characterResources,
+            characterEstateHoldings,
+            characterMarriages,
+            CharacterGuardianshipWorldSnapshot.Empty);
+
+    public static WorldState Create(
+        CampaignDate startDate,
+        ulong seed,
+        IEnumerable<SyntheticEntitySnapshot> initialEntities,
+        GeographicWorldSnapshot geography,
+        CharacterWorldSnapshot characters,
+        RelationshipWorldSnapshot relationships,
+        CareerWorldSnapshot careers,
+        CharacterResourceWorldSnapshot characterResources,
+        CharacterEstateHoldingWorldSnapshot characterEstateHoldings,
+        CharacterMarriageWorldSnapshot characterMarriages,
+        CharacterGuardianshipWorldSnapshot characterGuardianships)
     {
         WorldState world = new(
             new CampaignCalendar(startDate, 0),
@@ -258,7 +302,8 @@ public sealed class WorldState : IWorldQuery
             careers,
             characterResources,
             characterEstateHoldings,
-            characterMarriages);
+            characterMarriages,
+            characterGuardianships);
         foreach (SyntheticEntitySnapshot entity in initialEntities.OrderBy(item => item.Id))
         {
             SyntheticEntitySnapshot canonical = ValidateEntity(entity).Canonicalize();
@@ -285,6 +330,7 @@ public sealed class WorldState : IWorldQuery
             || snapshot.CharacterResources is null
             || snapshot.CharacterEstateHoldings is null
             || snapshot.CharacterMarriages is null
+            || snapshot.CharacterGuardianships is null
             || snapshot.Entities.Any(entity => entity is null)
             || snapshot.PendingCommands.Any(command => command is null))
         {
@@ -296,14 +342,15 @@ public sealed class WorldState : IWorldQuery
             throw new SaveCompatibilityException($"Unsupported world snapshot contract version {snapshot.ContractVersion}.");
         }
 
-        (CharacterWorldSnapshot characters, CareerWorldSnapshot careers, CharacterResourceWorldSnapshot characterResources, CharacterEstateHoldingWorldSnapshot characterEstateHoldings, CharacterMarriageWorldSnapshot characterMarriages) = ValidateSystemVersions(
+        (CharacterWorldSnapshot characters, CareerWorldSnapshot careers, CharacterResourceWorldSnapshot characterResources, CharacterEstateHoldingWorldSnapshot characterEstateHoldings, CharacterMarriageWorldSnapshot characterMarriages, CharacterGuardianshipWorldSnapshot characterGuardianships) = ValidateSystemVersions(
             snapshot.SystemVersions,
             snapshot.Characters,
             snapshot.Relationships,
             snapshot.Careers,
             snapshot.CharacterResources,
             snapshot.CharacterEstateHoldings,
-            snapshot.CharacterMarriages);
+            snapshot.CharacterMarriages,
+            snapshot.CharacterGuardianships);
         ValidatePendingCommands(snapshot.PendingCommands);
 
         WorldState world = new(
@@ -316,7 +363,8 @@ public sealed class WorldState : IWorldQuery
             careers,
             characterResources,
             characterEstateHoldings,
-            characterMarriages)
+            characterMarriages,
+            characterGuardianships)
         {
             lastEventDate = snapshot.LastEventDate,
             lastEventPhase = snapshot.LastEventPhase,
@@ -369,6 +417,7 @@ public sealed class WorldState : IWorldQuery
         CharacterResources = CharacterResources.CaptureSnapshot(),
         CharacterEstateHoldings = CharacterEstateHoldings.CaptureSnapshot(),
         CharacterMarriages = CharacterMarriages.CaptureSnapshot(),
+        CharacterGuardianships = CharacterGuardianships.CaptureSnapshot(),
     };
 
     internal void Enqueue(CampaignCommand command)
@@ -457,6 +506,7 @@ public sealed class WorldState : IWorldQuery
         Careers.UpdateCampaignCalendar(Calendar);
         CharacterResources.UpdateCampaignCalendar(Calendar);
         CharacterMarriages.UpdateCampaignCalendar(Calendar);
+        CharacterGuardianships.UpdateCampaignCalendar(Calendar);
     }
 
     internal IReadOnlyList<CampaignEvent> PlanGeographicEvents(CampaignDate date) =>
@@ -548,28 +598,59 @@ public sealed class WorldState : IWorldQuery
                 "Character-family actions require the reserved authoritative simulation actor and exact event identity.");
         }
 
-        CharacterFamilyMutationPlan character = Characters.PrepareFamilyAction(
-            payload.Action,
-            resolutionDate,
-            authoritativeTurnIndex,
-            commandId,
-            eventId);
+        switch (payload.Action)
+        {
+            case EstablishLegalAdoptiveParentAction:
+                {
+                    CharacterFamilyMutationPlan character = Characters.PrepareFamilyAction(
+                        payload.Action,
+                        resolutionDate,
+                        authoritativeTurnIndex,
+                        commandId,
+                        eventId);
 
-        // Every retained marriage record is revalidated against the candidate parent graph.
-        // Adoption is atomic: it is rejected rather than silently rewriting marriage history.
-        CampaignCalendar candidateCalendar = new(
-            resolutionDate.CompareTo(Calendar.Date) > 0 ? resolutionDate : Calendar.Date,
-            Math.Max(Calendar.TurnIndex, authoritativeTurnIndex));
-        _ = new CharacterMarriageWorldState(
-            CharacterMarriages.CaptureSnapshot(),
-            character.CharacterPlan.Candidate,
-            candidateCalendar);
+                    // Every retained marriage record is revalidated against the candidate parent graph.
+                    // Adoption is atomic: it is rejected rather than silently rewriting marriage history.
+                    CampaignCalendar candidateCalendar = new(
+                        resolutionDate.CompareTo(Calendar.Date) > 0 ? resolutionDate : Calendar.Date,
+                        Math.Max(Calendar.TurnIndex, authoritativeTurnIndex));
+                    _ = new CharacterMarriageWorldState(
+                        CharacterMarriages.CaptureSnapshot(),
+                        character.CharacterPlan.Candidate,
+                        candidateCalendar);
 
-        CharacterFamilyActionResolvedEventPayload resolved = new(
-            actingActorId,
-            payload.Action,
-            new LegalAdoptiveParentEstablishedOutcome(character.Change));
-        return new CharacterFamilyAggregatePlan(resolved, character.CharacterPlan);
+                    CharacterFamilyActionResolvedEventPayload resolved = new(
+                        actingActorId,
+                        payload.Action,
+                        new LegalAdoptiveParentEstablishedOutcome(character.Change));
+                    return new CharacterFamilyAggregatePlan(
+                        resolved,
+                        character.CharacterPlan,
+                        null);
+                }
+            case EstablishPrimaryGuardianshipAction guardianshipAction:
+                {
+                    CharacterGuardianshipEstablishmentPlan guardianship =
+                        CharacterGuardianships.PrepareEstablishment(
+                            guardianshipAction,
+                            resolutionDate,
+                            authoritativeTurnIndex,
+                            commandId,
+                            eventId);
+                    CharacterFamilyActionResolvedEventPayload resolved = new(
+                        actingActorId,
+                        payload.Action,
+                        new PrimaryGuardianshipEstablishedOutcome(
+                            guardianship.Guardianship));
+                    return new CharacterFamilyAggregatePlan(
+                        resolved,
+                        null,
+                        guardianship.GuardianshipPlan);
+                }
+            default:
+                throw new SimulationValidationException(
+                    $"Unsupported character-family action '{payload.Action.GetType().Name}'.");
+        }
     }
 
     internal CharacterDeathPreviewAggregatePlan PrepareCharacterDeathPreview(
@@ -951,7 +1032,15 @@ public sealed class WorldState : IWorldQuery
                 "Character-family action event payload does not match its exact deterministic plan.");
         }
 
-        Characters.ApplyPrepared(aggregate.CharacterPlan);
+        if (aggregate.CharacterPlan is not null)
+        {
+            Characters.ApplyPrepared(aggregate.CharacterPlan);
+        }
+
+        if (aggregate.GuardianshipPlan is not null)
+        {
+            CharacterGuardianships.ApplyPrepared(aggregate.GuardianshipPlan);
+        }
     }
 
     private void ApplyHouseholdDecision(
@@ -1204,21 +1293,40 @@ public sealed class WorldState : IWorldQuery
     internal static EntityId[] GetCharacterFamilyActionAffectedIds(
         CharacterFamilyActionResolvedEventPayload payload)
     {
-        if (payload?.Action is not EstablishLegalAdoptiveParentAction action
-            || payload.Outcome is not LegalAdoptiveParentEstablishedOutcome outcome
-            || outcome.Change is null)
+        if (payload?.Action is null || payload.Outcome is null)
         {
             throw new SimulationValidationException(
                 "Character-family action event contains null or unsupported data.");
         }
 
-        EntityId[] affected =
-        [
-            payload.ActingActorId,
-            outcome.Change.ChangeId,
-            action.AdoptiveParentCharacterId,
-            action.AdoptedCharacterId,
-        ];
+        EntityId[] affected = (payload.Action, payload.Outcome) switch
+        {
+            (EstablishLegalAdoptiveParentAction action,
+                LegalAdoptiveParentEstablishedOutcome outcome)
+                when outcome.Change is not null
+                    && outcome.Change.AdoptedCharacterId == action.AdoptedCharacterId =>
+            [
+                payload.ActingActorId,
+                outcome.Change.ChangeId,
+                action.AdoptiveParentCharacterId,
+                action.AdoptedCharacterId,
+            ],
+            (EstablishPrimaryGuardianshipAction action,
+                PrimaryGuardianshipEstablishedOutcome outcome)
+                when outcome.Guardianship is not null
+                    && outcome.Guardianship.GuardianCharacterId
+                        == action.GuardianCharacterId
+                    && outcome.Guardianship.WardCharacterId
+                        == action.WardCharacterId =>
+            [
+                payload.ActingActorId,
+                outcome.Guardianship.GuardianshipId,
+                action.GuardianCharacterId,
+                action.WardCharacterId,
+            ],
+            _ => throw new SimulationValidationException(
+                "Character-family action event contains mismatched action and outcome data."),
+        };
         if (affected.Any(id => !id.IsValid))
         {
             throw new SimulationValidationException(
@@ -1660,14 +1768,16 @@ public sealed class WorldState : IWorldQuery
         CareerWorldSnapshot Careers,
         CharacterResourceWorldSnapshot CharacterResources,
         CharacterEstateHoldingWorldSnapshot CharacterEstateHoldings,
-        CharacterMarriageWorldSnapshot CharacterMarriages) ValidateSystemVersions(
+        CharacterMarriageWorldSnapshot CharacterMarriages,
+        CharacterGuardianshipWorldSnapshot CharacterGuardianships) ValidateSystemVersions(
         IReadOnlyList<SystemVersion> versions,
         CharacterWorldSnapshot characters,
         RelationshipWorldSnapshot relationships,
         CareerWorldSnapshot careers,
         CharacterResourceWorldSnapshot characterResources,
         CharacterEstateHoldingWorldSnapshot characterEstateHoldings,
-        CharacterMarriageWorldSnapshot characterMarriages)
+        CharacterMarriageWorldSnapshot characterMarriages,
+        CharacterGuardianshipWorldSnapshot characterGuardianships)
     {
         if (versions is null || versions.Any(version => version is null))
         {
@@ -1704,13 +1814,19 @@ public sealed class WorldState : IWorldQuery
             throw new SaveCompatibilityException("Snapshot character-marriage state is missing.");
         }
 
+        if (characterGuardianships is null)
+        {
+            throw new SaveCompatibilityException("Snapshot character-guardianship state is missing.");
+        }
+
         string[] expectedCore = CurrentSystemVersions
             .Where(version => version.SystemId is not "simulation.characters"
                 and not "simulation.relationships"
                 and not "simulation.character_careers"
                 and not CharacterResourceSystem.SystemId
                 and not CharacterEstateHoldingSystem.SystemId
-                and not CharacterMarriageSystem.SystemId)
+                and not CharacterMarriageSystem.SystemId
+                and not CharacterGuardianshipSystem.SystemId)
             .Select(version => $"{version.SystemId}@{version.Version}")
             .Order(StringComparer.Ordinal)
             .ToArray();
@@ -1720,7 +1836,8 @@ public sealed class WorldState : IWorldQuery
                 and not "simulation.character_careers"
                 and not CharacterResourceSystem.SystemId
                 and not CharacterEstateHoldingSystem.SystemId
-                and not CharacterMarriageSystem.SystemId)
+                and not CharacterMarriageSystem.SystemId
+                and not CharacterGuardianshipSystem.SystemId)
             .Select(version => $"{version.SystemId}@{version.Version}")
             .Order(StringComparer.Ordinal)
             .ToArray();
@@ -1916,12 +2033,47 @@ public sealed class WorldState : IWorldQuery
                 $"Snapshot character-marriage system version is incompatible. Expected '{CharacterMarriageSystem.SystemId}@{CharacterMarriageSystem.Version}'.");
         }
 
+        SystemVersion[] characterGuardianshipVersions = versions
+            .Where(version => StringComparer.Ordinal.Equals(
+                version.SystemId,
+                CharacterGuardianshipSystem.SystemId))
+            .ToArray();
+        CharacterGuardianshipWorldSnapshot normalizedCharacterGuardianships;
+        if (characterGuardianshipVersions.Length == 1
+            && characterGuardianshipVersions[0].Version == CharacterGuardianshipSystem.Version)
+        {
+            if (characterGuardianships.ContractVersion
+                != CharacterGuardianshipContractVersions.Snapshot)
+            {
+                throw new SaveCompatibilityException(
+                    $"Snapshot declares '{CharacterGuardianshipSystem.SystemId}@{CharacterGuardianshipSystem.Version}' but contains character-guardianship contract {characterGuardianships.ContractVersion}.");
+            }
+
+            normalizedCharacterGuardianships = characterGuardianships;
+        }
+        else if (characterGuardianshipVersions.Length == 0)
+        {
+            if (!IsCompleteEmptyCharacterGuardianshipSnapshot(characterGuardianships))
+            {
+                throw new SaveCompatibilityException(
+                    "A legacy snapshot without current character-guardianship data must contain a complete, valid, empty character-guardianship snapshot.");
+            }
+
+            normalizedCharacterGuardianships = CharacterGuardianshipWorldSnapshot.Empty;
+        }
+        else
+        {
+            throw new SaveCompatibilityException(
+                $"Snapshot character-guardianship system version is incompatible. Expected '{CharacterGuardianshipSystem.SystemId}@{CharacterGuardianshipSystem.Version}'.");
+        }
+
         return (
             normalizedCharacters,
             normalizedCareers,
             normalizedCharacterResources,
             normalizedCharacterEstateHoldings,
-            normalizedCharacterMarriages);
+            normalizedCharacterMarriages,
+            normalizedCharacterGuardianships);
     }
 
     private static bool IsCompleteEmptyCharacterSnapshot(CharacterWorldSnapshot characters) =>
@@ -1971,6 +2123,12 @@ public sealed class WorldState : IWorldQuery
         && characterMarriages.Invitations is { Count: 0 }
         && characterMarriages.RomanceRoutes is { Count: 0 }
         && characterMarriages.History is { Count: 0 };
+
+    private static bool IsCompleteEmptyCharacterGuardianshipSnapshot(
+        CharacterGuardianshipWorldSnapshot characterGuardianships) =>
+        characterGuardianships.ContractVersion
+            == CharacterGuardianshipContractVersions.Snapshot
+        && characterGuardianships.Guardianships is { Count: 0 };
 
     private static void ValidatePendingCommands(IReadOnlyList<CampaignCommand> commands)
     {
@@ -2050,7 +2208,8 @@ internal sealed record CharacterConditionAggregatePlan(
 
 internal sealed record CharacterFamilyAggregatePlan(
     CharacterFamilyActionResolvedEventPayload ResolvedPayload,
-    CharacterWorldUpdatePlan CharacterPlan);
+    CharacterWorldUpdatePlan? CharacterPlan,
+    CharacterGuardianshipWorldUpdatePlan? GuardianshipPlan);
 
 internal sealed record CharacterDeathPreviewAggregatePlan(
     CharacterConditionChange Change,

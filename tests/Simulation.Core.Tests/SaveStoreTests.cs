@@ -24,6 +24,8 @@ public sealed class SaveStoreTests : IDisposable
     private const string FrozenSchemaTwelveFileSha256 = "12ac4db8897a7ddd2f0101085231130ab48057bc22222ee203dcbfd35c1b8061";
     private const string FrozenSchemaThirteenChecksum = "540dac5d9065bbb1b66a484c550eadf4e60de7be92acacb5c716bfcf7f4956c4";
     private const string FrozenSchemaThirteenFileSha256 = "f54e0bb16eb827b2b739384a27325dd0a279cd43f18d612085c247fd3aa1fca5";
+    private const string FrozenSchemaFourteenChecksum = "8cb144a3b14600bd9916b03cca20644ed69161614d2b6665cdf78fdeadad2b65";
+    private const string FrozenSchemaFourteenFileSha256 = "381c774072a549090dd275f3fefa1bb7a3953a0a74eb3852eeb8323ad0b8f01e";
     // Reconstructed literally from the exact schema-4 serializer contract at eaa3aaf.
     // Unlike the inferred schema-1/2 fixtures, this contains nonempty character history.
     private const string FrozenSchemaFourFixture = """{"schemaVersion":4,"contractVersion":2,"gameVersion":"0.1.0","createdUtc":"2026-07-15T00:00:00+00:00","contentManifests":[{"packId":{"value":"base:synthetic"},"version":"1.0.0","checksum":"sha256:abc","requiredForSimulation":true}],"seed":99,"snapshot":{"contractVersion":1,"calendar":{"date":{"year":191,"month":7,"day":14},"turnIndex":0,"daysInCurrentTurn":3},"rootSeed":99,"randomStreams":[],"entities":[],"pendingCommands":[],"systemVersions":[{"systemId":"simulation.calendar","version":1},{"systemId":"simulation.synthetic_entities","version":1},{"systemId":"simulation.command_events","version":1},{"systemId":"simulation.geography","version":1},{"systemId":"simulation.characters","version":1}],"lastEventDate":null,"lastEventPhase":null,"lastEventPriority":null,"lastEventId":null,"geography":{"graph":{"regions":[],"districts":[],"localities":[],"stops":[],"routes":[]},"season":0,"weather":0,"locations":[],"routes":[],"armies":[]},"characters":{"contractVersion":1,"identityDefinitions":[{"contractVersion":1,"id":{"value":"ability:synthetic/command"},"kind":0,"nameKey":{"value":"loc:ability/synthetic_command"}}],"characterDefinitions":[{"contractVersion":1,"id":{"value":"character:synthetic/adult"},"nameKey":{"value":"loc:character/synthetic_adult"},"birthDate":{"year":160,"month":1,"day":1},"abilityIds":[{"value":"ability:synthetic/command"}],"aptitudeIds":[],"traitIds":[],"ambitionIds":[],"reputationIds":[]}],"familyDefinitions":[],"householdDefinitions":[],"characterStates":[{"contractVersion":1,"characterId":{"value":"character:synthetic/adult"},"parentIds":[]}],"familyStates":[],"householdStates":[]}},"diagnosticCommands":[],"diagnosticEvents":[],"checksum":"48b94dad9d4dda78591243341afa16ece40e0ed157368f84c1189641684ecd3e"}""";
@@ -204,7 +206,14 @@ public sealed class SaveStoreTests : IDisposable
     [InlineData("missing-character-marriage-system-version")]
     [InlineData("duplicate-character-marriage-system-version")]
     [InlineData("unsupported-character-marriage-system-version")]
-    public void SchemaTen_RequiresCompleteCharacterSubsystemDataWithoutChangingSource(string mutation)
+    [InlineData("missing-character-guardianships")]
+    [InlineData("null-character-guardianships")]
+    [InlineData("partial-character-guardianships")]
+    [InlineData("missing-character-guardianship-system-version")]
+    [InlineData("duplicate-character-guardianship-system-version")]
+    [InlineData("unsupported-character-guardianship-system-version")]
+    public void CurrentSchema_RequiresCompleteCharacterSubsystemDataWithoutChangingSource(
+        string mutation)
     {
         JsonObject current = JsonSerializer.SerializeToNode(
             CreateEnvelope(CreateCharacterSimulation()),
@@ -374,11 +383,85 @@ public sealed class SaveStoreTests : IDisposable
                         == CharacterMarriageSystem.SystemId);
                 marriageSystemVersion["version"] = 999;
                 break;
+            case "missing-character-guardianships":
+                snapshot.Remove("characterGuardianships");
+                break;
+            case "null-character-guardianships":
+                snapshot["characterGuardianships"] = null;
+                break;
+            case "partial-character-guardianships":
+                snapshot["characterGuardianships"]!.AsObject().Remove("guardianships");
+                break;
+            case "missing-character-guardianship-system-version":
+                RemoveSystemVersion(snapshot, CharacterGuardianshipSystem.SystemId);
+                break;
+            case "duplicate-character-guardianship-system-version":
+                snapshot["systemVersions"]!.AsArray().Add(new JsonObject
+                {
+                    ["systemId"] = CharacterGuardianshipSystem.SystemId,
+                    ["version"] = CharacterGuardianshipSystem.Version,
+                });
+                break;
+            case "unsupported-character-guardianship-system-version":
+                JsonObject guardianshipSystemVersion = snapshot["systemVersions"]!.AsArray()
+                    .OfType<JsonObject>()
+                    .Single(version => version["systemId"]!.GetValue<string>()
+                        == CharacterGuardianshipSystem.SystemId);
+                guardianshipSystemVersion["version"] = 999;
+                break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(mutation));
         }
 
-        string path = Path.Combine(directory, $"schema-ten-{mutation}.save.gz");
+        string path = Path.Combine(directory, $"current-schema-{mutation}.save.gz");
+        WriteJsonGzip(path, current);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        Assert.Throws<SaveCompatibilityException>(() => new SaveStore().Load(path));
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Theory]
+    [InlineData("guardianCharacterId")]
+    [InlineData("sourceEventId")]
+    [InlineData("endReason")]
+    public void CurrentSchema_RejectsMalformedGuardianshipRecordWithoutChangingSource(
+        string removedProperty)
+    {
+        JsonObject current = JsonSerializer.SerializeToNode(
+            CreateEnvelope(CreateCharacterSimulation()),
+            CanonicalJson.Options)!.AsObject();
+        EntityId guardian = new("character:synthetic/parent");
+        EntityId ward = new("character:synthetic/child");
+        CampaignDate establishedDate = new(175, 1, 1);
+        EntityId commandId = new("command:test/current-guardianship-shape");
+        EntityId eventId = CharacterFamilyIds.DeriveActionEventId(
+            establishedDate,
+            commandId);
+        CharacterGuardianshipState guardianship = new(
+            CharacterGuardianshipContractVersions.State,
+            CharacterGuardianshipIds.DeriveGuardianshipId(eventId, ward, guardian),
+            ward,
+            guardian,
+            establishedDate,
+            0,
+            commandId,
+            eventId,
+            CharacterGuardianshipStatus.Active,
+            null,
+            null,
+            null,
+            null,
+            null);
+        JsonObject record = JsonSerializer.SerializeToNode(
+            guardianship,
+            CanonicalJson.Options)!.AsObject();
+        Assert.True(record.Remove(removedProperty));
+        current["snapshot"]!["characterGuardianships"]!["guardianships"]!
+            .AsArray().Add(record);
+        string path = Path.Combine(
+            directory,
+            $"current-guardianship-record-{removedProperty}.save.gz");
         WriteJsonGzip(path, current);
         byte[] sourceBytes = File.ReadAllBytes(path);
 
@@ -1321,10 +1404,12 @@ public sealed class SaveStoreTests : IDisposable
         {
             SystemVersions = migrated.Snapshot.SystemVersions
                 .Where(version => version.SystemId != CharacterEstateHoldingSystem.SystemId
-                    && version.SystemId != CharacterMarriageSystem.SystemId)
+                    && version.SystemId != CharacterMarriageSystem.SystemId
+                    && version.SystemId != CharacterGuardianshipSystem.SystemId)
                 .ToArray(),
             CharacterEstateHoldings = CharacterEstateHoldingWorldSnapshot.Empty,
             CharacterMarriages = CharacterMarriageWorldSnapshot.Empty,
+            CharacterGuardianships = CharacterGuardianshipWorldSnapshot.Empty,
         };
 
         Assert.Equal(SaveEnvelope.CurrentSchemaVersion, migrated.SchemaVersion);
@@ -1397,9 +1482,11 @@ public sealed class SaveStoreTests : IDisposable
         WorldSnapshot normalizedPreD0 = migrated.Snapshot with
         {
             SystemVersions = migrated.Snapshot.SystemVersions
-                .Where(version => version.SystemId != CharacterMarriageSystem.SystemId)
+                .Where(version => version.SystemId != CharacterMarriageSystem.SystemId
+                    && version.SystemId != CharacterGuardianshipSystem.SystemId)
                 .ToArray(),
             CharacterMarriages = CharacterMarriageWorldSnapshot.Empty,
+            CharacterGuardianships = CharacterGuardianshipWorldSnapshot.Empty,
         };
 
         Assert.Equal(SaveEnvelope.CurrentSchemaVersion, migrated.SchemaVersion);
@@ -1628,7 +1715,7 @@ public sealed class SaveStoreTests : IDisposable
         Assert.Equal(SaveEnvelope.CurrentSchemaVersion, migrated.SchemaVersion);
         Assert.Equal(
             historicalSnapshot,
-            JsonSerializer.Serialize(migrated.Snapshot, CanonicalJson.Options));
+            SerializeWithoutCharacterGuardianships(migrated.Snapshot));
         Assert.Contains(
             migrated.DiagnosticCommands,
             command => command.Payload is CharacterMarriageActionCommandPayload
@@ -1772,7 +1859,7 @@ public sealed class SaveStoreTests : IDisposable
         Assert.Equal(SaveEnvelope.CurrentSchemaVersion, migrated.SchemaVersion);
         Assert.Equal(
             historicalSnapshot,
-            JsonSerializer.Serialize(migrated.Snapshot, CanonicalJson.Options));
+            SerializeWithoutCharacterGuardianships(migrated.Snapshot));
         Assert.Equal(
             historicalCommands,
             JsonSerializer.Serialize(migrated.DiagnosticCommands, CanonicalJson.Options));
@@ -1921,6 +2008,138 @@ public sealed class SaveStoreTests : IDisposable
         }
 
         string path = Path.Combine(directory, $"schema-thirteen-future-{mutation}.save.gz");
+        WriteJsonGzip(path, invalid);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        Assert.Throws<SaveCompatibilityException>(() => new SaveStore().Load(path));
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void SchemaFourteen_AuthenticatesExactE0FixtureAndAddsEmptyGuardianshipsWithoutChangingSource()
+    {
+        JsonObject frozen = CreateHistoricalFixture(14);
+        Assert.Equal(FrozenSchemaFourteenChecksum, frozen["checksum"]!.GetValue<string>());
+        string fixturePath = Path.Combine(
+            AppContext.BaseDirectory,
+            "Fixtures",
+            "save-schema-14-history-backed.json");
+        byte[] fixtureBytes = File.ReadAllBytes(fixturePath);
+        Assert.Equal(56_635, fixtureBytes.Length);
+        Assert.Equal(
+            FrozenSchemaFourteenFileSha256,
+            Convert.ToHexStringLower(SHA256.HashData(fixtureBytes)));
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(frozen, 14);
+        JsonObject original = (JsonObject)frozen.DeepClone();
+        string historicalSnapshot = JsonSerializer.Serialize(
+            frozen["snapshot"],
+            CanonicalJson.Options);
+        string historicalCommands = JsonSerializer.Serialize(
+            frozen["diagnosticCommands"],
+            CanonicalJson.Options);
+        string historicalEvents = JsonSerializer.Serialize(
+            frozen["diagnosticEvents"],
+            CanonicalJson.Options);
+        string path = Path.Combine(directory, "schema-fourteen-history-backed.save.gz");
+        WriteFrozenHistoricalFixture(path, 14);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        SaveEnvelope migrated = new SaveStore().Load(path);
+
+        Assert.Equal(SaveEnvelope.CurrentSchemaVersion, migrated.SchemaVersion);
+        Assert.Equal(
+            historicalSnapshot,
+            SerializeWithoutCharacterGuardianships(migrated.Snapshot));
+        Assert.Equal(
+            historicalCommands,
+            JsonSerializer.Serialize(migrated.DiagnosticCommands, CanonicalJson.Options));
+        Assert.Equal(
+            historicalEvents,
+            JsonSerializer.Serialize(migrated.DiagnosticEvents, CanonicalJson.Options));
+        Assert.Contains(
+            migrated.Snapshot.PendingCommands,
+            command => command.Payload is CharacterFamilyActionCommandPayload
+            {
+                Action: EstablishLegalAdoptiveParentAction,
+            });
+        Assert.Contains(
+            migrated.DiagnosticEvents,
+            campaignEvent => campaignEvent.Payload
+                is CharacterFamilyActionResolvedEventPayload
+            {
+                Outcome: LegalAdoptiveParentEstablishedOutcome,
+            });
+        Assert.Empty(migrated.Snapshot.CharacterGuardianships.Guardianships);
+        Assert.Contains(
+            migrated.Snapshot.SystemVersions,
+            version => version == new SystemVersion(
+                CharacterGuardianshipSystem.SystemId,
+                CharacterGuardianshipSystem.Version));
+        Assert.Equal(
+            SimulationChecksum.Compute(migrated.Snapshot).Value,
+            migrated.Checksum);
+        _ = WorldState.Restore(migrated.Snapshot);
+        Assert.Equal(
+            JsonSerializer.Serialize(original, CanonicalJson.Options),
+            JsonSerializer.Serialize(frozen, CanonicalJson.Options));
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Theory]
+    [InlineData("nested-action")]
+    [InlineData("nested-outcome")]
+    [InlineData("explicit-null-expected")]
+    [InlineData("explicit-null-guardianship")]
+    [InlineData("snapshot-state")]
+    [InlineData("system-version")]
+    public void SchemaFourteen_RejectsE1VocabularyStateAndPropertiesWithoutChangingSource(
+        string mutation)
+    {
+        JsonObject invalid = CreateHistoricalFixture(14);
+        JsonObject familyCommand = invalid["diagnosticCommands"]!.AsArray()
+            .OfType<JsonObject>()
+            .First(command => command["payload"]?["$type"]?.GetValue<string>()
+                == "character_family_action.v1");
+        JsonObject familyEvent = invalid["diagnosticEvents"]!.AsArray()
+            .OfType<JsonObject>()
+            .First(campaignEvent => campaignEvent["payload"]?["$type"]?.GetValue<string>()
+                == "character_family_action_resolved.v1");
+        switch (mutation)
+        {
+            case "nested-action":
+                familyCommand["payload"]!["action"]!["$type"] =
+                    "establish_primary_guardianship.v1";
+                break;
+            case "nested-outcome":
+                familyEvent["payload"]!["outcome"]!["$type"] =
+                    "primary_guardianship_established.v1";
+                break;
+            case "explicit-null-expected":
+                familyCommand["payload"]!["action"]![
+                    "expectedCurrentPrimaryGuardianshipId"] = null;
+                break;
+            case "explicit-null-guardianship":
+                familyEvent["payload"]!["outcome"]!["guardianship"] = null;
+                break;
+            case "snapshot-state":
+                invalid["snapshot"]!["characterGuardianships"] = new JsonObject
+                {
+                    ["contractVersion"] = CharacterGuardianshipContractVersions.Snapshot,
+                    ["guardianships"] = new JsonArray(),
+                };
+                break;
+            case "system-version":
+                invalid["snapshot"]!["systemVersions"]!.AsArray().Add(new JsonObject
+                {
+                    ["systemId"] = CharacterGuardianshipSystem.SystemId,
+                    ["version"] = CharacterGuardianshipSystem.Version,
+                });
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(mutation));
+        }
+
+        string path = Path.Combine(directory, $"schema-fourteen-future-{mutation}.save.gz");
         WriteJsonGzip(path, invalid);
         byte[] sourceBytes = File.ReadAllBytes(path);
 
@@ -2288,6 +2507,8 @@ public sealed class SaveStoreTests : IDisposable
         RemoveSystemVersion(snapshot, CharacterEstateHoldingSystem.SystemId);
         snapshot.Remove("characterMarriages");
         RemoveSystemVersion(snapshot, CharacterMarriageSystem.SystemId);
+        snapshot.Remove("characterGuardianships");
+        RemoveSystemVersion(snapshot, CharacterGuardianshipSystem.SystemId);
         DowngradeCharactersToLegacy(snapshot);
         schemaFour["schemaVersion"] = 4;
         WorldSnapshot historical = snapshot.Deserialize<WorldSnapshot>(CanonicalJson.Options)!;
@@ -2324,6 +2545,7 @@ public sealed class SaveStoreTests : IDisposable
     [InlineData(11)]
     [InlineData(12)]
     [InlineData(13)]
+    [InlineData(14)]
     public void CorruptedHistoricalSnapshotFailsAuthenticationWithoutOverwritingSource(int schemaVersion)
     {
         JsonObject historical = CreateHistoricalFixture(schemaVersion);
@@ -2367,6 +2589,7 @@ public sealed class SaveStoreTests : IDisposable
         historicalShape.Remove("characterEstateHoldings");
         historicalShape.Remove("characterResources");
         historicalShape.Remove("careers");
+        historicalShape.Remove("characterGuardianships");
         if (schemaVersion < 5)
         {
             historicalShape.Remove("relationships");
@@ -2872,6 +3095,97 @@ public sealed class SaveStoreTests : IDisposable
     }
 
     [Fact]
+    public void LegacyStandaloneSnapshotOmittingCharacterGuardianships_RestoresAsEmpty()
+    {
+        WorldSnapshot current = SyntheticSimulation.CreateWorld(1, 99).CaptureSnapshot();
+        JsonObject legacyJson = JsonSerializer.SerializeToNode(
+            current,
+            CanonicalJson.Options)!.AsObject();
+        legacyJson.Remove("characterGuardianships");
+        JsonArray versions = legacyJson["systemVersions"]!.AsArray();
+        JsonNode guardianshipVersion = versions.Single(
+            node => node!["systemId"]!.GetValue<string>()
+                == CharacterGuardianshipSystem.SystemId)!;
+        versions.Remove(guardianshipVersion);
+        WorldSnapshot legacy = legacyJson.Deserialize<WorldSnapshot>(CanonicalJson.Options)
+            ?? throw new InvalidDataException(
+                "Legacy standalone snapshot did not deserialize.");
+
+        WorldState restored = WorldState.Restore(legacy);
+
+        Assert.Empty(restored.CharacterGuardianships.Guardianships);
+        Assert.Contains(restored.CaptureSnapshot().SystemVersions, version =>
+            version == new SystemVersion(
+                CharacterGuardianshipSystem.SystemId,
+                CharacterGuardianshipSystem.Version));
+    }
+
+    [Fact]
+    public void LegacyStandaloneSnapshotWithPartialNullCharacterGuardianships_FailsDeliberately()
+    {
+        WorldSnapshot current = SyntheticSimulation.CreateWorld(1, 99).CaptureSnapshot();
+        WorldSnapshot invalid = WithoutCharacterGuardianshipSystemVersion(current) with
+        {
+            CharacterGuardianships = CharacterGuardianshipWorldSnapshot.Empty with
+            {
+                Guardianships = null!,
+            },
+        };
+
+        SaveCompatibilityException exception = Assert.Throws<SaveCompatibilityException>(
+            () => WorldState.Restore(invalid));
+
+        Assert.Contains(
+            "complete, valid, empty character-guardianship snapshot",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LegacyStandaloneSnapshotWithNonemptyCharacterGuardianships_FailsDeliberately()
+    {
+        WorldSnapshot current = CreateCharacterSimulation().World.CaptureSnapshot();
+        EntityId guardian = new("character:synthetic/parent");
+        EntityId ward = new("character:synthetic/child");
+        CampaignDate establishedDate = new(175, 1, 1);
+        EntityId commandId = new("command:test/legacy-standalone-guardianship");
+        EntityId eventId = CharacterFamilyIds.DeriveActionEventId(
+            establishedDate,
+            commandId);
+        CharacterGuardianshipState guardianship = new(
+            CharacterGuardianshipContractVersions.State,
+            CharacterGuardianshipIds.DeriveGuardianshipId(eventId, ward, guardian),
+            ward,
+            guardian,
+            establishedDate,
+            0,
+            commandId,
+            eventId,
+            CharacterGuardianshipStatus.Active,
+            null,
+            null,
+            null,
+            null,
+            null);
+        WorldSnapshot nonempty = current with
+        {
+            CharacterGuardianships = new CharacterGuardianshipWorldSnapshot(
+                CharacterGuardianshipContractVersions.Snapshot,
+                [guardianship]),
+        };
+        _ = WorldState.Restore(nonempty);
+        WorldSnapshot invalid = WithoutCharacterGuardianshipSystemVersion(nonempty);
+
+        SaveCompatibilityException exception = Assert.Throws<SaveCompatibilityException>(
+            () => WorldState.Restore(invalid));
+
+        Assert.Contains(
+            "complete, valid, empty character-guardianship snapshot",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MissingRequiredManifest_BlocksLoadWithPreciseList()
     {
         SaveEnvelope envelope = CreateEnvelope(CreateSimulation());
@@ -3252,6 +3566,32 @@ public sealed class SaveStoreTests : IDisposable
                 .ToArray(),
         };
 
+    private static WorldSnapshot WithoutCharacterGuardianshipSystemVersion(
+        WorldSnapshot snapshot) => snapshot with
+        {
+            SystemVersions = snapshot.SystemVersions
+            .Where(version => version.SystemId != CharacterGuardianshipSystem.SystemId)
+            .ToArray(),
+        };
+
+    private static string SerializeWithoutCharacterGuardianships(WorldSnapshot snapshot)
+    {
+        JsonObject serialized = JsonSerializer.SerializeToNode(
+            snapshot,
+            CanonicalJson.Options)!.AsObject();
+        serialized.Remove("characterGuardianships");
+        JsonArray systemVersions = serialized["systemVersions"]!.AsArray();
+        JsonNode? guardianshipVersion = systemVersions.SingleOrDefault(node =>
+            node?["systemId"]?.GetValue<string>()
+                == CharacterGuardianshipSystem.SystemId);
+        if (guardianshipVersion is not null)
+        {
+            systemVersions.Remove(guardianshipVersion);
+        }
+
+        return JsonSerializer.Serialize(serialized, CanonicalJson.Options);
+    }
+
     private static void WriteJsonGzip(string path, JsonObject json)
     {
         using FileStream file = File.Create(path);
@@ -3280,6 +3620,7 @@ public sealed class SaveStoreTests : IDisposable
         // Schema 11 is generated from the exact accepted SP-04D1 contract at 653ce71.
         // Schema 12 is generated from the exact accepted SP-04D2 contract at 62a5007.
         // Schema 13 is generated from the exact accepted SP-04D3 contract at 93d3881.
+        // Schema 14 is generated from the exact accepted SP-04E0 contract at 30fd0ad.
         // Schema 1/2 are synthetic fixtures inferred from the registered migration contracts.
         string fileName = schemaVersion switch
         {
@@ -3296,6 +3637,7 @@ public sealed class SaveStoreTests : IDisposable
             11 => "save-schema-11-history-backed.json",
             12 => "save-schema-12-history-backed.json",
             13 => "save-schema-13-history-backed.json",
+            14 => "save-schema-14-history-backed.json",
             _ => throw new ArgumentOutOfRangeException(nameof(schemaVersion)),
         };
         return schemaVersion == 4
