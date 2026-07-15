@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2/SP-04C3/SP-04D0 exact-SHA hosted verified; SP-04D1 locally verified with hosted acceptance pending; later packages pending |
+| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2/SP-04C3/SP-04D0/SP-04D1 exact-SHA hosted verified; later packages pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -350,7 +350,7 @@ The final local Release performance fixture contains 1,000 characters, 250 activ
 
 Subsequent exact-SHA evidence on 2026-07-15 does not retroactively relabel the raw working-tree performance measurements. Accepted revision `f7fef247178776d7c6fb1c4bed56f09dece76ff4` passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and static artifact verification](../evidence/SP-04D0-EXACT-SHA-f7fef24.md). D018 therefore passes at that revision. Physical Windows remains an M4 gate, production signing and Steam remain SP-15 gates, and the full SP-04 three-second budget remains unmet.
 
-## Locally verified package: SP-04D1 political marriage workflow
+## Accepted package: SP-04D1 political marriage workflow
 
 SP-04D1 is the registered political-marriage workflow on the accepted D0 foundation. M2 and SP-04 remain Active; dependencies through D0 exact revision `f7fef247178776d7c6fb1c4bed56f09dece76ff4` are satisfied. The package preserves pure deterministic .NET, inward dependencies, explicit practices, stable namespaced identity, registered commands/events, forward-only saves, non-explicit content, and `CharacterWorldSnapshot.HouseholdStates` as the sole residence authority. No ADR is required.
 
@@ -388,17 +388,19 @@ D1 does not add adult romance progression, romantic scenes or attraction effects
 | D114 | Snapshot/restore/checksum/current-save/diagnostic/unknown-discriminator coverage includes D1; loaded pending commands resolve identically | Restore/save/load/replay tests | Local pass after remediation |
 | D115 | Exact-D0 schema 10 authenticates before 10→11 and preserves nonempty prior state, diagnostics, source, and source bytes | Frozen fixture identity and migration test | Local pass |
 | D116 | Schema 10 rejects D1 discriminators; current raw shape, corruption, recovery, future schema, and complete 1→11 chain remain covered | Save/recovery suites | Local pass |
-| D117 | Ten-year deterministic soak golden remains exact | Cross-platform assertion in complete Core suite | Local pass; hosted pending |
+| D117 | Ten-year deterministic soak golden remains exact | Cross-platform assertion in complete Core suite | Pass at `653ce71d24bd81435ded9e65022dc29afd8f4810` |
 | D118 | A 1,000-character/250-proposal fixture records bounded workflow, snapshot/checksum, JSON, and gzip behavior without a brittle threshold | Raw local Apple Silicon measurement | Local macOS pass; full SP-04 budget unproven |
 | D119 | Independent adversarial and architecture re-review find no remaining correctness or package-boundary blocker | Read-only reviews and focused reruns | Local pass after remediation |
 | D120 | Repository validation, complete Release suites, touched-file formatting, diff, and LFS gates pass | Local repository gates | Local pass |
-| D121 | The same accepted revision passes deterministic validation and complete suites on hosted macOS arm64 and Windows x64 | Exact-SHA clean-checkout hosted evidence | Pending |
+| D121 | The same accepted revision passes deterministic validation and complete suites on hosted macOS arm64 and Windows x64 | Exact-SHA clean-checkout hosted evidence | Pass at `653ce71d24bd81435ded9e65022dc29afd8f4810` |
 
 Final local verification on 2026-07-15 uses Darwin 25.5.0 arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 407 Simulation.Core, 71 Game.Content, 6 Game.Application, and 18 repository tests. The focused marriage/save slice passes 233 tests; focused final marriage review passes 66 tests. The ten-year/1,000-entity checksum remains `0a92aa6dec435a9b33a399898ed7985210d7142dc10027b23a0bc4e392666b36`. Touched-file formatting, `git diff --check`, and `git lfs fsck` pass.
 
 Independent review remediated candidate-capacity turn abort, background-phase event injection, mixed-practice eligibility/construction mismatch, loaded pending-command replay evidence, and two-root fulfillment-chain retention. The final retention regressions prove active-chain pinning, saturated fulfillment cancellation, and ended-chain atomic folding with `2/1/1` counts and union-end ordering. Architecture and verification re-review report no remaining blocker.
 
-The final representative local Release performance run contains 1,000 characters and 250 bounded political proposals. Workflow measured 1,525.199 ms; snapshot plus checksum measured 120.596 ms; snapshot JSON was 930,668 bytes; gzip was 32,440 bytes; checksum was `9610a37a8e68825fa9d907ab58832240f1357b5f3ef227f4d61a57bd86f8d215`. The test asserts shape/correctness, not a wall-clock threshold. These working-tree measurements are not exact-SHA, hosted, cross-platform, physical-Windows, signing, Steam, release, or full-turn performance evidence. D121 remains pending, every full SP-04 acceptance criterion remains unchecked, SP-05 remains blocked, and D2 is the next package only after exact-SHA D1 acceptance.
+The final representative local Release performance run contains 1,000 characters and 250 bounded political proposals. Workflow measured 1,525.199 ms; snapshot plus checksum measured 120.596 ms; snapshot JSON was 930,668 bytes; gzip was 32,440 bytes; checksum was `9610a37a8e68825fa9d907ab58832240f1357b5f3ef227f4d61a57bd86f8d215`. The test asserts shape/correctness, not a wall-clock threshold. These working-tree measurements are not exact-SHA, hosted, cross-platform, physical-Windows, signing, Steam, release, or full-turn performance evidence.
+
+Accepted revision `653ce71d24bd81435ded9e65022dc29afd8f4810` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04D1-EXACT-SHA-653ce71.md). D117 and D121 therefore pass at that revision. Physical Windows remains an M4 gate, production signing and Steam remain SP-15 gates, and the full SP-04 three-second budget remains unmet. Every full SP-04 acceptance criterion remains unchecked, SP-05 remains blocked, and D2 is the next package.
 
 ## Edge cases and failure handling
 
