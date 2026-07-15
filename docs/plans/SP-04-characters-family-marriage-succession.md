@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2/SP-04C3/SP-04D0/SP-04D1/SP-04D2/SP-04D3/SP-04E0 exact-SHA hosted verified; SP-04E1 local candidate; later packages pending |
+| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2/SP-04C3/SP-04D0/SP-04D1/SP-04D2/SP-04D3/SP-04E0/SP-04E1 exact-SHA hosted verified; later packages pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -524,7 +524,7 @@ Independent review found that the first action contract retained the caller's mu
 
 Accepted revision `30fd0ad5f9a47eb15c0af27360ae31d72414a8ed` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04E0-EXACT-SHA-30fd0ad.md). E013 therefore passes at that revision. Every full SP-04 acceptance criterion remains unchecked. Pregnancy/birth, guardianship, education, coming of age, public death, inheritance, succession, content, presentation, and platform work remain later E/F/G/X packages; SP-05 remains blocked.
 
-## Active package: SP-04E1 primary-guardianship establishment
+## Accepted package: SP-04E1 primary-guardianship establishment
 
 SP-04E1 is a bounded guardianship package on accepted E0 revision `30fd0ad5f9a47eb15c0af27360ae31d72414a8ed`. It adds `simulation.character_guardianships@1`, a default-empty version-1 world snapshot, immutable active/ended guardianship records, and defensive authoritative queries for all records, the active primary guardianship of one ward, and all records involving one character. The record retains exact establishment date/turn, source command/event, and stable guardianship identity. Terminal coordinates and reasons are structurally supported for later lifecycle packages, but E1 exposes no ending workflow.
 
@@ -551,13 +551,15 @@ Save schema 15 adds the required `characterGuardianships` snapshot and `simulati
 | E111 | A 1,000-character/64-guardianship fixture records raw workflow/checksum/serialization behavior without a brittle threshold | Local Apple Silicon measurement | Local macOS pass; full SP-04 budget unmet |
 | E112 | Independent verification review finds no remaining correctness or package-boundary blocker | Read-only review and focused rerun | Local pass after calendar remediation |
 | E113 | Repository validation, complete Release suites, diff, touched-file formatting, and LFS gates pass | Local repository gates | Local pass |
-| E114 | The same accepted revision passes hosted macOS arm64 and Windows x64 | Exact-SHA clean-checkout hosted evidence | Pending implementation revision |
+| E114 | The same accepted revision passes hosted macOS arm64 and Windows x64 | Exact-SHA clean-checkout hosted evidence | Pass at `97b607ae8df77dbd5c6fa5ab6b544000208cdb0e` |
 
 The representative local Release fixture contains 1,000 characters and resolves 64 primary guardianships. The latest raw run measured 127.412 ms for workflow and 126.120 ms for snapshot/checksum, serialized to 1,006,377 JSON bytes and 30,190 gzip bytes, and produced checksum `50e4730caedc90084911632a77bdeff94076516321307a7e8bc4daeeb3320db8`. The test asserts shape and correctness, not a wall-clock threshold. These working-tree measurements do not establish the full SP-04 three-second campaign-turn budget.
 
 Final local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 580 Simulation.Core, 71 Game.Content, 6 Game.Application, and 18 repository tests. Touched-file formatting, `git diff --check`, and `git lfs fsck` pass.
 
-Independent review found and remediated a stale local guardianship calendar after eventless turns. The subsystem now advances monotonically with `WorldState`, and a regression rejects both stale direct planning and stale event application without mutation. The final reviewer rerun passes an 85-test guardianship/save/current-schema/soak slice and the complete 580-test Core suite with no remaining correctness or package-boundary blocker. E114 remains pending exact-SHA hosted verification. Every full SP-04 acceptance criterion remains unchecked; SP-05 remains blocked.
+Independent review found and remediated a stale local guardianship calendar after eventless turns. The subsystem now advances monotonically with `WorldState`, and a regression rejects both stale direct planning and stale event application without mutation. The final reviewer rerun passes an 85-test guardianship/save/current-schema/soak slice and the complete 580-test Core suite with no remaining correctness or package-boundary blocker.
+
+Accepted revision `97b607ae8df77dbd5c6fa5ab6b544000208cdb0e` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04E1-EXACT-SHA-97b607a.md). E114 therefore passes at that revision. Every full SP-04 acceptance criterion remains unchecked. Pregnancy/birth, education, coming of age, guardianship lifecycle/authority, public death, inheritance, succession, content, presentation, and platform work remain later E/F/G/X packages; SP-05 remains blocked.
 
 ## Edge cases and failure handling
 
