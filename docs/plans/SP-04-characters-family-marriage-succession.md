@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — through SP-04E3 exact-SHA hosted; later packages pending |
+| Status | Active — through SP-04E4 exact-SHA hosted; later packages pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -631,7 +631,7 @@ Local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot
 
 Accepted revision `59588be9d277dc4c4cb7ec98ef99e33591b0eeda` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04E3-EXACT-SHA-59588be.md). E315 therefore passes at that revision. Pregnancy/birth, education, mutable abilities or traits, public death, inheritance, succession, culture-specific adulthood, ceremony, content, presentation, physical Windows, signing, and Steam remain outside E3. Every full SP-04 acceptance criterion remains unchecked; later E/F/G/X packages remain open and SP-05 remains blocked.
 
-## Approved package: SP-04E4 adult union-linked pregnancy registration
+## Accepted package: SP-04E4 adult union-linked pregnancy registration
 
 SP-04E4 adds `simulation.character_pregnancies@1` as the smallest dependency-safe step after accepted E3. D0–D3 already provide retained active adult unions, while birth would also require runtime child identity, names, provenance, parentage/family/household placement, and bounded inherited characteristics. Education requires mutable ability/trait architecture, and public death must reconcile multiple existing subsystems. E4 therefore registers active pregnancy only. The master plan permits this non-explicit family model, no locked decision is contradicted, and no ADR is required.
 
