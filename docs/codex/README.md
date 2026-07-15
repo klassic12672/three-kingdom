@@ -26,12 +26,12 @@ This directory contains reusable prompts and agent routing for executing the app
 
 ## Current order
 
-M0, M1, and SP-03 are complete. The current safe order is:
+M0, M1, and SP-03 are complete. SP-04A is locally verified; the separately authorized process to create the accepted revision and obtain exact-SHA hosted evidence remains incomplete. The current safe order is:
 
-1. Use the package planner to define the first independently verifiable SP-04 package.
-2. Keep the next task planning-only until its boundary, contracts, tests, and acceptance evidence are explicit.
-3. Begin SP-04 implementation only after that package is selected; preserve the completed SP-03 baseline and its deferred pre–Early Access refinement boundary.
-4. Continue later M2 work according to the active roadmap and dependency gates.
+1. Preserve the locally verified SP-04A character/family/household foundation boundary while completing the separately authorized accepted-revision and exact-SHA hosted-evidence process.
+2. Obtain exact-SHA hosted macOS/Windows evidence for the resulting accepted SP-04A revision before starting the next package.
+3. Select the next independently verifiable SP-04 package only after SP-04A closeout; preserve the completed SP-03 baseline and its deferred pre–Early Access refinement boundary.
+4. Continue later M2 work according to the active roadmap and dependency gates; do not infer full SP-04 completion from SP-04A.
 5. Before M4/public demo, collect physical Windows evidence.
 6. Before public promotion, complete SP-15 signing/notarization and Steam evidence.
 

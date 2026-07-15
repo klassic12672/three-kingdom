@@ -20,6 +20,9 @@
     <ProjectReference Include="../../src/Simulation.Core/Simulation.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <None Update="Fixtures/*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 </Project>

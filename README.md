@@ -12,7 +12,7 @@ A character-driven historical grand-strategy RPG spanning late Han China, Manchu
 - Launch languages: Korean and English
 - Networking: single-player only
 
-SP-00/M0 and the SP-01/SP-02 headless simulation foundation are complete with exact-SHA hosted macOS/Windows evidence. M2 and SP-03 are active; immediate work is the interactive 2.5D campaign-map presentation and visual evidence. Physical Windows and production signing remain M4/SP-15 gates under ADR-0001.
+SP-00/M0, SP-01/SP-02, and SP-03 are complete with their required evidence. M2 remains active, and SP-04A character/family/household foundations are locally verified; exact-SHA hosted macOS/Windows evidence for an accepted revision remains pending. Physical Windows and production signing remain M4/SP-15 gates under ADR-0001.
 
 ## Quick start
 
@@ -47,6 +47,7 @@ All commands enforce the pinned .NET, Godot, export-template, and Git LFS prereq
 - [Release signing and packaging](docs/RELEASE.md)
 - [Simulation, replay, and save guide](docs/SIMULATION.md)
 - [Content, localization, modding, and research guide](docs/CONTENT_PIPELINE.md)
+- [Character, family, and household foundation](docs/CHARACTERS.md)
 - [Codex implementation prompts and agent roster](docs/codex/README.md)
 
 All subsystem work must follow the master plan. Changes to locked product scope, architecture, release targets, or content boundaries require an architecture decision record and a master-plan revision.

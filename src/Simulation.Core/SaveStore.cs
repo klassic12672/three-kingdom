@@ -134,16 +134,31 @@ public sealed class SaveStore
             }
 
             JsonObject migrated = schemaRegistry.MigrateToCurrent(source);
-            return migrated.Deserialize<SaveEnvelope>(CanonicalJson.Options)
-                ?? throw new SaveCompatibilityException("Save envelope is empty.");
+            try
+            {
+                return migrated.Deserialize<SaveEnvelope>(CanonicalJson.Options)
+                    ?? throw new SaveCompatibilityException("Save envelope is empty.");
+            }
+            catch (Exception exception) when (SaveDataExceptionPolicy.IsRecoverableDataFailure(exception))
+            {
+                Exception cause = SaveDataExceptionPolicy.GetDiagnosticCause(exception);
+                throw new SaveCompatibilityException(
+                    $"Save '{path}' contains invalid serialized data: {cause.Message}",
+                    exception);
+            }
         }
         catch (SaveCompatibilityException)
         {
             throw;
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or JsonException)
+        catch (Exception exception) when (exception is IOException
+            or InvalidDataException
+            || SaveDataExceptionPolicy.IsRecoverableDataFailure(exception))
         {
-            throw new SaveCompatibilityException($"Save '{path}' is corrupt or unreadable.", exception);
+            Exception cause = SaveDataExceptionPolicy.GetDiagnosticCause(exception);
+            throw new SaveCompatibilityException(
+                $"Save '{path}' is corrupt or unreadable: {cause.Message}",
+                exception);
         }
     }
 
@@ -162,6 +177,15 @@ public sealed class SaveStore
         SaveEnvelope envelope,
         IEnumerable<ContentManifestReference>? availableContent)
     {
+        if (envelope is null
+            || envelope.ContentManifests is null
+            || envelope.Snapshot is null
+            || envelope.DiagnosticCommands is null
+            || envelope.DiagnosticEvents is null)
+        {
+            throw new SaveCompatibilityException("Save envelope is missing required objects or collections.");
+        }
+
         if (envelope.ContractVersion != ContractVersions.SaveEnvelope)
         {
             throw new SaveCompatibilityException($"Unsupported save-envelope contract version {envelope.ContractVersion}.");
@@ -172,7 +196,8 @@ public sealed class SaveStore
             throw new SaveCompatibilityException($"Unsupported save schema version {envelope.SchemaVersion}.");
         }
 
-        if (envelope.ContentManifests.Any(manifest => !manifest.PackId.IsValid
+        if (envelope.ContentManifests.Any(manifest => manifest is null
+            || !manifest.PackId.IsValid
             || string.IsNullOrWhiteSpace(manifest.Version)
             || string.IsNullOrWhiteSpace(manifest.Checksum)))
         {
@@ -185,12 +210,25 @@ public sealed class SaveStore
             throw new SaveCompatibilityException("Save contains duplicate content manifest IDs.");
         }
 
+        if (envelope.DiagnosticCommands.Any(command => command is null)
+            || envelope.DiagnosticEvents.Any(campaignEvent => campaignEvent is null))
+        {
+            throw new SaveCompatibilityException("Save diagnostics contain null entries.");
+        }
+
         if (envelope.Seed != envelope.Snapshot.RootSeed)
         {
             throw new SaveCompatibilityException("Save seed does not match snapshot seed.");
         }
 
-        _ = WorldState.Restore(envelope.Snapshot);
+        try
+        {
+            _ = WorldState.Restore(envelope.Snapshot);
+        }
+        catch (SimulationValidationException exception)
+        {
+            throw new SaveCompatibilityException("Save snapshot failed authoritative simulation validation.", exception);
+        }
 
         string actualChecksum = SimulationChecksum.Compute(envelope.Snapshot).Value;
         if (!StringComparer.Ordinal.Equals(actualChecksum, envelope.Checksum))

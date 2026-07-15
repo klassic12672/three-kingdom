@@ -1,5 +1,7 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Game.Content;
+using Json.Schema;
 
 namespace Game.Content.Tests;
 
@@ -45,6 +47,197 @@ public sealed class PublishedSchemaTests
         Assert.Equal(
             ["glossary", "localization", "overrides", "provenance", "records", "sources"],
             Enum.GetValues<ContentFileKind>().Select(value => value.ToString().ToLowerInvariant()).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void ContentRecordSchemaPublishesStrictVersionOneCharacterPayloadShapes()
+    {
+        string root = FindRepositoryRoot();
+        using JsonDocument document = JsonDocument.Parse(File.ReadAllText(
+            Path.Combine(root, "data", "schemas", "content-record.schema.json")));
+        JsonElement schema = document.RootElement;
+        JsonElement item = schema.GetProperty("properties").GetProperty("records").GetProperty("items");
+        (string RecordType, string DataReference)[] discriminators = item.GetProperty("allOf")
+            .EnumerateArray()
+            .Select(branch => (
+                branch.GetProperty("if")
+                    .GetProperty("properties")
+                    .GetProperty("recordType")
+                    .GetProperty("const")
+                    .GetString()!,
+                branch.GetProperty("then")
+                    .GetProperty("properties")
+                    .GetProperty("data")
+                    .GetProperty("$ref")
+                    .GetString()!))
+            .OrderBy(item => item.Item1, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(
+            [
+                ("character_definition", "#/$defs/characterDefinitionData"),
+                ("character_identity_definition", "#/$defs/characterIdentityDefinitionData"),
+                ("character_world", "#/$defs/characterWorldData"),
+                ("family_definition", "#/$defs/namedCharacterDefinitionData"),
+                ("household_definition", "#/$defs/namedCharacterDefinitionData"),
+            ],
+            discriminators);
+
+        JsonElement definitions = schema.GetProperty("$defs");
+        string[] expectedDefinitions =
+        [
+            "characterDefinitionData",
+            "characterIdentityDefinitionData",
+            "characterWorldData",
+            "namedCharacterDefinitionData",
+        ];
+        foreach (string name in expectedDefinitions)
+        {
+            JsonElement definition = definitions.GetProperty(name);
+            Assert.Equal("object", definition.GetProperty("type").GetString());
+            Assert.False(definition.GetProperty("additionalProperties").GetBoolean());
+            Assert.Contains("contractVersion", definition.GetProperty("required")
+                .EnumerateArray()
+                .Select(value => value.GetString()));
+            Assert.Equal(1, definition.GetProperty("properties")
+                .GetProperty("contractVersion")
+                .GetProperty("const")
+                .GetInt32());
+        }
+
+        JsonSchema publishedSchema = JsonSchema.FromFile(
+            Path.Combine(root, "data", "schemas", "content-record.schema.json"));
+        JsonObject validDocument = CreateRepresentativeCharacterDocument();
+        Assert.True(IsValid(publishedSchema, validDocument));
+
+        JsonObject invalidWorld = (JsonObject)validDocument.DeepClone();
+        invalidWorld["records"]![0]!["data"]!["characterStates"]!.AsArray().Add(JsonNode.Parse("""
+            {
+              "contractVersion": 1,
+              "characterId": "not-an-entity-id",
+              "parentIds": []
+            }
+            """));
+        Assert.False(IsValid(publishedSchema, invalidWorld));
+
+        JsonObject invalidCharacter = (JsonObject)validDocument.DeepClone();
+        invalidCharacter["records"]![1]!["data"]!.AsObject().Remove("birthDate");
+        Assert.False(IsValid(publishedSchema, invalidCharacter));
+
+        JsonObject invalidFamily = (JsonObject)validDocument.DeepClone();
+        invalidFamily["records"]![2]!["data"]!["futureField"] = true;
+        Assert.False(IsValid(publishedSchema, invalidFamily));
+
+        JsonObject invalidHousehold = (JsonObject)validDocument.DeepClone();
+        invalidHousehold["records"]![3]!["data"]!["contractVersion"] = 2;
+        Assert.False(IsValid(publishedSchema, invalidHousehold));
+
+        JsonObject invalidIdentity = (JsonObject)validDocument.DeepClone();
+        invalidIdentity["records"]![4]!["data"]!["kind"] = "military_skill";
+        Assert.False(IsValid(publishedSchema, invalidIdentity));
+    }
+
+    private static bool IsValid(JsonSchema schema, JsonNode instance)
+    {
+        return schema.Evaluate(JsonSerializer.SerializeToElement(instance)).IsValid;
+    }
+
+    private static JsonObject CreateRepresentativeCharacterDocument()
+    {
+        return JsonNode.Parse("""
+            {
+              "schemaVersion": 1,
+              "records": [
+                {
+                  "schemaVersion": 1,
+                  "id": "character_world:test",
+                  "recordType": "character_world",
+                  "contentTag": "fictional",
+                  "classification": "general",
+                  "sourceIds": [],
+                  "localizationKeys": [],
+                  "releaseMarked": false,
+                  "data": {
+                    "contractVersion": 1,
+                    "identityDefinitionIds": [],
+                    "characterDefinitionIds": [],
+                    "familyDefinitionIds": [],
+                    "householdDefinitionIds": [],
+                    "characterStates": [],
+                    "familyStates": [],
+                    "householdStates": [],
+                    "references": []
+                  }
+                },
+                {
+                  "schemaVersion": 1,
+                  "id": "character:test",
+                  "recordType": "character_definition",
+                  "contentTag": "fictional",
+                  "classification": "general",
+                  "sourceIds": [],
+                  "localizationKeys": ["loc:character/test/name"],
+                  "releaseMarked": false,
+                  "data": {
+                    "contractVersion": 1,
+                    "nameKey": "loc:character/test/name",
+                    "birthDate": { "year": 190, "month": 1, "day": 2 },
+                    "abilityIds": [],
+                    "aptitudeIds": [],
+                    "traitIds": [],
+                    "ambitionIds": [],
+                    "reputationIds": [],
+                    "references": []
+                  }
+                },
+                {
+                  "schemaVersion": 1,
+                  "id": "family:test",
+                  "recordType": "family_definition",
+                  "contentTag": "fictional",
+                  "classification": "general",
+                  "sourceIds": [],
+                  "localizationKeys": ["loc:family/test/name"],
+                  "releaseMarked": false,
+                  "data": {
+                    "contractVersion": 1,
+                    "nameKey": "loc:family/test/name",
+                    "references": []
+                  }
+                },
+                {
+                  "schemaVersion": 1,
+                  "id": "household:test",
+                  "recordType": "household_definition",
+                  "contentTag": "fictional",
+                  "classification": "general",
+                  "sourceIds": [],
+                  "localizationKeys": ["loc:household/test/name"],
+                  "releaseMarked": false,
+                  "data": {
+                    "contractVersion": 1,
+                    "nameKey": "loc:household/test/name",
+                    "references": []
+                  }
+                },
+                {
+                  "schemaVersion": 1,
+                  "id": "ability:test",
+                  "recordType": "character_identity_definition",
+                  "contentTag": "fictional",
+                  "classification": "general",
+                  "sourceIds": [],
+                  "localizationKeys": ["loc:ability/test/name"],
+                  "releaseMarked": false,
+                  "data": {
+                    "contractVersion": 1,
+                    "kind": "ability",
+                    "nameKey": "loc:ability/test/name",
+                    "references": []
+                  }
+                }
+              ]
+            }
+            """)!.AsObject();
     }
 
     private static string FindRepositoryRoot()

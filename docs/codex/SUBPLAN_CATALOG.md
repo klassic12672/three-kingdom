@@ -8,7 +8,7 @@ This is a routing aid, not a status authority. Always read [the roadmap](../ROAD
 | SP-01 | Complete (M1) | simulation-engineer, verification-reviewer | maintain golden checksum and save compatibility |
 | SP-02 | Complete (M1) | content-engineer, verification-reviewer | maintain registry/load-order checksum and zero diagnostics |
 | SP-03 | Complete (M2) | simulation-engineer, godot-presentation-engineer | preserve exact-SHA hosted health; keep detailed map refinement deferred pre–Early Access |
-| SP-04 | SP-01 and SP-02 complete; ready and next to plan | project-architect, simulation-engineer, content-engineer | character/family contracts plus a deterministic synthetic household slice |
+| SP-04 | SP-01 and SP-02 complete; SP-04A locally verified; exact-SHA hosted evidence pending | project-architect, simulation-engineer, content-engineer | preserve SP-04A through the separately authorized accepted-revision and hosted-evidence process; defer the next bounded package until exact-SHA evidence exists |
 | SP-05 | SP-03, SP-04 | project-architect, simulation-engineer | faction/subfaction membership and authority slice before court/diplomacy breadth |
 | SP-06 | SP-03, SP-04, SP-05 | simulation-engineer, content-engineer | one locality population/store/production loop with conservation tests |
 | SP-07 | SP-03 through SP-06 | simulation-engineer, content-engineer | one persistent army recruitment/supply/battle-round-trip slice |

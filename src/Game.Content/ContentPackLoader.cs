@@ -94,6 +94,23 @@ public sealed class ContentPackLoader
             Dictionary<EntityId, SourceReference> candidateSources = new(sources);
             Dictionary<EntityId, AssetProvenance> candidateAssets = new(assets);
             ApplyPack(draft, candidateRecords, candidateLocalization, candidateGlossary, candidateSources, candidateAssets, report);
+            if (report.ErrorCount == before)
+            {
+                LoadedContentPack candidatePack = new(draft.Manifest, draft.ManifestPath, draft.Checksum);
+                ContentRegistry candidateRegistry = new(
+                    candidateRecords.Values,
+                    candidateLocalization.Values,
+                    candidateGlossary.Values,
+                    candidateSources.Values,
+                    candidateAssets.Values,
+                    [.. loadedPacks, candidatePack]);
+                ValidateOwnedCharacterRecords(candidateRegistry, draft, report);
+                if (report.ErrorCount == before)
+                {
+                    ValidateCharacterWorlds(candidateRegistry, draft.ManifestPath, report);
+                }
+            }
+
             if (report.ErrorCount != before)
             {
                 invalidPacks.Add(draft.Manifest.PackId);
@@ -123,6 +140,78 @@ public sealed class ContentPackLoader
         }
 
         return new ContentLoadResult(registry, report, loadedPacks);
+    }
+
+    private static void ValidateOwnedCharacterRecords(
+        ContentRegistry registry,
+        PackDraft draft,
+        ContentValidationReport report)
+    {
+        EntityId[] ownedIds = draft.Records
+            .Select(record => record.Id)
+            .Concat(draft.Overrides.Select(contentOverride => contentOverride.TargetId))
+            .Distinct()
+            .Order()
+            .ToArray();
+        foreach (EntityId recordId in ownedIds)
+        {
+            if (!registry.TryGet(recordId, out NormalizedContentRecord? record)
+                || !CharacterContentLoader.IsTypedCharacterRecordType(record.RecordType))
+            {
+                continue;
+            }
+
+            try
+            {
+                CharacterContentLoader.ValidateOwnedRecord(registry, recordId);
+            }
+            catch (Exception exception) when (exception is InvalidDataException
+                or SimulationValidationException
+                or JsonException)
+            {
+                report.Error(
+                    StringComparer.Ordinal.Equals(record.RecordType, "character_world")
+                        ? "character.world"
+                        : "character.record",
+                    draft.ManifestPath,
+                    "$.records",
+                    record.Id,
+                    exception.Message,
+                    "Repair this pack's typed character fields, contract version, metadata, or localization.");
+            }
+        }
+    }
+
+    private static void ValidateCharacterWorlds(
+        ContentRegistry registry,
+        string diagnosticPath,
+        ContentValidationReport report)
+    {
+        foreach (NormalizedContentRecord world in registry.Records
+            .Where(record => StringComparer.Ordinal.Equals(record.RecordType, "character_world"))
+            .OrderBy(record => record.Id))
+        {
+            try
+            {
+                CharacterWorldSnapshot snapshot = CharacterContentLoader.LoadWorld(registry, world.Id);
+                CampaignDate validationDate = snapshot.CharacterDefinitions.Count == 0
+                    ? new CampaignDate(1, 1, 1)
+                    : snapshot.CharacterDefinitions.Select(definition => definition.BirthDate).Order().Last();
+                _ = new CharacterWorldState(snapshot, validationDate);
+            }
+            catch (Exception exception) when (exception is InvalidDataException
+                or SimulationValidationException
+                or JsonException)
+            {
+                report.Error(
+                    "character.world",
+                    diagnosticPath,
+                    "$.records",
+                    world.Id,
+                    exception.Message,
+                    "Repair typed character fields, references, localization metadata, or character-world state.");
+            }
+        }
     }
 
     private static PackDraft? ReadPack(
@@ -539,20 +628,8 @@ public sealed class ContentPackLoader
         ValidateUniqueIds(draft, report);
         foreach (ContentRecord record in draft.Records)
         {
-            if (record.SchemaVersion != ContentContractVersions.Record
-                || !record.Id.IsValid
-                || string.IsNullOrWhiteSpace(record.RecordType)
-                || record.SourceIds is null
-                || record.LocalizationKeys is null
-                || record.Data is null
-                || !Enum.IsDefined(record.ContentTag)
-                || !Enum.IsDefined(record.Classification)
-                || record.SourceIds.Any(id => !id.IsValid)
-                || record.LocalizationKeys.Any(id => !id.IsValid)
-                || record.SourceIds.Distinct().Count() != record.SourceIds.Count
-                || record.LocalizationKeys.Distinct().Count() != record.LocalizationKeys.Count)
+            if (!ValidateRecordEnvelope(record, draft.ManifestPath, "$.records", report))
             {
-                report.Error("record.contract", draft.ManifestPath, "$.records", record.Id.IsValid ? record.Id : null, "Record envelope is invalid.", "Use the supported schema, stable ID, type, and unique reference lists.");
                 continue;
             }
 
@@ -603,8 +680,7 @@ public sealed class ContentPackLoader
             {
                 foreach (JsonNode? reference in references)
                 {
-                    if (reference is not JsonValue value
-                        || !EntityId.TryParse(value.GetValue<string>(), out EntityId id)
+                    if (!TryParseEntityId(reference, out EntityId id)
                         || !allRecordIds.Contains(id))
                     {
                         report.Error("record.reference", draft.ManifestPath, "$.records[].data.references", record.Id, $"Record '{record.Id}' has a broken content reference.", "Reference an existing stable content ID.");
@@ -616,7 +692,7 @@ public sealed class ContentPackLoader
 
             if (record.RecordType == "asset")
             {
-                string? provenanceValue = record.Data["provenanceId"]?.GetValue<string>();
+                _ = TryGetString(record.Data["provenanceId"], out string? provenanceValue);
                 if (!EntityId.TryParse(provenanceValue, out EntityId provenanceId)
                     || !allProvenanceIds.Contains(provenanceId))
                 {
@@ -731,7 +807,9 @@ public sealed class ContentPackLoader
             {
                 records[contentOverride.TargetId] = ApplyOverride(target, contentOverride);
             }
-            catch (InvalidDataException exception)
+            catch (Exception exception) when (exception is InvalidDataException
+                or JsonException
+                or NotSupportedException)
             {
                 report.Error("override.field", draft.ManifestPath, "$.overrides", contentOverride.TargetId, exception.Message, "Use a unique JSON pointer to an allowed mutable field.");
             }
@@ -788,6 +866,11 @@ public sealed class ContentPackLoader
         IDictionary<EntityId, AssetProvenance> assets,
         ContentValidationReport report)
     {
+        if (!ValidateRecordEnvelope(record, file, "$.overrides", report))
+        {
+            return;
+        }
+
         ValidateTypedData(record, file, report);
         if (record.ContentTag != ContentTag.Fictional && record.SourceIds.Count == 0)
         {
@@ -805,8 +888,7 @@ public sealed class ContentPackLoader
         }
 
         if (record.Data["references"] is JsonArray references
-            && references.Any(reference => reference is not JsonValue value
-                || !EntityId.TryParse(value.GetValue<string>(), out EntityId id)
+            && references.Any(reference => !TryParseEntityId(reference, out EntityId id)
                 || !records.ContainsKey(id)))
         {
             report.Error("record.reference", file, "$.overrides", record.Id, "Override creates a broken content reference.", "Reference an existing stable content ID.");
@@ -834,7 +916,7 @@ public sealed class ContentPackLoader
 
         if (record.RecordType == "asset")
         {
-            string? value = record.Data["provenanceId"]?.GetValue<string>();
+            _ = TryGetString(record.Data["provenanceId"], out string? value);
             if (!EntityId.TryParse(value, out EntityId provenanceId) || !assets.ContainsKey(provenanceId))
             {
                 report.Error("provenance.missing", file, "$.overrides", record.Id, "Override creates an asset without provenance.", "Reference a loaded provenance record.");
@@ -1049,8 +1131,8 @@ public sealed class ContentPackLoader
 
                 break;
             case "dated_event":
-                if (record.Data["date"] is not JsonValue dateValue
-                    || !TryParseDate(dateValue.GetValue<string>()))
+                if (!TryGetString(record.Data["date"], out string? date)
+                    || !TryParseDate(date))
                 {
                     report.Error("record.date", file, "$.records[].data.date", record.Id, "Event date is not a valid proleptic YYYY-MM-DD date.", "Use an invariant project calendar date.");
                 }
@@ -1067,6 +1149,60 @@ public sealed class ContentPackLoader
         }
 
         value = 0;
+        return false;
+    }
+
+    private static bool TryGetString(JsonNode? node, out string? value)
+    {
+        if (node is JsonValue jsonValue && jsonValue.TryGetValue(out value))
+        {
+            return true;
+        }
+
+        value = null;
+        return false;
+    }
+
+    private static bool TryParseEntityId(JsonNode? node, out EntityId id)
+    {
+        if (TryGetString(node, out string? value) && EntityId.TryParse(value, out id))
+        {
+            return true;
+        }
+
+        id = default;
+        return false;
+    }
+
+    private static bool ValidateRecordEnvelope(
+        ContentRecord record,
+        string file,
+        string jsonPath,
+        ContentValidationReport report)
+    {
+        if (record.SchemaVersion == ContentContractVersions.Record
+            && record.Id.IsValid
+            && !string.IsNullOrWhiteSpace(record.RecordType)
+            && record.SourceIds is not null
+            && record.LocalizationKeys is not null
+            && record.Data is not null
+            && Enum.IsDefined(record.ContentTag)
+            && Enum.IsDefined(record.Classification)
+            && record.SourceIds.All(id => id.IsValid)
+            && record.LocalizationKeys.All(id => id.IsValid)
+            && record.SourceIds.Distinct().Count() == record.SourceIds.Count
+            && record.LocalizationKeys.Distinct().Count() == record.LocalizationKeys.Count)
+        {
+            return true;
+        }
+
+        report.Error(
+            "record.contract",
+            file,
+            jsonPath,
+            record.Id.IsValid ? record.Id : null,
+            "Record envelope is invalid.",
+            "Use the supported schema, stable ID, type, and unique reference lists.");
         return false;
     }
 

@@ -174,4 +174,6 @@ public sealed record WorldSnapshot(
     EntityId? LastEventId)
 {
     public GeographicWorldSnapshot Geography { get; init; } = GeographicWorldSnapshot.Empty;
+
+    public CharacterWorldSnapshot Characters { get; init; } = CharacterWorldSnapshot.Empty;
 }

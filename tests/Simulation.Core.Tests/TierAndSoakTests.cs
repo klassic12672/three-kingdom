@@ -44,7 +44,9 @@ public sealed class TierAndSoakTests
 
         Assert.True(result.Turns > 1_000);
         Assert.Equal(200, result.FinalDate.Year);
-        Assert.Equal("105da5fd449cc2d00ba1bf979642b22107db5b236eab30baac437f1b9b8bf088", result.Checksum.Value);
+        // SP-04A adds the authoritative simulation.characters@1 system and empty character snapshot
+        // to newly captured worlds, so the canonical golden changes without altering the soak inputs.
+        Assert.Equal("cc6cba9f2b5408921fdbcd15a8d5494ca2351e73d7f3052f16702a09639af702", result.Checksum.Value);
     }
 
     [Theory]

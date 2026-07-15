@@ -10,6 +10,8 @@ public interface IWorldQuery
 
     IGeographicWorldQuery Geography { get; }
 
+    IAuthoritativeCharacterWorldQuery Characters { get; }
+
     bool TryGetEntity(EntityId id, [NotNullWhen(true)] out SyntheticEntitySnapshot? entity);
 }
 
@@ -21,6 +23,7 @@ public sealed class WorldState : IWorldQuery
         new("simulation.synthetic_entities", 1),
         new("simulation.command_events", 1),
         new("simulation.geography", 1),
+        new("simulation.characters", 1),
     ];
 
     private readonly SortedDictionary<EntityId, SyntheticEntitySnapshot> entities = [];
@@ -34,7 +37,8 @@ public sealed class WorldState : IWorldQuery
         CampaignCalendar calendar,
         ulong rootSeed,
         IEnumerable<RandomStreamState>? streams,
-        GeographicWorldSnapshot geography)
+        GeographicWorldSnapshot geography,
+        CharacterWorldSnapshot characters)
     {
         if (!calendar.Date.IsValid || calendar.TurnIndex < 0)
         {
@@ -45,6 +49,7 @@ public sealed class WorldState : IWorldQuery
         RootSeed = rootSeed;
         Random = new DeterministicRandomStreams(rootSeed, streams);
         Geography = new GeographicWorldState(geography);
+        Characters = new CharacterWorldState(characters, calendar.Date);
     }
 
     public CampaignCalendar Calendar { get; private set; }
@@ -55,7 +60,11 @@ public sealed class WorldState : IWorldQuery
 
     public GeographicWorldState Geography { get; }
 
+    public CharacterWorldState Characters { get; }
+
     IGeographicWorldQuery IWorldQuery.Geography => Geography;
+
+    IAuthoritativeCharacterWorldQuery IWorldQuery.Characters => Characters;
 
     public IReadOnlyList<SyntheticEntitySnapshot> Entities => entities.Values.Select(CloneEntity).ToArray();
 
@@ -63,13 +72,26 @@ public sealed class WorldState : IWorldQuery
         CampaignDate startDate,
         ulong seed,
         IEnumerable<SyntheticEntitySnapshot> initialEntities,
-        GeographicWorldSnapshot? geography = null)
+        GeographicWorldSnapshot? geography = null) => Create(
+            startDate,
+            seed,
+            initialEntities,
+            geography ?? GeographicWorldSnapshot.Empty,
+            CharacterWorldSnapshot.Empty);
+
+    public static WorldState Create(
+        CampaignDate startDate,
+        ulong seed,
+        IEnumerable<SyntheticEntitySnapshot> initialEntities,
+        GeographicWorldSnapshot geography,
+        CharacterWorldSnapshot characters)
     {
         WorldState world = new(
             new CampaignCalendar(startDate, 0),
             seed,
             null,
-            geography ?? GeographicWorldSnapshot.Empty);
+            geography,
+            characters);
         foreach (SyntheticEntitySnapshot entity in initialEntities.OrderBy(item => item.Id))
         {
             SyntheticEntitySnapshot canonical = ValidateEntity(entity).Canonicalize();
@@ -84,15 +106,28 @@ public sealed class WorldState : IWorldQuery
 
     public static WorldState Restore(WorldSnapshot snapshot)
     {
+        if (snapshot is null
+            || snapshot.RandomStreams is null
+            || snapshot.Entities is null
+            || snapshot.PendingCommands is null
+            || snapshot.SystemVersions is null
+            || snapshot.Geography is null
+            || snapshot.Characters is null
+            || snapshot.Entities.Any(entity => entity is null)
+            || snapshot.PendingCommands.Any(command => command is null))
+        {
+            throw new SaveCompatibilityException("Snapshot is missing required objects or collections.");
+        }
+
         if (snapshot.ContractVersion != ContractVersions.WorldSnapshot)
         {
             throw new SaveCompatibilityException($"Unsupported world snapshot contract version {snapshot.ContractVersion}.");
         }
 
-        ValidateSystemVersions(snapshot.SystemVersions);
+        ValidateSystemVersions(snapshot.SystemVersions, snapshot.Characters);
         ValidatePendingCommands(snapshot.PendingCommands);
 
-        WorldState world = new(snapshot.Calendar, snapshot.RootSeed, snapshot.RandomStreams, snapshot.Geography)
+        WorldState world = new(snapshot.Calendar, snapshot.RootSeed, snapshot.RandomStreams, snapshot.Geography, snapshot.Characters)
         {
             lastEventDate = snapshot.LastEventDate,
             lastEventPhase = snapshot.LastEventPhase,
@@ -139,6 +174,7 @@ public sealed class WorldState : IWorldQuery
         lastEventId)
     {
         Geography = Geography.CaptureSnapshot(),
+        Characters = Characters.CaptureSnapshot(),
     };
 
     internal void Enqueue(CampaignCommand command)
@@ -199,7 +235,11 @@ public sealed class WorldState : IWorldQuery
         lastEventId = campaignEvent.EventId;
     }
 
-    internal void AdvanceCalendar() => Calendar = Calendar.NextTurn();
+    internal void AdvanceCalendar()
+    {
+        Calendar = Calendar.NextTurn();
+        Characters.UpdateCampaignDate(Calendar.Date);
+    }
 
     internal IReadOnlyList<CampaignEvent> PlanGeographicEvents(CampaignDate date) =>
         Geography.PlanDailyEvents(date, Calendar.TurnIndex);
@@ -306,8 +346,20 @@ public sealed class WorldState : IWorldQuery
         return entity;
     }
 
-    private static void ValidateSystemVersions(IReadOnlyList<SystemVersion> versions)
+    private static void ValidateSystemVersions(
+        IReadOnlyList<SystemVersion> versions,
+        CharacterWorldSnapshot characters)
     {
+        if (versions is null || versions.Any(version => version is null))
+        {
+            throw new SaveCompatibilityException("Snapshot system versions are missing or contain null entries.");
+        }
+
+        if (characters is null)
+        {
+            throw new SaveCompatibilityException("Snapshot character state is missing.");
+        }
+
         string[] expected = CurrentSystemVersions
             .Select(version => $"{version.SystemId}@{version.Version}")
             .Order(StringComparer.Ordinal)
@@ -316,12 +368,36 @@ public sealed class WorldState : IWorldQuery
             .Select(version => $"{version.SystemId}@{version.Version}")
             .Order(StringComparer.Ordinal)
             .ToArray();
+        string[] legacyExpected = expected
+            .Where(version => !StringComparer.Ordinal.Equals(version, "simulation.characters@1"))
+            .ToArray();
+        if (legacyExpected.SequenceEqual(actual, StringComparer.Ordinal))
+        {
+            if (IsCompleteEmptyCharacterSnapshot(characters))
+            {
+                return;
+            }
+
+            throw new SaveCompatibilityException(
+                "A legacy snapshot without 'simulation.characters@1' must contain a complete, valid, empty character snapshot.");
+        }
+
         if (!expected.SequenceEqual(actual, StringComparer.Ordinal))
         {
             throw new SaveCompatibilityException(
                 $"Snapshot system versions are incompatible. Expected [{string.Join(", ", expected)}], found [{string.Join(", ", actual)}].");
         }
     }
+
+    private static bool IsCompleteEmptyCharacterSnapshot(CharacterWorldSnapshot characters) =>
+        characters.ContractVersion == CharacterContractVersions.Snapshot
+        && characters.IdentityDefinitions is { Count: 0 }
+        && characters.CharacterDefinitions is { Count: 0 }
+        && characters.FamilyDefinitions is { Count: 0 }
+        && characters.HouseholdDefinitions is { Count: 0 }
+        && characters.CharacterStates is { Count: 0 }
+        && characters.FamilyStates is { Count: 0 }
+        && characters.HouseholdStates is { Count: 0 };
 
     private static void ValidatePendingCommands(IReadOnlyList<CampaignCommand> commands)
     {
