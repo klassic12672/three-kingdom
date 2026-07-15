@@ -783,6 +783,33 @@ public sealed class WorldState : IWorldQuery
                         null,
                         registration.PregnancyPlan);
                 }
+            case ResolvePregnancyBirthAction birthAction:
+                {
+                    CharacterPregnancyBirthResolutionPlan pregnancy =
+                        CharacterPregnancies.PrepareBirthResolution(
+                            birthAction.ExpectedPregnancyId,
+                            resolutionDate,
+                            authoritativeTurnIndex,
+                            commandId,
+                            eventId);
+                    CharacterBirthMutationPlan character =
+                        Characters.PreparePregnancyBirth(
+                            pregnancy.ResolvedPregnancy,
+                            birthAction.Newborn,
+                            resolutionDate,
+                            authoritativeTurnIndex,
+                            commandId,
+                            eventId);
+                    CharacterFamilyActionResolvedEventPayload resolved = new(
+                        actingActorId,
+                        payload.Action,
+                        new PregnancyBirthResolvedOutcome(character.Birth));
+                    return new CharacterFamilyAggregatePlan(
+                        resolved,
+                        character.CharacterPlan,
+                        null,
+                        pregnancy.PregnancyPlan);
+                }
             default:
                 throw new SimulationValidationException(
                     $"Unsupported character-family action '{payload.Action.GetType().Name}'.");
@@ -1566,6 +1593,31 @@ public sealed class WorldState : IWorldQuery
                 action.GestationalParentCharacterId,
                 action.OtherBiologicalParentCharacterId,
                 action.SourceUnionId,
+            ],
+            (ResolvePregnancyBirthAction action,
+                PregnancyBirthResolvedOutcome outcome)
+                when outcome.Birth is not null
+                    && outcome.Birth.ResolvedPregnancy is not null
+                    && outcome.Birth.ChildDefinition is not null
+                    && outcome.Birth.ChildState is not null
+                    && outcome.Birth.ResolvedPregnancy.PregnancyId
+                        == action.ExpectedPregnancyId
+                    && outcome.Birth.ChildDefinition.Id
+                        == outcome.Birth.ChildState.CharacterId =>
+            [
+                payload.ActingActorId,
+                outcome.Birth.BirthId,
+                outcome.Birth.ResolvedPregnancy.PregnancyId,
+                outcome.Birth.ChildDefinition.Id,
+                outcome.Birth.ResolvedPregnancy.GestationalParentCharacterId,
+                outcome.Birth.ResolvedPregnancy.OtherBiologicalParentCharacterId,
+                outcome.Birth.ResolvedPregnancy.SourceUnionId,
+                .. outcome.Birth.FamilyId is EntityId familyId
+                    ? new[] { familyId }
+                    : [],
+                .. outcome.Birth.HouseholdId is EntityId householdId
+                    ? new[] { householdId }
+                    : [],
             ],
             _ => throw new SimulationValidationException(
                 "Character-family action event contains mismatched action and outcome data."),

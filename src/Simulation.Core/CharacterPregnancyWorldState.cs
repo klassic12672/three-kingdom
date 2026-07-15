@@ -236,6 +236,91 @@ public sealed class CharacterPregnancyWorldState
             pregnancyPlan);
     }
 
+    internal CharacterPregnancyBirthResolutionPlan PrepareBirthResolution(
+        EntityId expectedPregnancyId,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (!expectedPregnancyId.IsValid
+            || !resolutionDate.IsValid
+            || resolutionDate.CompareTo(calendar.Date) < 0
+            || authoritativeTurnIndex < calendar.TurnIndex
+            || !commandId.IsValid
+            || eventId != CharacterFamilyIds.DeriveActionEventId(
+                resolutionDate,
+                commandId))
+        {
+            throw new SimulationValidationException(
+                "Pregnancy-birth resolution coordinates or identities are invalid.");
+        }
+
+        if (!activePregnancies.TryGetValue(
+                expectedPregnancyId,
+                out CharacterPregnancyState? active))
+        {
+            throw new SimulationValidationException(
+                $"Active pregnancy '{expectedPregnancyId}' is stale or missing.");
+        }
+
+        if (resolutionDate.CompareTo(active.ExpectedBirthDate) < 0)
+        {
+            throw new SimulationValidationException(
+                $"Active pregnancy '{active.PregnancyId}' is not due for birth until '{active.ExpectedBirthDate}'.");
+        }
+
+        AuthoritativeCharacterProfile gestationalParent = RequireCurrentCharacter(
+            active.GestationalParentCharacterId,
+            resolutionDate,
+            "Pregnancy-birth gestational parent");
+        AuthoritativeCharacterProfile otherParent = RequireCurrentCharacter(
+            active.OtherBiologicalParentCharacterId,
+            resolutionDate,
+            "Pregnancy-birth other biological parent");
+        if (gestationalParent.Condition.VitalStatus != CharacterVitalStatus.Alive
+            || otherParent.Condition.VitalStatus != CharacterVitalStatus.Alive)
+        {
+            throw new SimulationValidationException(
+                "Pregnancy birth requires both biological parents to be living.");
+        }
+
+        MarriageUnionState union = RequireUnion(
+            active.SourceUnionId,
+            "Pregnancy-birth source union");
+        if (union.Status != MarriageUnionStatus.Active
+            || !SamePair(
+                union.FirstCharacterId,
+                union.SecondCharacterId,
+                gestationalParent.CharacterId,
+                otherParent.CharacterId))
+        {
+            throw new SimulationValidationException(
+                $"Marriage union '{union.UnionId}' is not the exact active source union for pregnancy '{active.PregnancyId}'.");
+        }
+
+        CharacterPregnancyWorldSnapshot updated = CaptureSnapshot() with
+        {
+            ActivePregnancies = activePregnancies.Values
+                .Where(item => item.PregnancyId != active.PregnancyId)
+                .Select(Clone)
+                .ToArray(),
+        };
+        CampaignCalendar candidateCalendar = new(
+            resolutionDate.CompareTo(calendar.Date) > 0
+                ? resolutionDate
+                : calendar.Date,
+            Math.Max(calendar.TurnIndex, authoritativeTurnIndex));
+        return new CharacterPregnancyBirthResolutionPlan(
+            Clone(active),
+            new CharacterPregnancyWorldUpdatePlan(
+                new CharacterPregnancyWorldState(
+                    updated,
+                    characters,
+                    marriages,
+                    candidateCalendar)));
+    }
+
     internal void ApplyPrepared(CharacterPregnancyWorldUpdatePlan plan)
     {
         if (plan?.Candidate is null)
@@ -543,4 +628,8 @@ internal sealed record CharacterPregnancyWorldUpdatePlan(
 internal sealed record CharacterPregnancyRegistrationPlan(
     CharacterPregnancyState Pregnancy,
     IReadOnlyList<EntityId> AffectedIds,
+    CharacterPregnancyWorldUpdatePlan PregnancyPlan);
+
+internal sealed record CharacterPregnancyBirthResolutionPlan(
+    CharacterPregnancyState ResolvedPregnancy,
     CharacterPregnancyWorldUpdatePlan PregnancyPlan);

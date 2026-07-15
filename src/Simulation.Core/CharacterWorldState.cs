@@ -366,6 +366,200 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
             allowDeath: true);
     }
 
+    internal CharacterBirthMutationPlan PreparePregnancyBirth(
+        CharacterPregnancyState resolvedPregnancy,
+        GeneratedNewbornSpecification newborn,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (resolvedPregnancy is null
+            || newborn is null
+            || !resolutionDate.IsValid
+            || resolutionDate.CompareTo(campaignDate) < 0
+            || authoritativeTurnIndex < 0
+            || !commandId.IsValid
+            || eventId != CharacterFamilyIds.DeriveActionEventId(
+                resolutionDate,
+                commandId))
+        {
+            throw new SimulationValidationException(
+                "Pregnancy-birth character preparation contains null or invalid resolution data.");
+        }
+
+        if (resolvedPregnancy.ContractVersion != CharacterPregnancyContractVersions.State
+            || !resolvedPregnancy.PregnancyId.IsValid
+            || resolvedPregnancy.GestationalParentCharacterId
+                == resolvedPregnancy.OtherBiologicalParentCharacterId
+            || resolutionDate.CompareTo(resolvedPregnancy.ExpectedBirthDate) < 0)
+        {
+            throw new SimulationValidationException(
+                "Pregnancy-birth character preparation requires an exact due or overdue pregnancy.");
+        }
+
+        if (newborn.ContractVersion != CharacterBirthContractVersions.NewbornSpecification
+            || !newborn.PrimaryNameKey.IsValid
+            || !newborn.PrimaryNameKey.Value.StartsWith("loc:", StringComparison.Ordinal)
+            || newborn.InheritedTraitIds is null)
+        {
+            throw new SimulationValidationException(
+                "Generated-newborn specification version, localization key, or traits are invalid.");
+        }
+
+        AuthoritativeCharacterProfile gestationalParent = RequireCurrentCharacter(
+            resolvedPregnancy.GestationalParentCharacterId,
+            resolutionDate,
+            "Pregnancy-birth gestational parent");
+        AuthoritativeCharacterProfile otherParent = RequireCurrentCharacter(
+            resolvedPregnancy.OtherBiologicalParentCharacterId,
+            resolutionDate,
+            "Pregnancy-birth other biological parent");
+        if (gestationalParent.Condition.VitalStatus != CharacterVitalStatus.Alive
+            || otherParent.Condition.VitalStatus != CharacterVitalStatus.Alive)
+        {
+            throw new SimulationValidationException(
+                "Pregnancy birth requires both biological parents to be living.");
+        }
+
+        EntityId[] inheritedTraits = newborn.InheritedTraitIds.ToArray();
+        EntityId[] canonicalTraits = inheritedTraits
+            .Distinct()
+            .Order()
+            .ToArray();
+        HashSet<EntityId> parentalTraits = gestationalParent.TraitIds
+            .Concat(otherParent.TraitIds)
+            .ToHashSet();
+        if (inheritedTraits.Length > CharacterBirthLimits.MaximumInheritedTraits
+            || !inheritedTraits.SequenceEqual(canonicalTraits)
+            || inheritedTraits.Any(id => !id.IsValid || !parentalTraits.Contains(id)))
+        {
+            throw new SimulationValidationException(
+                "Generated-newborn inherited traits must be a canonical distinct parental subset of at most eight traits.");
+        }
+
+        EntityId? familyId = RequireSelectedParentValue(
+            newborn.FamilyId,
+            gestationalParent.FamilyId,
+            otherParent.FamilyId,
+            "family");
+        EntityId? householdId = RequireSelectedParentValue(
+            newborn.HouseholdId,
+            gestationalParent.HouseholdId,
+            otherParent.HouseholdId,
+            "household");
+        EntityId? cultureId = RequireSelectedParentValue(
+            newborn.CultureId,
+            gestationalParent.CultureId,
+            otherParent.CultureId,
+            "culture");
+
+        EntityId childId = CharacterBirthIds.DeriveChildId(
+            resolvedPregnancy.PregnancyId);
+        EntityId birthId = CharacterBirthIds.DeriveBirthId(
+            eventId,
+            resolvedPregnancy.PregnancyId);
+        if (IsDefinitionIdInUse(childId)
+            || IsDefinitionIdInUse(birthId)
+            || characterStates.ContainsKey(childId))
+        {
+            throw new SimulationValidationException(
+                $"Pregnancy birth child '{childId}' or birth '{birthId}' collides with existing character-world identity.");
+        }
+
+        CharacterContentOrigin generatedOrigin = new(
+            CharacterOriginKind.Generated,
+            CharacterHistoricalClassification.Fictional,
+            birthId,
+            null,
+            [],
+            []);
+        CharacterDefinition childDefinition = new(
+            CharacterContractVersions.Definition,
+            childId,
+            newborn.PrimaryNameKey,
+            resolvedPregnancy.ExpectedBirthDate,
+            [],
+            [],
+            canonicalTraits,
+            [],
+            [],
+            new StructuredCharacterName(newborn.PrimaryNameKey, null),
+            generatedOrigin,
+            cultureId,
+            null,
+            []);
+        CharacterParentLink[] parentLinks = new[]
+        {
+            new CharacterParentLink(
+                gestationalParent.CharacterId,
+                ParentChildLinkKind.Biological),
+            new CharacterParentLink(
+                otherParent.CharacterId,
+                ParentChildLinkKind.Biological),
+        }
+            .OrderBy(link => link.ParentCharacterId)
+            .ToArray();
+        CharacterState childState = new(
+            CharacterContractVersions.State,
+            childId,
+            parentLinks.Select(link => link.ParentCharacterId).ToArray(),
+            parentLinks.Select(Clone).ToArray(),
+            CharacterConditionState.Default);
+        CharacterWorldSnapshot updated = CaptureSnapshot() with
+        {
+            CharacterDefinitions =
+            [
+                .. characterDefinitions.Values.Select(Clone),
+                Clone(childDefinition),
+            ],
+            CharacterStates =
+            [
+                .. characterStates.Values.Select(Clone),
+                Clone(childState),
+            ],
+            FamilyStates = familyStates.Values.Select(state =>
+                state.FamilyId == familyId
+                    ? state with
+                    {
+                        MemberIds = state.MemberIds
+                            .Append(childId)
+                            .Order()
+                            .ToArray(),
+                    }
+                    : Clone(state)).ToArray(),
+            HouseholdStates = householdStates.Values.Select(state =>
+                state.HouseholdId == householdId
+                    ? state with
+                    {
+                        MemberIds = state.MemberIds
+                            .Append(childId)
+                            .Order()
+                            .ToArray(),
+                    }
+                    : Clone(state)).ToArray(),
+        };
+        CampaignDate candidateDate = resolutionDate.CompareTo(campaignDate) > 0
+            ? resolutionDate
+            : campaignDate;
+        CharacterBirthChange birth = new(
+            CharacterBirthContractVersions.Change,
+            birthId,
+            resolvedPregnancy with { },
+            Clone(childDefinition),
+            Clone(childState),
+            familyId,
+            householdId,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+        return new CharacterBirthMutationPlan(
+            birth,
+            new CharacterWorldUpdatePlan(
+                new CharacterWorldState(updated, candidateDate)));
+    }
+
     internal HouseholdDecisionMutationPlan PrepareHouseholdDecision(
         EntityId actingCharacterId,
         IHouseholdDecisionAction action,
@@ -1351,6 +1545,49 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
         return age;
     }
 
+    private static EntityId? RequireSelectedParentValue(
+        EntityId? selected,
+        EntityId? gestationalParentValue,
+        EntityId? otherParentValue,
+        string category)
+    {
+        EntityId[] available = new[]
+        {
+            gestationalParentValue,
+            otherParentValue,
+        }
+            .Where(value => value is not null)
+            .Select(value => value!.Value)
+            .Distinct()
+            .Order()
+            .ToArray();
+        if (available.Length == 0)
+        {
+            if (selected is not null)
+            {
+                throw new SimulationValidationException(
+                    $"Generated-newborn {category} cannot be selected when neither parent has one.");
+            }
+
+            return null;
+        }
+
+        if (selected is not EntityId selectedValue
+            || !available.Contains(selectedValue))
+        {
+            throw new SimulationValidationException(
+                $"Generated-newborn {category} must select one current non-null parent value.");
+        }
+
+        return selectedValue;
+    }
+
+    private bool IsDefinitionIdInUse(EntityId id) =>
+        identityDefinitions.ContainsKey(id)
+        || characterDefinitions.ContainsKey(id)
+        || familyDefinitions.ContainsKey(id)
+        || householdDefinitions.ContainsKey(id);
+
     private static void ValidateOneToOneState(
         IEnumerable<EntityId> definitionIds,
         IEnumerable<EntityId> stateIds,
@@ -1592,4 +1829,8 @@ internal sealed record CharacterConditionMutationPlan(
 
 internal sealed record HouseholdDecisionMutationPlan(
     HouseholdMembershipTransition Transition,
+    CharacterWorldUpdatePlan CharacterPlan);
+
+internal sealed record CharacterBirthMutationPlan(
+    CharacterBirthChange Birth,
     CharacterWorldUpdatePlan CharacterPlan);

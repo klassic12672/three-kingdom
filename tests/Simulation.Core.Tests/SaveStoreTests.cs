@@ -32,6 +32,8 @@ public sealed class SaveStoreTests : IDisposable
     private const string FrozenSchemaSixteenFileSha256 = "3f118e24486fc7367dc00f07419abfb19eff13a144daffc878ee73a99277fbe5";
     private const string FrozenSchemaSeventeenChecksum = "7a680781eceabf8c46554f780aaaca0ef6f781caf3256cac46185f0031e88ea4";
     private const string FrozenSchemaSeventeenFileSha256 = "c99c1183f408dfd66eb08015e3b10d4e5b3a2f573c4adb364cd395fb8a1eb9c2";
+    private const string FrozenSchemaEighteenChecksum = "7f0feb49415b8d0074d447381340aea0c09200964f55104034db60c04f70d49e";
+    private const string FrozenSchemaEighteenFileSha256 = "b27ccfdc51704721055161d6e57738e40030ff67d96f928e61bcbf5ed93c9453";
     // Reconstructed literally from the exact schema-4 serializer contract at eaa3aaf.
     // Unlike the inferred schema-1/2 fixtures, this contains nonempty character history.
     private const string FrozenSchemaFourFixture = """{"schemaVersion":4,"contractVersion":2,"gameVersion":"0.1.0","createdUtc":"2026-07-15T00:00:00+00:00","contentManifests":[{"packId":{"value":"base:synthetic"},"version":"1.0.0","checksum":"sha256:abc","requiredForSimulation":true}],"seed":99,"snapshot":{"contractVersion":1,"calendar":{"date":{"year":191,"month":7,"day":14},"turnIndex":0,"daysInCurrentTurn":3},"rootSeed":99,"randomStreams":[],"entities":[],"pendingCommands":[],"systemVersions":[{"systemId":"simulation.calendar","version":1},{"systemId":"simulation.synthetic_entities","version":1},{"systemId":"simulation.command_events","version":1},{"systemId":"simulation.geography","version":1},{"systemId":"simulation.characters","version":1}],"lastEventDate":null,"lastEventPhase":null,"lastEventPriority":null,"lastEventId":null,"geography":{"graph":{"regions":[],"districts":[],"localities":[],"stops":[],"routes":[]},"season":0,"weather":0,"locations":[],"routes":[],"armies":[]},"characters":{"contractVersion":1,"identityDefinitions":[{"contractVersion":1,"id":{"value":"ability:synthetic/command"},"kind":0,"nameKey":{"value":"loc:ability/synthetic_command"}}],"characterDefinitions":[{"contractVersion":1,"id":{"value":"character:synthetic/adult"},"nameKey":{"value":"loc:character/synthetic_adult"},"birthDate":{"year":160,"month":1,"day":1},"abilityIds":[{"value":"ability:synthetic/command"}],"aptitudeIds":[],"traitIds":[],"ambitionIds":[],"reputationIds":[]}],"familyDefinitions":[],"householdDefinitions":[],"characterStates":[{"contractVersion":1,"characterId":{"value":"character:synthetic/adult"},"parentIds":[]}],"familyStates":[],"householdStates":[]}},"diagnosticCommands":[],"diagnosticEvents":[],"checksum":"48b94dad9d4dda78591243341afa16ece40e0ed157368f84c1189641684ecd3e"}""";
@@ -456,6 +458,58 @@ public sealed class SaveStoreTests : IDisposable
         byte[] sourceBytes = File.ReadAllBytes(path);
 
         Assert.Throws<SaveCompatibilityException>(() => new SaveStore().Load(path));
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void SchemaEighteen_MigratedOverduePregnancyResolvesWithExpectedBirthDate()
+    {
+        JsonObject compatible = CreateHistoricalFixture(18);
+        WorldSnapshot historical = compatible["snapshot"]!.Deserialize<WorldSnapshot>(
+            SimulationJson.CreateOptions())!;
+        CharacterPregnancyState pregnancy = Assert.Single(
+            historical.CharacterPregnancies.ActivePregnancies);
+        CampaignDate overdueDate = pregnancy.ExpectedBirthDate.AddDays(2);
+        historical = historical with
+        {
+            Calendar = new CampaignCalendar(overdueDate, historical.Calendar.TurnIndex),
+            PendingCommands = [],
+        };
+        compatible["snapshot"] = JsonSerializer.SerializeToNode(
+            historical,
+            SimulationJson.CreateOptions());
+        compatible["checksum"] = SimulationChecksum.ComputeForSaveSchema(
+            historical,
+            18).Value;
+        string path = Path.Combine(directory, "schema-eighteen-overdue-birth.save.gz");
+        WriteJsonGzip(path, compatible);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+        SaveEnvelope migrated = new SaveStore().Load(path);
+        CampaignSimulation simulation = new(WorldState.Restore(migrated.Snapshot));
+        CampaignCommand command = CampaignCommand.Create(
+            new EntityId("command:test/schema-eighteen-overdue-birth"),
+            CharacterFamilySystem.AuthoritativeActorId,
+            overdueDate,
+            new CharacterFamilyActionCommandPayload(
+                new ResolvePregnancyBirthAction(
+                    pregnancy.PregnancyId,
+                    new GeneratedNewbornSpecification(
+                        CharacterBirthContractVersions.NewbornSpecification,
+                        new EntityId("loc:test/schema_eighteen_overdue_child"),
+                        null,
+                        null,
+                        new EntityId("household:d3/000"),
+                        []))),
+            ResolutionPhase.Commands);
+
+        Assert.True(simulation.Submit(command).IsValid);
+        CharacterBirthChange birth = Assert.IsType<PregnancyBirthResolvedOutcome>(
+            Assert.IsType<CharacterFamilyActionResolvedEventPayload>(
+                Assert.Single(simulation.ResolveTurn()).Payload).Outcome).Birth;
+
+        Assert.Equal(pregnancy.ExpectedBirthDate, birth.ChildDefinition.BirthDate);
+        Assert.Equal(overdueDate, birth.ResolutionDate);
+        Assert.Empty(simulation.World.CharacterPregnancies.ActivePregnancies);
         Assert.Equal(sourceBytes, File.ReadAllBytes(path));
     }
 
@@ -2731,6 +2785,250 @@ public sealed class SaveStoreTests : IDisposable
         Assert.Equal(sourceBytes, File.ReadAllBytes(path));
     }
 
+    [Fact]
+    public void SchemaEighteen_AuthenticatesExactE4FixtureAndMigratesVocabularyWithoutChangingSource()
+    {
+        JsonObject frozen = CreateHistoricalFixture(18);
+        Assert.Equal(FrozenSchemaEighteenChecksum, frozen["checksum"]!.GetValue<string>());
+        string fixturePath = Path.Combine(
+            AppContext.BaseDirectory,
+            "Fixtures",
+            "save-schema-18-history-backed.json");
+        byte[] fixtureBytes = File.ReadAllBytes(fixturePath);
+        Assert.Equal(74_121, fixtureBytes.Length);
+        Assert.Equal(
+            FrozenSchemaEighteenFileSha256,
+            Convert.ToHexStringLower(SHA256.HashData(fixtureBytes)));
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(frozen, 18);
+        JsonObject original = (JsonObject)frozen.DeepClone();
+        string historicalSnapshot = JsonSerializer.Serialize(
+            frozen["snapshot"],
+            CanonicalJson.Options);
+        string historicalCommands = JsonSerializer.Serialize(
+            frozen["diagnosticCommands"],
+            CanonicalJson.Options);
+        string historicalEvents = JsonSerializer.Serialize(
+            frozen["diagnosticEvents"],
+            CanonicalJson.Options);
+        string path = Path.Combine(directory, "schema-eighteen-history-backed.save.gz");
+        WriteFrozenHistoricalFixture(path, 18);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        SaveEnvelope migrated = new SaveStore().Load(path);
+
+        Assert.Equal(SaveEnvelope.CurrentSchemaVersion, migrated.SchemaVersion);
+        Assert.Equal(
+            historicalSnapshot,
+            JsonSerializer.Serialize(migrated.Snapshot, CanonicalJson.Options));
+        Assert.Equal(
+            historicalCommands,
+            JsonSerializer.Serialize(migrated.DiagnosticCommands, CanonicalJson.Options));
+        Assert.Equal(
+            historicalEvents,
+            JsonSerializer.Serialize(migrated.DiagnosticEvents, CanonicalJson.Options));
+        Assert.Single(migrated.Snapshot.CharacterPregnancies.ActivePregnancies);
+        Assert.Contains(
+            migrated.Snapshot.PendingCommands,
+            command => command.Payload is CharacterFamilyActionCommandPayload
+            {
+                Action: RegisterActivePregnancyAction,
+            });
+        Assert.Contains(
+            migrated.DiagnosticEvents,
+            campaignEvent => campaignEvent.Payload
+                is CharacterFamilyActionResolvedEventPayload
+            {
+                Outcome: ActivePregnancyRegisteredOutcome,
+            });
+        Assert.Equal(
+            SimulationChecksum.Compute(migrated.Snapshot).Value,
+            migrated.Checksum);
+        _ = WorldState.Restore(migrated.Snapshot);
+        Assert.Equal(
+            JsonSerializer.Serialize(original, CanonicalJson.Options),
+            JsonSerializer.Serialize(frozen, CanonicalJson.Options));
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Theory]
+    [InlineData("pending-action")]
+    [InlineData("diagnostic-action")]
+    [InlineData("diagnostic-outcome")]
+    public void SchemaEighteen_RejectsE5DiscriminatorsWithoutChangingSource(string mutation)
+    {
+        JsonObject invalid = CreateHistoricalFixture(18);
+        JsonObject pendingAction = invalid["snapshot"]!["pendingCommands"]!.AsArray()
+            .OfType<JsonObject>()
+            .First(command => command["payload"]?["action"]?["$type"]?.GetValue<string>()
+                == "register_active_pregnancy.v1");
+        JsonObject diagnosticAction = invalid["diagnosticCommands"]!.AsArray()
+            .OfType<JsonObject>()
+            .First(command => command["payload"]?["action"]?["$type"]?.GetValue<string>()
+                == "register_active_pregnancy.v1");
+        JsonObject diagnosticOutcome = invalid["diagnosticEvents"]!.AsArray()
+            .OfType<JsonObject>()
+            .First(campaignEvent => campaignEvent["payload"]?["outcome"]?["$type"]?.GetValue<string>()
+                == "active_pregnancy_registered.v1");
+        switch (mutation)
+        {
+            case "pending-action":
+                pendingAction["payload"]!["action"]!["$type"] =
+                    "resolve_pregnancy_birth.v1";
+                break;
+            case "diagnostic-action":
+                diagnosticAction["payload"]!["action"]!["$type"] =
+                    "resolve_pregnancy_birth.v1";
+                break;
+            case "diagnostic-outcome":
+                diagnosticOutcome["payload"]!["outcome"]!["$type"] =
+                    "pregnancy_birth_resolved.v1";
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(mutation));
+        }
+
+        string path = Path.Combine(directory, $"schema-eighteen-e5-{mutation}.save.gz");
+        WriteJsonGzip(path, invalid);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        Assert.Throws<SaveCompatibilityException>(() => new SaveStore().Load(path));
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Theory]
+    [InlineData("expectedPregnancyId", false)]
+    [InlineData("expectedPregnancyId", true)]
+    [InlineData("newborn", false)]
+    [InlineData("newborn", true)]
+    [InlineData("birth", false)]
+    [InlineData("birth", true)]
+    [InlineData("birthId", false)]
+    [InlineData("birthId", true)]
+    [InlineData("resolvedPregnancy", false)]
+    [InlineData("resolvedPregnancy", true)]
+    [InlineData("childDefinition", false)]
+    [InlineData("childDefinition", true)]
+    [InlineData("childState", false)]
+    [InlineData("childState", true)]
+    [InlineData("inheritedTraitIds", false)]
+    [InlineData("inheritedTraitIds", true)]
+    public void SchemaEighteen_RejectsEachIsolatedE5PropertyIncludingExplicitNull(
+        string propertyName,
+        bool explicitNull)
+    {
+        JsonObject invalid = CreateHistoricalFixture(18);
+        string beforeMutation = JsonSerializer.Serialize(invalid, CanonicalJson.Options);
+        Assert.DoesNotContain($"\"{propertyName}\"", beforeMutation, StringComparison.Ordinal);
+        JsonObject payload = invalid["diagnosticCommands"]!.AsArray()[0]!["payload"]!
+            .AsObject();
+
+        payload[propertyName] = explicitNull
+            ? null
+            : JsonValue.Create("isolated-e5-property-probe");
+
+        string path = Path.Combine(
+            directory,
+            $"schema-eighteen-isolated-{propertyName}-{explicitNull}.save.gz");
+        WriteJsonGzip(path, invalid);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        Assert.Throws<SaveCompatibilityException>(() => new SaveStore().Load(path));
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void SchemaEighteen_PreservesExistingGeneratedChildAndV2Memberships()
+    {
+        JsonObject compatible = CreateHistoricalFixture(18);
+        WorldSnapshot historical = compatible["snapshot"]!.Deserialize<WorldSnapshot>(
+            SimulationJson.CreateOptions())!;
+        EntityId childId = new("character:generated/schema-18-existing");
+        EntityId firstParent = new("character:d3/000");
+        EntityId secondParent = new("character:d3/004");
+        EntityId familyId = new("family:fixture/schema-18-existing");
+        EntityId householdId = new("household:d3/000");
+        EntityId nameKey = new("loc:fixture/schema_18_existing_child");
+        CharacterParentLink[] parentLinks =
+        [
+            new(firstParent, ParentChildLinkKind.Biological),
+            new(secondParent, ParentChildLinkKind.Biological),
+        ];
+        CharacterWorldSnapshot characters = historical.Characters with
+        {
+            CharacterDefinitions = historical.Characters.CharacterDefinitions.Append(
+                new CharacterDefinition(
+                    CharacterContractVersions.Definition,
+                    childId,
+                    nameKey,
+                    new CampaignDate(199, 1, 1),
+                    [],
+                    [],
+                    [],
+                    [],
+                    [],
+                    new StructuredCharacterName(nameKey, null),
+                    new CharacterContentOrigin(
+                        CharacterOriginKind.Generated,
+                        CharacterHistoricalClassification.Fictional,
+                        new EntityId("character_record:fixture/schema-18-existing"),
+                        null,
+                        [],
+                        []),
+                    null,
+                    null,
+                    [])).ToArray(),
+            CharacterStates = historical.Characters.CharacterStates.Append(
+                new CharacterState(
+                    CharacterContractVersions.State,
+                    childId,
+                    parentLinks.Select(link => link.ParentCharacterId).Order().ToArray(),
+                    parentLinks.OrderBy(link => link.ParentCharacterId).ToArray(),
+                    CharacterConditionState.Default)).ToArray(),
+            FamilyDefinitions = historical.Characters.FamilyDefinitions.Append(
+                new FamilyDefinition(
+                    CharacterContractVersions.Definition,
+                    familyId,
+                    new EntityId("loc:fixture/schema_18_family"))).ToArray(),
+            FamilyStates = historical.Characters.FamilyStates.Append(
+                new FamilyState(
+                    CharacterContractVersions.State,
+                    familyId,
+                    new[] { firstParent, childId }.Order().ToArray())).ToArray(),
+            HouseholdStates = historical.Characters.HouseholdStates.Select(state =>
+                state.HouseholdId == householdId
+                    ? state with
+                    {
+                        MemberIds = state.MemberIds.Append(childId).Order().ToArray(),
+                    }
+                    : state).ToArray(),
+        };
+        historical = historical with { Characters = characters.Canonicalize() };
+        compatible["snapshot"] = JsonSerializer.SerializeToNode(
+            historical,
+            SimulationJson.CreateOptions());
+        compatible["checksum"] = SimulationChecksum.ComputeForSaveSchema(
+            historical,
+            18).Value;
+        string path = Path.Combine(directory, "schema-eighteen-generated-child.save.gz");
+        WriteJsonGzip(path, compatible);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        SaveEnvelope migrated = new SaveStore().Load(path);
+        WorldState restored = WorldState.Restore(migrated.Snapshot);
+
+        Assert.True(restored.Characters.TryGetCharacterProfile(
+            childId,
+            out AuthoritativeCharacterProfile? child));
+        Assert.Equal(CharacterOriginKind.Generated, child.ContentOrigin.OriginKind);
+        Assert.Equal(CharacterHistoricalClassification.Fictional, child.ContentOrigin.HistoricalClassification);
+        Assert.Equal(familyId, child.FamilyId);
+        Assert.Equal(householdId, child.HouseholdId);
+        Assert.Equal(
+            parentLinks.OrderBy(link => link.ParentCharacterId),
+            child.ParentLinks);
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
     [Theory]
     [InlineData("pending-command")]
     [InlineData("diagnostic-command")]
@@ -3135,6 +3433,7 @@ public sealed class SaveStoreTests : IDisposable
     [InlineData(15)]
     [InlineData(16)]
     [InlineData(17)]
+    [InlineData(18)]
     public void CorruptedHistoricalSnapshotFailsAuthenticationWithoutOverwritingSource(int schemaVersion)
     {
         JsonObject historical = CreateHistoricalFixture(schemaVersion);
@@ -4339,6 +4638,7 @@ public sealed class SaveStoreTests : IDisposable
         // Schema 15 is generated from the exact accepted SP-04E1 contract at 97b607a.
         // Schema 16 is generated from the exact accepted SP-04E2 contract at 7491da8.
         // Schema 17 is generated from the exact accepted SP-04E3 contract at 59588be.
+        // Schema 18 is generated from the exact accepted SP-04E4 contract at 177346b.
         // Schema 1/2 are synthetic fixtures inferred from the registered migration contracts.
         string fileName = schemaVersion switch
         {
@@ -4359,6 +4659,7 @@ public sealed class SaveStoreTests : IDisposable
             15 => "save-schema-15-history-backed.json",
             16 => "save-schema-16-history-backed.json",
             17 => "save-schema-17-history-backed.json",
+            18 => "save-schema-18-history-backed.json",
             _ => throw new ArgumentOutOfRangeException(nameof(schemaVersion)),
         };
         return schemaVersion == 4

@@ -354,6 +354,7 @@ public sealed class CharacterFamilyCampaignTests
                 typeof(EstablishPrimaryGuardianshipAction),
                 typeof(RegisterActivePregnancyAction),
                 typeof(ReplacePrimaryGuardianshipAction),
+                typeof(ResolvePregnancyBirthAction),
             ],
             typeof(ICharacterFamilyAction).Assembly.GetTypes()
                 .Where(type => typeof(ICharacterFamilyAction).IsAssignableFrom(type)
@@ -364,6 +365,7 @@ public sealed class CharacterFamilyCampaignTests
             [
                 typeof(ActivePregnancyRegisteredOutcome),
                 typeof(LegalAdoptiveParentEstablishedOutcome),
+                typeof(PregnancyBirthResolvedOutcome),
                 typeof(PrimaryGuardianshipEndedOutcome),
                 typeof(PrimaryGuardianshipEstablishedOutcome),
                 typeof(PrimaryGuardianshipReplacedOutcome),

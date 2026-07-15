@@ -37,6 +37,7 @@ public sealed class SaveSchemaRegistry
             new SaveMigrationV15ToV16(),
             new SaveMigrationV16ToV17(),
             new SaveMigrationV17ToV18(),
+            new SaveMigrationV18ToV19(),
         ]).ToArray();
         if (registered.Any(item => item.ToSchemaVersion != item.FromSchemaVersion + 1))
         {
@@ -106,7 +107,7 @@ public sealed class SaveSchemaRegistry
 
     internal static void ValidateHistoricalSourceChecksum(JsonObject source, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 17)
+        if (schemaVersion is < 1 or > 18)
         {
             throw new SaveCompatibilityException($"Save schema {schemaVersion} has no historical checksum contract.");
         }
@@ -171,13 +172,39 @@ public sealed class SaveSchemaRegistry
             schemaVersion,
             "snapshot.systemVersions");
 
-        if (snapshot.ContainsKey("characterPregnancies")
-            || systemVersions.Any(version => IsSystemId(
-                version,
-                CharacterPregnancySystem.SystemId)))
+        if (schemaVersion < 18
+            && (snapshot.ContainsKey("characterPregnancies")
+                || systemVersions.Any(version => IsSystemId(
+                    version,
+                    CharacterPregnancySystem.SystemId))))
         {
             throw new SaveCompatibilityException(
                 $"Schema {schemaVersion} unexpectedly contains schema 18 character-pregnancy data.");
+        }
+
+        if (schemaVersion >= 18)
+        {
+            ValidateCharacterPregnancySnapshotShape(
+                RequireHistoricalObject(
+                    snapshot,
+                    "characterPregnancies",
+                    schemaVersion,
+                    "snapshot.characterPregnancies"),
+                $"Save schema {schemaVersion}");
+            JsonObject[] pregnancySystemVersions = systemVersions
+                .Where(version => IsSystemId(
+                    version,
+                    CharacterPregnancySystem.SystemId))
+                .ToArray();
+            if (pregnancySystemVersions.Length != 1
+                || !IsSystemVersion(
+                    pregnancySystemVersions[0],
+                    CharacterPregnancySystem.SystemId,
+                    CharacterPregnancySystem.Version))
+            {
+                throw new SaveCompatibilityException(
+                    $"Save schema {schemaVersion} requires exactly one '{CharacterPregnancySystem.SystemId}@{CharacterPregnancySystem.Version}' system-version registration.");
+            }
         }
 
         if (schemaVersion < 15
@@ -225,7 +252,7 @@ public sealed class SaveSchemaRegistry
                 $"Schema {schemaVersion} unexpectedly contains schema 10 character-marriage data.");
         }
 
-        if (schemaVersion is >= 10 and <= 17)
+        if (schemaVersion is >= 10 and <= 18)
         {
             ValidateCharacterMarriageSnapshotShape(
                 RequireHistoricalObject(
@@ -318,11 +345,17 @@ public sealed class SaveSchemaRegistry
                 RejectE3Discriminators(diagnosticCommands, "diagnostic commands");
                 RejectE3Discriminators(diagnosticEvents, "diagnostic events");
             }
-            else
+            else if (schemaVersion == 17)
             {
                 RejectE4Discriminators(pendingCommands, "snapshot pending commands");
                 RejectE4Discriminators(diagnosticCommands, "diagnostic commands");
                 RejectE4Discriminators(diagnosticEvents, "diagnostic events");
+            }
+            else
+            {
+                RejectE5Discriminators(pendingCommands, "snapshot pending commands");
+                RejectE5Discriminators(diagnosticCommands, "diagnostic commands");
+                RejectE5Discriminators(diagnosticEvents, "diagnostic events");
             }
         }
 
@@ -1836,6 +1869,15 @@ public sealed class SaveSchemaRegistry
         }
     }
 
+    private static void RejectE5Discriminators(JsonNode node, string description)
+    {
+        if (ContainsE5Discriminator(node) || ContainsE5Property(node))
+        {
+            throw new SaveCompatibilityException(
+                $"Save schema 18 unexpectedly contains schema 19 pregnancy-birth data in {description}.");
+        }
+    }
+
     private static bool ContainsD1Discriminator(JsonNode? node)
     {
         if (node is JsonObject value)
@@ -2102,6 +2144,46 @@ public sealed class SaveSchemaRegistry
         }
 
         return node is JsonArray array && array.Any(ContainsE4Property);
+    }
+
+    private static bool ContainsE5Discriminator(JsonNode? node)
+    {
+        if (node is JsonObject value)
+        {
+            if (value["$type"] is JsonValue discriminator
+                && discriminator.TryGetValue(out string? type)
+                && type is "resolve_pregnancy_birth.v1"
+                    or "pregnancy_birth_resolved.v1")
+            {
+                return true;
+            }
+
+            return value.Any(property => ContainsE5Discriminator(property.Value));
+        }
+
+        return node is JsonArray array && array.Any(ContainsE5Discriminator);
+    }
+
+    private static bool ContainsE5Property(JsonNode? node)
+    {
+        if (node is JsonObject value)
+        {
+            if (value.ContainsKey("expectedPregnancyId")
+                || value.ContainsKey("newborn")
+                || value.ContainsKey("birth")
+                || value.ContainsKey("birthId")
+                || value.ContainsKey("resolvedPregnancy")
+                || value.ContainsKey("childDefinition")
+                || value.ContainsKey("childState")
+                || value.ContainsKey("inheritedTraitIds"))
+            {
+                return true;
+            }
+
+            return value.Any(property => ContainsE5Property(property.Value));
+        }
+
+        return node is JsonArray array && array.Any(ContainsE5Property);
     }
 
     private static bool ContainsPostD2RelationshipSourceKind(JsonNode? node)
@@ -2913,6 +2995,30 @@ public sealed class SaveMigrationV17ToV18 : ISaveMigration
         WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(
             SimulationJson.CreateOptions())
             ?? throw new SaveCompatibilityException("Migrated schema 18 snapshot is empty.");
+        source["checksum"] = SimulationChecksum.Compute(migratedSnapshot).Value;
+        source["schemaVersion"] = ToSchemaVersion;
+        return source;
+    }
+}
+
+public sealed class SaveMigrationV18ToV19 : ISaveMigration
+{
+    public int FromSchemaVersion => 18;
+
+    public int ToSchemaVersion => 19;
+
+    public JsonObject Migrate(JsonObject source)
+    {
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(source, FromSchemaVersion);
+        if (source["snapshot"] is not JsonObject snapshot)
+        {
+            throw new SaveCompatibilityException(
+                "Schema 18 save is missing authoritative snapshot data.");
+        }
+
+        WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(
+            SimulationJson.CreateOptions())
+            ?? throw new SaveCompatibilityException("Migrated schema 19 snapshot is empty.");
         source["checksum"] = SimulationChecksum.Compute(migratedSnapshot).Value;
         source["schemaVersion"] = ToSchemaVersion;
         return source;

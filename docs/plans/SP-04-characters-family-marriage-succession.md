@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — through SP-04E4 exact-SHA hosted; later packages pending |
+| Status | Active — through SP-04E4 exact-SHA hosted; SP-04E5 implemented locally, hosted evidence pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -669,6 +669,53 @@ Local Release verification on 2026-07-16 passes `./scripts/validate.sh`, a zero-
 Independent review found and remediated incomplete both-submission-order race coverage, imprecise event-ID-only winner wording, missing apply-time identity/affected-ID rollback variants, incomplete resolved-gzip evidence, a missing positive union lookup, and incomplete isolated schema-17 property probes. Architecture re-review also tightened schema-18 restore to reject ended source unions and either currently dead parent until a future lifecycle package defines atomic pregnancy handling. Final architecture and verification review report no remaining correctness, compatibility, or package-boundary blocker.
 
 E4 has no content-authoring boundary and changes no `Game.Content`, `Game.Application`, presentation, or platform project. Accepted revision `177346b7358e84da358f3bfac8057b6ea70ed412` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04E4-EXACT-SHA-177346b.md). E415 therefore passes at that revision. Full SP-04 acceptance, its three-second campaign-turn budget, and later birth/education/death/inheritance/succession packages remain open.
+
+## Implemented package: SP-04E5 deterministic pregnancy birth resolution
+
+SP-04E5 is the smallest dependency-safe package after accepted E4. Character-v2 already represents runtime-generated identity, fictional provenance, biological parent links, traits, and family/household membership, while E4 supplies an exact active pregnancy, two explicit biological parents, an active source union, and a due date. Education still needs mutable acquired-identity architecture, and public death must reconcile pregnancy, guardianship, career/retinue, resources, estates, and later succession. No locked decision is changed and no ADR is required.
+
+The reserved-system Commands-phase `resolve_pregnancy_birth.v1` action resolves exactly one due or overdue active pregnancy. The authoritative caller supplies a versioned `GeneratedNewbornSpecification` containing a `loc:` primary-name key and explicit parental choices for culture, family, household, and up to eight inherited traits. It does not generate a name, choose an inheritance law, consume randomness, or schedule itself. Resolution revalidates the exact pregnancy, both living parents, the exact active source union, current parental placement, canonical parental trait subset, stable child/birth identities, and collision freedom.
+
+Birth preparation creates two independent immutable candidates: removal of the active pregnancy and insertion of one generated child. Apply reconstructs both candidates and compares the exact action, outcome, child definition/state, causal/event identities, phase, and affected IDs before either subsystem is replaced. Same-pregnancy races choose one winner by priority then derived family-event ID and cancel the stale loser. Independent births commute even when they append to the same family and household. Failed, early, stale, replayed, collision, placement, trait, payload, identity, or affected-ID attempts preserve both snapshots and every random stream.
+
+The child ID derives only from the pregnancy, while the birth record derives from the successful source event plus pregnancy. The child retains the pregnancy's expected birth date even when registration is overdue; the later resolution date is separate evidence. Its structured primary name equals the caller's `loc:` key and has no courtesy name. Provenance is exactly `Generated/Fictional` with `RecordId == BirthId`, no owning pack, overrides, or sources. Abilities, aptitudes, ambitions, reputations, and flaws are empty; origin location is null; condition is the default living state. The state has exactly two canonical biological parent links, and existing parent queries expose reciprocal child links. Selected family, household, and culture must independently equal one current non-null parent value; if neither parent has a value, the selection must be null.
+
+Save schema 19 is vocabulary-only. It retains character-v2 and pregnancy-v1 snapshots and system versions, authenticates schema 18 before migration, preserves the complete snapshot, diagnostics, manifests, and source bytes, and recomputes only the schema-19 checksum boundary. Schema 18 rejects the E5 nested action/outcome discriminators and every E5-only property including explicit null, while continuing to accept pre-E5 generated characters, biological links, and family/household memberships. The frozen 74,121-byte schema-18 fixture was generated by a detached harness compiled against exact accepted E4 implementation source `177346b7358e84da358f3bfac8057b6ea70ed412`. It contains active pregnancy state, one pending and one resolved E4 family action, and rich retained E0–E3 history. Its stored checksum is `7f0feb49415b8d0074d447381340aea0c09200964f55104034db60c04f70d49e`, and file SHA-256 is `b27ccfdc51704721055161d6e57738e40030ff67d96f928e61bcbf5ed93c9453`.
+
+E5 changes no authored content, published schema, localization catalog, application, presentation, or platform project. Runtime `CharacterOriginKind.Generated` remains deliberately rejected by the authored character schema. A `loc:` namespace check prevents raw player-facing text, but Core has no content registry and therefore does not prove that an authoritative runtime key resolves in Korean and English. E5 makes no player-renderability claim; a later presentation or name-generation package must provide that bilingual catalog evidence.
+
+### SP-04E5 verification matrix
+
+| ID | Observable package criterion | Required evidence | Closeout classification |
+|---|---|---|---|
+| E501 | Exact E4 is accepted and birth is smaller than education or public death | Source-of-truth and architecture review | Local pass |
+| E502 | Newborn specification, birth change, action, outcome, discriminators, and stable IDs are explicit | Contract reflection, JSON, defensive-copy, and golden-ID tests | Local pass |
+| E503 | Only the exact due or overdue active pregnancy resolves; early and missing records fail | Domain and campaign boundary tests | Local pass |
+| E504 | Child and birth IDs are stable, collision-checked, and retry-safe | Golden, collision, and replay tests | Local pass |
+| E505 | The child has localization-key identity, generated provenance, expected birth date, and default condition | Exact child-definition/state tests | Local pass |
+| E506 | The child receives exactly two biological links and both parents expose reciprocal child links | State and authoritative-query tests | Local pass |
+| E507 | Family, household, and culture choices derive independently from current parent values | Full null/same/different parental selection matrix | Local pass |
+| E508 | Inherited traits are canonical, bounded, and parental while abilities and aptitudes remain empty | Trait boundary and exact-definition tests | Local pass |
+| E509 | Pregnancy removal and child/family/household insertion are atomic | Two-candidate replan and rollback tests | Local pass |
+| E510 | Same-pregnancy races choose one deterministic winner in both command-ID assignments | Campaign race tests | Local pass |
+| E511 | Independent births commute under shuffled input and shared-family/household insertion | Shuffle and checksum tests | Local pass |
+| E512 | Same-day ordering replans placement against current parent memberships | Candidate revalidation and stale-placement tests | Local pass |
+| E513 | Replay, payload/affected-ID tampering, collision, and invalid state roll back completely | Exact apply and rollback tests | Local pass |
+| E514 | Every unrelated subsystem and random stream remains unchanged | Complete subsystem comparisons | Local pass |
+| E515 | Schema-19 pending/resolved birth, child state, diagnostics, checksum, JSON, and gzip round-trip | Save/load/replay tests | Local pass |
+| E516 | Exact-E4 schema 18 authenticates, migrates unchanged, and rejects E5 vocabulary/property injection | Frozen fixture, isolated explicit-null probes, and source-byte tests | Local pass |
+| E517 | Existing schema-18 generated children remain compatible and overdue pregnancies remain resolvable | Legacy generated-child and overdue-birth tests | Local pass |
+| E518 | An 800-adult/200-birth workload records workflow/checksum/JSON/gzip measurements | Raw local measurement | Local pass; no threshold |
+| E519 | Repository gates, independent review, and exact-SHA hosted macOS arm64/Windows x64 evidence pass | Local gates, review, hosted CI/artifacts | Local gates/review pass; hosted evidence pending |
+| E520 | No automatic naming/scheduling, education, public death, inheritance, content, UI, or AI enters E5 | Diff, content-boundary, and dependency review | Local pass |
+
+The representative local Release fixture contains 800 adults and resolves 200 births into one shared family and household. A raw Apple Silicon run measured 2,954.133 ms for submission and resolution plus 111.328 ms for snapshot checksum, serialized to 1,319,350 JSON bytes and 76,312 gzip bytes, and produced checksum `52d69a1db8cf1d373872aee9200945b157125a2d03393a73543e1ab1e61ae354`. The test asserts shape, completion, and determinism without a wall-clock threshold. This package observation does not establish the full SP-04 three-second campaign-turn budget.
+
+Final local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 712 Simulation.Core, 71 Game.Content, 6 Game.Application, and 18 repository tests. `git diff --check` and `git lfs fsck` pass.
+
+Independent review's first pass identified incomplete same-day stale-placement, causal/event-identity rollback, schema-18 corruption, migrated-overdue-resolution, and race cross-product evidence. The final tree adds an earlier-priority household expulsion that cancels stale placement without removing the pregnancy, forged causal/event rollback variants, schema-18 corruption/source-byte coverage, public-path resolution of a migrated overdue pregnancy, and the full two-payload-assignment by two-submission-order race matrix. The final reviewer slice passes 39/39 birth/schema-18 tests, the full 712-test Core suite passes independently, and no correctness, compatibility, documentation, or package-boundary blocker remains.
+
+E5 remains locally implemented rather than accepted until the committed exact SHA passes hosted macOS arm64 and Windows x64 evidence. Full SP-04 acceptance, education, public death, inheritance, succession, and the overall performance gate remain open.
 
 ## Edge cases and failure handling
 
