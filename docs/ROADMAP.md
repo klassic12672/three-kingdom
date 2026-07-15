@@ -66,9 +66,9 @@ Before M4, estimates are internal ranges only. After M4, record measured velocit
 
 1. Preserve the completed SP-03 functional-map baseline established by the accepted Later Han Apple Silicon [working-tree presentation evidence](evidence/SP-03-later-han-map-working-tree-2026-07-13/README.md) and exact-SHA [hosted macOS/Windows evidence](evidence/SP-03-EXACT-SHA-f91dfce.md).
 2. Keep detailed cartographic refinement deferred to pre–Early Access work.
-3. Preserve the locally implemented and verified SP-04A foundations for save integrity/recovery, typed-content validation/schema coverage, authoritative query naming, and evidence traceability.
-4. Complete the separately authorized process to create the accepted SP-04A revision and obtain exact-SHA hosted macOS/Windows evidence for it; only then plan the next independently verifiable SP-04 package for bounded relationship dimensions and consequential memories, including registered mutation commands/events and bounded-history evidence.
+3. Preserve the accepted SP-04A foundations for save integrity/recovery, typed-content validation/schema coverage, authoritative query naming, and evidence traceability at exact revision `eaa3aaf3a0687a231d2a3441e5be4954e905e9ea`, supported by the [passing hosted macOS arm64/Windows x64 report](evidence/SP-04A-EXACT-SHA-eaa3aaf.md).
+4. Keep the next independently verifiable SP-04 package unstarted until separately authorized; its boundary is bounded relationship dimensions and consequential memories, including registered mutation commands/events and bounded-history evidence.
 
-M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A is locally verified, while exact-SHA hosted macOS/Windows evidence for an accepted revision and all later SP-04 packages remain pending.
+M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A is locally verified and has passing exact-SHA hosted macOS arm64/Windows x64 evidence at `eaa3aaf3a0687a231d2a3441e5be4954e905e9ea`; all later SP-04 packages remain pending.
 
 See the [subsystem plan index](plans/README.md) for dependency status.
