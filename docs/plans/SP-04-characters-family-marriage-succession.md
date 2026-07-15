@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — SP-04F0 local candidate; through SP-04E6 exact-SHA hosted; F0 hosted and later packages pending |
+| Status | Active — through SP-04F0 exact-SHA hosted; later packages pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -766,7 +766,7 @@ Local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot
 
 Accepted revision `0928e4484ef41da5ac31f5683af5347800a92dec` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04E6-EXACT-SHA-0928e44.md). E619 therefore passes at that revision. Full SP-04 acceptance, public death, inheritance, succession, and the overall performance gate remain open.
 
-## Local candidate: SP-04F0 restricted public-death lifecycle foundation
+## Accepted package: SP-04F0 restricted public-death lifecycle foundation
 
 SP-04F0 is the smallest safe dependency-ordered package after accepted E6. Inheritance cannot lead because C2/C3 intentionally preserve dead-owned wealth and estates but expose neither an authoritative death trigger nor an heir selector, transfer mutator, or overflow policy. F0 therefore adds one reserved-system Commands-phase `resolve_character_death.v1` action and `character_death_resolved.v1` outcome under the existing `character_condition_action.v1` / `character_condition_action_resolved.v1` envelopes. The action names one born living target and its exact expected current condition. Success derives one stable `character_death:` identity and changes the target to the sole canonical dead condition: `Dead`, `Critical`, incapacitated, free, and without a custodian.
 
@@ -806,12 +806,14 @@ F0 does not add career death closure, retinue dissolution/transfer, household-he
 | F020 | No random stream advances and all enumerated non-goals remain outside F0 | Complete snapshot and dependency review | Local pass |
 | F021 | A representative 1,000-character/200-death workload records raw workflow/query/checksum/JSON/gzip measurements without a brittle threshold | Local Apple Silicon measurement | Local pass; no threshold |
 | F022 | Focused suites, repository gates, diff/LFS checks, and independent reviews find no blocker | Local gates and read-only reviews | Local pass |
-| F023 | The accepted exact SHA passes hosted macOS arm64 and Windows x64 | Clean-checkout hosted CI and artifact evidence | Pending |
+| F023 | The accepted exact SHA passes hosted macOS arm64 and Windows x64 | Clean-checkout hosted CI and artifact evidence | Hosted pass at `783ccfb` |
 | F024 | Full SP-04 acceptance, succession continuity, and the three-second budget remain unchecked | Status and non-goal review | Local pass |
 
 The representative local Release fixture contains 1,000 characters and resolves 200 independent restricted deaths. A raw Apple Silicon run measured 3,260.128 ms for submission/resolution, 0.426 ms for the complete dead-profile query, and 105.547 ms for snapshot/checksum; snapshot JSON was 851,856 bytes, gzip was 17,161 bytes, and checksum was `7596072b833a0a56dae1771ccd7d6c437c23c11937351f1566ff4c8418c13f0f`. The test asserts shape and correctness, not a wall-clock threshold. This deliberately dense component workload does not establish or waive the full SP-04 three-second campaign-turn budget.
 
-Local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 797 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. The 39/39 F0-focused slice includes public pending/replay deaths on days two, three, and four of a campaign turn; action-specific authority, phase, missing-target, and already-dead rejection; and nonempty parentage, education, family, non-head household, completed-career, recommendation, and folded-history preservation. Independent architecture, schema/content, and verification reviews found no remaining blocker; verification separately reran 39/39 F0 tests and 537/537 neighboring lifecycle/save tests. The first full repository run exposed and corrected two historical-test assumptions: E6's current-save test hardcoded schema 20, and D3's preview test asserted that no later public death action existed. The corrected tests retain their original E6 round-trip and D3 non-mutating-preview evidence. `git diff --check`, `git lfs fsck`, and focused format verification pass. The implementation commit, hosted exact-SHA evidence, and F0 acceptance remain pending.
+Local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 797 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. The 39/39 F0-focused slice includes public pending/replay deaths on days two, three, and four of a campaign turn; action-specific authority, phase, missing-target, and already-dead rejection; and nonempty parentage, education, family, non-head household, completed-career, recommendation, and folded-history preservation. Independent architecture, schema/content, and verification reviews found no remaining blocker; verification separately reran 39/39 F0 tests and 537/537 neighboring lifecycle/save tests. The first full repository run exposed and corrected two historical-test assumptions: E6's current-save test hardcoded schema 20, and D3's preview test asserted that no later public death action existed. The corrected tests retain their original E6 round-trip and D3 non-mutating-preview evidence. `git diff --check`, `git lfs fsck`, and focused format verification pass.
+
+Accepted revision `783ccfb61357248158cf287ee69ba27b56c38f4a` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04F0-EXACT-SHA-783ccfb.md). F023 therefore passes at that revision. Full SP-04 acceptance, inheritance, succession continuity, and the overall performance gate remain open.
 
 ## Edge cases and failure handling
 
