@@ -214,6 +214,174 @@ public sealed class CharacterGuardianshipWorldState
                     candidateCalendar)));
     }
 
+    internal CharacterGuardianshipTerminationPlan PrepareTermination(
+        EndPrimaryGuardianshipAction action,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (action is null)
+        {
+            throw new SimulationValidationException(
+                "Primary-guardianship termination action cannot be null.");
+        }
+
+        ValidateResolutionCoordinates(
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId,
+            "termination");
+        CharacterGuardianshipState active = RequireExpectedActiveGuardianship(
+            action.WardCharacterId,
+            action.ExpectedCurrentPrimaryGuardianshipId);
+        switch (action.EndReason)
+        {
+            case CharacterGuardianshipEndReason.Revoked:
+                break;
+            case CharacterGuardianshipEndReason.GuardianUnavailable:
+                AuthoritativeCharacterProfile guardian = RequireCurrentCharacter(
+                    active.GuardianCharacterId,
+                    resolutionDate,
+                    "Primary guardian");
+                if (IsEligibleGuardianCondition(guardian.Condition))
+                {
+                    throw new SimulationValidationException(
+                        $"Primary guardian '{guardian.CharacterId}' is not unavailable.");
+                }
+
+                break;
+            default:
+                throw new SimulationValidationException(
+                    $"Primary guardianship cannot be ended explicitly for reason '{action.EndReason}'.");
+        }
+
+        CharacterGuardianshipState ended = EndGuardianship(
+            active,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId,
+            action.EndReason);
+        return new CharacterGuardianshipTerminationPlan(
+            Clone(ended),
+            CreateUpdatePlan(
+                ReplaceGuardianship(active.GuardianshipId, ended),
+                resolutionDate,
+                authoritativeTurnIndex));
+    }
+
+    internal CharacterGuardianshipReplacementPlan PrepareReplacement(
+        ReplacePrimaryGuardianshipAction action,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (action is null)
+        {
+            throw new SimulationValidationException(
+                "Primary-guardianship replacement action cannot be null.");
+        }
+
+        ValidateResolutionCoordinates(
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId,
+            "replacement");
+        CharacterGuardianshipState active = RequireExpectedActiveGuardianship(
+            action.WardCharacterId,
+            action.ExpectedCurrentPrimaryGuardianshipId);
+        if (action.ReplacementGuardianCharacterId == action.WardCharacterId)
+        {
+            throw new SimulationValidationException(
+                "A character cannot be their own replacement primary guardian.");
+        }
+
+        if (action.ReplacementGuardianCharacterId == active.GuardianCharacterId)
+        {
+            throw new SimulationValidationException(
+                "A replacement primary guardian must differ from the current primary guardian.");
+        }
+
+        AuthoritativeCharacterProfile replacementGuardian = RequireCurrentCharacter(
+            action.ReplacementGuardianCharacterId,
+            resolutionDate,
+            "Replacement primary guardian");
+        AuthoritativeCharacterProfile ward = RequireCurrentCharacter(
+            action.WardCharacterId,
+            resolutionDate,
+            "Primary-guardianship ward");
+        if (!IsEligibleGuardianCondition(replacementGuardian.Condition))
+        {
+            throw new SimulationValidationException(
+                $"Replacement primary guardian '{replacementGuardian.CharacterId}' must be living, capable, and free.");
+        }
+
+        if (CalculateAge(replacementGuardian.BirthDate, resolutionDate) < AdultAge
+            || replacementGuardian.BirthDate.CompareTo(ward.BirthDate) >= 0)
+        {
+            throw new SimulationValidationException(
+                $"Replacement primary guardian '{replacementGuardian.CharacterId}' must be at least 18 and born before ward '{ward.CharacterId}'.");
+        }
+
+        if (ward.Condition.VitalStatus != CharacterVitalStatus.Alive
+            || CalculateAge(ward.BirthDate, resolutionDate) >= AdultAge)
+        {
+            throw new SimulationValidationException(
+                $"Primary-guardianship ward '{ward.CharacterId}' must be living and under 18.");
+        }
+
+        EnforceRetainedCapacity(ward.CharacterId, "ward");
+        EnforceRetainedCapacity(replacementGuardian.CharacterId, "replacement guardian");
+        EntityId replacementId = CharacterGuardianshipIds.DeriveGuardianshipId(
+            eventId,
+            ward.CharacterId,
+            replacementGuardian.CharacterId);
+        if (guardianships.ContainsKey(replacementId))
+        {
+            throw new SimulationValidationException(
+                $"Replacement guardianship '{replacementId}' already exists.");
+        }
+
+        CharacterGuardianshipState ended = EndGuardianship(
+            active,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId,
+            CharacterGuardianshipEndReason.Replaced);
+        CharacterGuardianshipState replacement = new(
+            CharacterGuardianshipContractVersions.State,
+            replacementId,
+            ward.CharacterId,
+            replacementGuardian.CharacterId,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId,
+            CharacterGuardianshipStatus.Active,
+            null,
+            null,
+            null,
+            null,
+            null);
+        IReadOnlyList<CharacterGuardianshipState> updated =
+        [
+            .. ReplaceGuardianship(active.GuardianshipId, ended),
+            Clone(replacement),
+        ];
+        return new CharacterGuardianshipReplacementPlan(
+            Clone(ended),
+            Clone(replacement),
+            CreateUpdatePlan(
+                updated,
+                resolutionDate,
+                authoritativeTurnIndex));
+    }
+
     internal void ApplyPrepared(CharacterGuardianshipWorldUpdatePlan plan)
     {
         if (plan?.Candidate is null)
@@ -224,6 +392,95 @@ public sealed class CharacterGuardianshipWorldState
 
         ReplaceFrom(plan.Candidate);
     }
+
+    private void ValidateResolutionCoordinates(
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId,
+        string operation)
+    {
+        if (!resolutionDate.IsValid
+            || resolutionDate.CompareTo(calendar.Date) < 0
+            || authoritativeTurnIndex < calendar.TurnIndex)
+        {
+            throw new SimulationValidationException(
+                $"Primary-guardianship {operation} date or turn is invalid.");
+        }
+
+        if (!commandId.IsValid
+            || eventId != CharacterFamilyIds.DeriveActionEventId(
+                resolutionDate,
+                commandId))
+        {
+            throw new SimulationValidationException(
+                $"Primary-guardianship {operation} command or family-event identity is invalid.");
+        }
+    }
+
+    private CharacterGuardianshipState RequireExpectedActiveGuardianship(
+        EntityId wardCharacterId,
+        EntityId expectedCurrentPrimaryGuardianshipId)
+    {
+        if (!activeGuardianshipByWard.TryGetValue(
+                wardCharacterId,
+                out EntityId currentId)
+            || currentId != expectedCurrentPrimaryGuardianshipId)
+        {
+            throw new SimulationValidationException(
+                $"Primary-guardianship expected-current ID is stale for ward '{wardCharacterId}'.");
+        }
+
+        return guardianships[currentId];
+    }
+
+    private CharacterGuardianshipWorldUpdatePlan CreateUpdatePlan(
+        IReadOnlyList<CharacterGuardianshipState> updated,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex)
+    {
+        CampaignCalendar candidateCalendar = new(
+            resolutionDate.CompareTo(calendar.Date) > 0
+                ? resolutionDate
+                : calendar.Date,
+            Math.Max(calendar.TurnIndex, authoritativeTurnIndex));
+        return new CharacterGuardianshipWorldUpdatePlan(
+            new CharacterGuardianshipWorldState(
+                new CharacterGuardianshipWorldSnapshot(
+                    CharacterGuardianshipContractVersions.Snapshot,
+                    updated),
+                characters,
+                candidateCalendar));
+    }
+
+    private IReadOnlyList<CharacterGuardianshipState> ReplaceGuardianship(
+        EntityId guardianshipId,
+        CharacterGuardianshipState replacement) => guardianships.Values
+        .Select(item => item.GuardianshipId == guardianshipId
+            ? Clone(replacement)
+            : Clone(item))
+        .ToArray();
+
+    private static CharacterGuardianshipState EndGuardianship(
+        CharacterGuardianshipState active,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId,
+        CharacterGuardianshipEndReason endReason) => active with
+        {
+            Status = CharacterGuardianshipStatus.Ended,
+            EndDate = resolutionDate,
+            EndTurnIndex = authoritativeTurnIndex,
+            EndSourceCommandId = commandId,
+            EndSourceEventId = eventId,
+            EndReason = endReason,
+        };
+
+    private static bool IsEligibleGuardianCondition(CharacterConditionState condition) =>
+        condition.VitalStatus == CharacterVitalStatus.Alive
+        && !condition.IsIncapacitated
+        && condition.CustodyStatus == CharacterCustodyStatus.Free;
 
     private static void ValidateSnapshotShape(CharacterGuardianshipWorldSnapshot snapshot)
     {
@@ -499,4 +756,13 @@ internal sealed record CharacterGuardianshipWorldUpdatePlan(
 
 internal sealed record CharacterGuardianshipEstablishmentPlan(
     CharacterGuardianshipState Guardianship,
+    CharacterGuardianshipWorldUpdatePlan GuardianshipPlan);
+
+internal sealed record CharacterGuardianshipTerminationPlan(
+    CharacterGuardianshipState EndedGuardianship,
+    CharacterGuardianshipWorldUpdatePlan GuardianshipPlan);
+
+internal sealed record CharacterGuardianshipReplacementPlan(
+    CharacterGuardianshipState EndedGuardianship,
+    CharacterGuardianshipState ReplacementGuardianship,
     CharacterGuardianshipWorldUpdatePlan GuardianshipPlan);

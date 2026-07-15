@@ -26,6 +26,8 @@ public sealed class SaveStoreTests : IDisposable
     private const string FrozenSchemaThirteenFileSha256 = "f54e0bb16eb827b2b739384a27325dd0a279cd43f18d612085c247fd3aa1fca5";
     private const string FrozenSchemaFourteenChecksum = "8cb144a3b14600bd9916b03cca20644ed69161614d2b6665cdf78fdeadad2b65";
     private const string FrozenSchemaFourteenFileSha256 = "381c774072a549090dd275f3fefa1bb7a3953a0a74eb3852eeb8323ad0b8f01e";
+    private const string FrozenSchemaFifteenChecksum = "ed398b879de95b9065bffb367fb3a7b830c40d6a8e1f29d3a0a64ffb414e5b86";
+    private const string FrozenSchemaFifteenFileSha256 = "51a6ecf8e0556af35cbe4010645925d50bc965ca4a2d07ea05c8c9c486538fc3";
     // Reconstructed literally from the exact schema-4 serializer contract at eaa3aaf.
     // Unlike the inferred schema-1/2 fixtures, this contains nonempty character history.
     private const string FrozenSchemaFourFixture = """{"schemaVersion":4,"contractVersion":2,"gameVersion":"0.1.0","createdUtc":"2026-07-15T00:00:00+00:00","contentManifests":[{"packId":{"value":"base:synthetic"},"version":"1.0.0","checksum":"sha256:abc","requiredForSimulation":true}],"seed":99,"snapshot":{"contractVersion":1,"calendar":{"date":{"year":191,"month":7,"day":14},"turnIndex":0,"daysInCurrentTurn":3},"rootSeed":99,"randomStreams":[],"entities":[],"pendingCommands":[],"systemVersions":[{"systemId":"simulation.calendar","version":1},{"systemId":"simulation.synthetic_entities","version":1},{"systemId":"simulation.command_events","version":1},{"systemId":"simulation.geography","version":1},{"systemId":"simulation.characters","version":1}],"lastEventDate":null,"lastEventPhase":null,"lastEventPriority":null,"lastEventId":null,"geography":{"graph":{"regions":[],"districts":[],"localities":[],"stops":[],"routes":[]},"season":0,"weather":0,"locations":[],"routes":[],"armies":[]},"characters":{"contractVersion":1,"identityDefinitions":[{"contractVersion":1,"id":{"value":"ability:synthetic/command"},"kind":0,"nameKey":{"value":"loc:ability/synthetic_command"}}],"characterDefinitions":[{"contractVersion":1,"id":{"value":"character:synthetic/adult"},"nameKey":{"value":"loc:character/synthetic_adult"},"birthDate":{"year":160,"month":1,"day":1},"abilityIds":[{"value":"ability:synthetic/command"}],"aptitudeIds":[],"traitIds":[],"ambitionIds":[],"reputationIds":[]}],"familyDefinitions":[],"householdDefinitions":[],"characterStates":[{"contractVersion":1,"characterId":{"value":"character:synthetic/adult"},"parentIds":[]}],"familyStates":[],"householdStates":[]}},"diagnosticCommands":[],"diagnosticEvents":[],"checksum":"48b94dad9d4dda78591243341afa16ece40e0ed157368f84c1189641684ecd3e"}""";
@@ -2147,6 +2149,141 @@ public sealed class SaveStoreTests : IDisposable
         Assert.Equal(sourceBytes, File.ReadAllBytes(path));
     }
 
+    [Fact]
+    public void SchemaFifteen_AuthenticatesExactE1FixtureAndMigratesVocabularyWithoutChangingSource()
+    {
+        JsonObject frozen = CreateHistoricalFixture(15);
+        Assert.Equal(FrozenSchemaFifteenChecksum, frozen["checksum"]!.GetValue<string>());
+        string fixturePath = Path.Combine(
+            AppContext.BaseDirectory,
+            "Fixtures",
+            "save-schema-15-history-backed.json");
+        byte[] fixtureBytes = File.ReadAllBytes(fixturePath);
+        Assert.Equal(61_267, fixtureBytes.Length);
+        Assert.Equal(
+            FrozenSchemaFifteenFileSha256,
+            Convert.ToHexStringLower(SHA256.HashData(fixtureBytes)));
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(frozen, 15);
+        JsonObject original = (JsonObject)frozen.DeepClone();
+        string historicalSnapshot = JsonSerializer.Serialize(
+            frozen["snapshot"],
+            CanonicalJson.Options);
+        string historicalCommands = JsonSerializer.Serialize(
+            frozen["diagnosticCommands"],
+            CanonicalJson.Options);
+        string historicalEvents = JsonSerializer.Serialize(
+            frozen["diagnosticEvents"],
+            CanonicalJson.Options);
+        string path = Path.Combine(directory, "schema-fifteen-history-backed.save.gz");
+        WriteFrozenHistoricalFixture(path, 15);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        SaveEnvelope migrated = new SaveStore().Load(path);
+
+        Assert.Equal(SaveEnvelope.CurrentSchemaVersion, migrated.SchemaVersion);
+        Assert.Equal(
+            historicalSnapshot,
+            JsonSerializer.Serialize(migrated.Snapshot, CanonicalJson.Options));
+        Assert.Equal(
+            historicalCommands,
+            JsonSerializer.Serialize(migrated.DiagnosticCommands, CanonicalJson.Options));
+        Assert.Equal(
+            historicalEvents,
+            JsonSerializer.Serialize(migrated.DiagnosticEvents, CanonicalJson.Options));
+        Assert.Contains(
+            migrated.Snapshot.PendingCommands,
+            command => command.Payload is CharacterFamilyActionCommandPayload
+            {
+                Action: EstablishPrimaryGuardianshipAction,
+            });
+        Assert.Contains(
+            migrated.DiagnosticEvents,
+            campaignEvent => campaignEvent.Payload
+                is CharacterFamilyActionResolvedEventPayload
+            {
+                Outcome: PrimaryGuardianshipEstablishedOutcome,
+            });
+        Assert.Contains(
+            migrated.Snapshot.CharacterGuardianships.Guardianships,
+            guardianship => guardianship.Status == CharacterGuardianshipStatus.Active);
+        Assert.Contains(
+            migrated.Snapshot.CharacterGuardianships.Guardianships,
+            guardianship => guardianship.Status == CharacterGuardianshipStatus.Ended
+                && guardianship.EndReason == CharacterGuardianshipEndReason.Replaced);
+        Assert.Equal(
+            SimulationChecksum.Compute(migrated.Snapshot).Value,
+            migrated.Checksum);
+        _ = WorldState.Restore(migrated.Snapshot);
+        Assert.Equal(
+            JsonSerializer.Serialize(original, CanonicalJson.Options),
+            JsonSerializer.Serialize(frozen, CanonicalJson.Options));
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Theory]
+    [InlineData("nested-action")]
+    [InlineData("nested-outcome")]
+    [InlineData("nested-replace-action")]
+    [InlineData("nested-replace-outcome")]
+    [InlineData("explicit-null-replacement-guardian")]
+    [InlineData("explicit-null-ended-guardianship")]
+    [InlineData("explicit-null-replacement-guardianship")]
+    [InlineData("explicit-null-end-reason")]
+    public void SchemaFifteen_RejectsE2VocabularyAndPropertiesWithoutChangingSource(
+        string mutation)
+    {
+        JsonObject invalid = CreateHistoricalFixture(15);
+        JsonObject familyCommand = invalid["diagnosticCommands"]!.AsArray()
+            .OfType<JsonObject>()
+            .First(command => command["payload"]?["action"]?["$type"]?.GetValue<string>()
+                == "establish_primary_guardianship.v1");
+        JsonObject familyEvent = invalid["diagnosticEvents"]!.AsArray()
+            .OfType<JsonObject>()
+            .First(campaignEvent => campaignEvent["payload"]?["outcome"]?["$type"]?.GetValue<string>()
+                == "primary_guardianship_established.v1");
+        switch (mutation)
+        {
+            case "nested-action":
+                familyCommand["payload"]!["action"]!["$type"] =
+                    "end_primary_guardianship.v1";
+                break;
+            case "nested-outcome":
+                familyEvent["payload"]!["outcome"]!["$type"] =
+                    "primary_guardianship_ended.v1";
+                break;
+            case "nested-replace-action":
+                familyCommand["payload"]!["action"]!["$type"] =
+                    "replace_primary_guardianship.v1";
+                break;
+            case "nested-replace-outcome":
+                familyEvent["payload"]!["outcome"]!["$type"] =
+                    "primary_guardianship_replaced.v1";
+                break;
+            case "explicit-null-replacement-guardian":
+                familyCommand["payload"]!["action"]![
+                    "replacementGuardianCharacterId"] = null;
+                break;
+            case "explicit-null-ended-guardianship":
+                familyEvent["payload"]!["outcome"]!["endedGuardianship"] = null;
+                break;
+            case "explicit-null-replacement-guardianship":
+                familyEvent["payload"]!["outcome"]!["replacementGuardianship"] = null;
+                break;
+            case "explicit-null-end-reason":
+                familyCommand["payload"]!["action"]!["endReason"] = null;
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(mutation));
+        }
+
+        string path = Path.Combine(directory, $"schema-fifteen-future-{mutation}.save.gz");
+        WriteJsonGzip(path, invalid);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        Assert.Throws<SaveCompatibilityException>(() => new SaveStore().Load(path));
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
     [Theory]
     [InlineData("pending-command")]
     [InlineData("diagnostic-command")]
@@ -3621,6 +3758,7 @@ public sealed class SaveStoreTests : IDisposable
         // Schema 12 is generated from the exact accepted SP-04D2 contract at 62a5007.
         // Schema 13 is generated from the exact accepted SP-04D3 contract at 93d3881.
         // Schema 14 is generated from the exact accepted SP-04E0 contract at 30fd0ad.
+        // Schema 15 is generated from the exact accepted SP-04E1 contract at 97b607a.
         // Schema 1/2 are synthetic fixtures inferred from the registered migration contracts.
         string fileName = schemaVersion switch
         {
@@ -3638,6 +3776,7 @@ public sealed class SaveStoreTests : IDisposable
             12 => "save-schema-12-history-backed.json",
             13 => "save-schema-13-history-backed.json",
             14 => "save-schema-14-history-backed.json",
+            15 => "save-schema-15-history-backed.json",
             _ => throw new ArgumentOutOfRangeException(nameof(schemaVersion)),
         };
         return schemaVersion == 4

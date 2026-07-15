@@ -647,6 +647,45 @@ public sealed class WorldState : IWorldQuery
                         null,
                         guardianship.GuardianshipPlan);
                 }
+            case EndPrimaryGuardianshipAction terminationAction:
+                {
+                    CharacterGuardianshipTerminationPlan termination =
+                        CharacterGuardianships.PrepareTermination(
+                            terminationAction,
+                            resolutionDate,
+                            authoritativeTurnIndex,
+                            commandId,
+                            eventId);
+                    CharacterFamilyActionResolvedEventPayload resolved = new(
+                        actingActorId,
+                        payload.Action,
+                        new PrimaryGuardianshipEndedOutcome(
+                            termination.EndedGuardianship));
+                    return new CharacterFamilyAggregatePlan(
+                        resolved,
+                        null,
+                        termination.GuardianshipPlan);
+                }
+            case ReplacePrimaryGuardianshipAction replacementAction:
+                {
+                    CharacterGuardianshipReplacementPlan replacement =
+                        CharacterGuardianships.PrepareReplacement(
+                            replacementAction,
+                            resolutionDate,
+                            authoritativeTurnIndex,
+                            commandId,
+                            eventId);
+                    CharacterFamilyActionResolvedEventPayload resolved = new(
+                        actingActorId,
+                        payload.Action,
+                        new PrimaryGuardianshipReplacedOutcome(
+                            replacement.EndedGuardianship,
+                            replacement.ReplacementGuardianship));
+                    return new CharacterFamilyAggregatePlan(
+                        resolved,
+                        null,
+                        replacement.GuardianshipPlan);
+                }
             default:
                 throw new SimulationValidationException(
                     $"Unsupported character-family action '{payload.Action.GetType().Name}'.");
@@ -1322,6 +1361,42 @@ public sealed class WorldState : IWorldQuery
                 payload.ActingActorId,
                 outcome.Guardianship.GuardianshipId,
                 action.GuardianCharacterId,
+                action.WardCharacterId,
+            ],
+            (EndPrimaryGuardianshipAction action,
+                PrimaryGuardianshipEndedOutcome outcome)
+                when outcome.EndedGuardianship is not null
+                    && outcome.EndedGuardianship.GuardianshipId
+                        == action.ExpectedCurrentPrimaryGuardianshipId
+                    && outcome.EndedGuardianship.WardCharacterId
+                        == action.WardCharacterId
+                    && outcome.EndedGuardianship.EndReason == action.EndReason =>
+            [
+                payload.ActingActorId,
+                outcome.EndedGuardianship.GuardianshipId,
+                outcome.EndedGuardianship.GuardianCharacterId,
+                action.WardCharacterId,
+            ],
+            (ReplacePrimaryGuardianshipAction action,
+                PrimaryGuardianshipReplacedOutcome outcome)
+                when outcome.EndedGuardianship is not null
+                    && outcome.ReplacementGuardianship is not null
+                    && outcome.EndedGuardianship.GuardianshipId
+                        == action.ExpectedCurrentPrimaryGuardianshipId
+                    && outcome.EndedGuardianship.WardCharacterId
+                        == action.WardCharacterId
+                    && outcome.EndedGuardianship.EndReason
+                        == CharacterGuardianshipEndReason.Replaced
+                    && outcome.ReplacementGuardianship.WardCharacterId
+                        == action.WardCharacterId
+                    && outcome.ReplacementGuardianship.GuardianCharacterId
+                        == action.ReplacementGuardianCharacterId =>
+            [
+                payload.ActingActorId,
+                outcome.EndedGuardianship.GuardianshipId,
+                outcome.ReplacementGuardianship.GuardianshipId,
+                outcome.EndedGuardianship.GuardianCharacterId,
+                action.ReplacementGuardianCharacterId,
                 action.WardCharacterId,
             ],
             _ => throw new SimulationValidationException(

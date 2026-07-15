@@ -349,8 +349,10 @@ public sealed class CharacterFamilyCampaignTests
             changeId.Value);
         Assert.Equal(
             [
+                typeof(EndPrimaryGuardianshipAction),
                 typeof(EstablishLegalAdoptiveParentAction),
                 typeof(EstablishPrimaryGuardianshipAction),
+                typeof(ReplacePrimaryGuardianshipAction),
             ],
             typeof(ICharacterFamilyAction).Assembly.GetTypes()
                 .Where(type => typeof(ICharacterFamilyAction).IsAssignableFrom(type)
@@ -360,7 +362,9 @@ public sealed class CharacterFamilyCampaignTests
         Assert.Equal(
             [
                 typeof(LegalAdoptiveParentEstablishedOutcome),
+                typeof(PrimaryGuardianshipEndedOutcome),
                 typeof(PrimaryGuardianshipEstablishedOutcome),
+                typeof(PrimaryGuardianshipReplacedOutcome),
             ],
             typeof(ICharacterFamilyActionOutcome).Assembly.GetTypes()
                 .Where(type => typeof(ICharacterFamilyActionOutcome).IsAssignableFrom(type)

@@ -86,8 +86,29 @@ public sealed record EstablishPrimaryGuardianshipAction(
     EntityId? ExpectedCurrentPrimaryGuardianshipId)
     : ICharacterFamilyAction;
 
+public sealed record EndPrimaryGuardianshipAction(
+    EntityId WardCharacterId,
+    EntityId ExpectedCurrentPrimaryGuardianshipId,
+    CharacterGuardianshipEndReason EndReason)
+    : ICharacterFamilyAction;
+
+public sealed record ReplacePrimaryGuardianshipAction(
+    EntityId WardCharacterId,
+    EntityId ExpectedCurrentPrimaryGuardianshipId,
+    EntityId ReplacementGuardianCharacterId)
+    : ICharacterFamilyAction;
+
 public sealed record PrimaryGuardianshipEstablishedOutcome(
     CharacterGuardianshipState Guardianship)
+    : ICharacterFamilyActionOutcome;
+
+public sealed record PrimaryGuardianshipEndedOutcome(
+    CharacterGuardianshipState EndedGuardianship)
+    : ICharacterFamilyActionOutcome;
+
+public sealed record PrimaryGuardianshipReplacedOutcome(
+    CharacterGuardianshipState EndedGuardianship,
+    CharacterGuardianshipState ReplacementGuardianship)
     : ICharacterFamilyActionOutcome;
 
 public static class CharacterGuardianshipIds
