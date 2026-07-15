@@ -18,7 +18,7 @@ public readonly record struct SimulationChecksum(string Value)
 
     internal static SimulationChecksum ComputeForSaveSchema(WorldSnapshot snapshot, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 11)
+        if (schemaVersion is < 1 or > 12)
         {
             throw new ArgumentOutOfRangeException(nameof(schemaVersion));
         }
@@ -32,6 +32,8 @@ public readonly record struct SimulationChecksum(string Value)
         // character-estate-holding world, and schemas 1-9 predate the
         // separate character-marriage world. Schemas 10-11 include the
         // version-1 marriage state and predate D2 romance invitations/routes.
+        // Schema 12 is the exact D2 world shape and differs from schema 13 only
+        // in the registered command/event and relationship-source vocabulary.
         if (schemaVersion < 10)
         {
             canonical.Remove("characterMarriages");

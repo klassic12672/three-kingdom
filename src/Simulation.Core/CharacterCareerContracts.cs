@@ -12,7 +12,7 @@ public static class CareerContractVersions
     public const int State = 1;
     public const int Action = 1;
     public const int Outcome = 1;
-    public const int RelationshipConsequence = 1;
+    public const int RelationshipConsequence = RelationshipContractVersions.Consequence;
     public const int AuthoritativeQuery = 1;
 }
 
@@ -358,18 +358,6 @@ public sealed record EmploymentOfferAcceptedOutcome(
 
 public sealed record EmploymentTenureEndedOutcome(EmploymentTenure Tenure)
     : ICharacterActionOutcome;
-
-public sealed record RelationshipMemoryConsequenceSpecification(
-    int ContractVersion,
-    EntityId ConsequenceId,
-    EntityId SubjectCharacterId,
-    EntityId TargetCharacterId,
-    RelationshipImpact Impact,
-    EntityId MeaningId,
-    int InitialSeverity,
-    MemoryPublicity Publicity,
-    int DecayIntervalTurns,
-    IReadOnlyList<EntityId> WitnessIds);
 
 [method: JsonConstructor]
 public sealed record CharacterActionCommandPayload(

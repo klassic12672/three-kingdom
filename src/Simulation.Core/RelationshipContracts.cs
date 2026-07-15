@@ -12,14 +12,23 @@ public static class RelationshipContractVersions
     public const int Snapshot = 2;
     public const int LegacyMemory = 1;
     public const int Memory = 2;
+    public const int Consequence = 1;
     public const int State = 1;
     public const int AuthoritativeQuery = 1;
+}
+
+public static class RelationshipLimits
+{
+    public const int ConsequencesPerSourceEvent = 64;
 }
 
 public enum RelationshipMemorySourceKind
 {
     RelationshipAction = 0,
     CharacterAction = 1,
+    HouseholdDecision = 2,
+    CharacterMarriageAction = 3,
+    CharacterCondition = 4,
 }
 
 public enum RelationshipMemoryIdentityScheme
@@ -71,6 +80,18 @@ public sealed record RelationshipImpact(
         || Rivalry != 0
         || Compatibility != 0;
 }
+
+public sealed record RelationshipMemoryConsequenceSpecification(
+    int ContractVersion,
+    EntityId ConsequenceId,
+    EntityId SubjectCharacterId,
+    EntityId TargetCharacterId,
+    RelationshipImpact Impact,
+    EntityId MeaningId,
+    int InitialSeverity,
+    MemoryPublicity Publicity,
+    int DecayIntervalTurns,
+    IReadOnlyList<EntityId> WitnessIds);
 
 [method: JsonConstructor]
 public sealed record ConsequentialMemory(

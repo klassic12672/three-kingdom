@@ -366,10 +366,6 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
                 "Character action relationship consequence date or turn is invalid.");
         }
 
-        RelationshipWorldState candidate = new(
-            CaptureSnapshot(),
-            characters,
-            new CampaignCalendar(resolutionDate, authoritativeTurnIndex));
         for (int index = 0; index < payload.RelationshipMemoryConsequences.Count; index++)
         {
             RelationshipMemoryConsequenceSpecification specification =
@@ -384,6 +380,186 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
                     $"Character action relationship consequence {index} has an unsupported contract or deterministic identity.");
             }
 
+        }
+
+        return PrepareSourceEventConsequences(
+            payload.RelationshipMemoryConsequences,
+            RelationshipMemorySourceKind.CharacterAction,
+            (sourceEventId, index) => CareerIds.DeriveRelationshipConsequenceId(
+                sourceEventId,
+                index),
+            resolutionDate,
+            authoritativeTurnIndex,
+            eventId,
+            "Character action");
+    }
+
+    internal RelationshipMemoryConsequenceSpecification PlanHarmfulConsequence(
+        EntityId eventId,
+        EntityId consequenceId,
+        EntityId subjectCharacterId,
+        EntityId targetCharacterId,
+        EntityId meaningId,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex)
+    {
+        RelationshipDimensions current = GetCurrentDimensions(
+            subjectCharacterId,
+            targetCharacterId);
+        RelationshipImpact impact = CreateBoundedHarmfulImpact(current);
+        RelationshipMemoryConsequenceSpecification consequence = new(
+            RelationshipContractVersions.Consequence,
+            consequenceId,
+            subjectCharacterId,
+            targetCharacterId,
+            impact,
+            meaningId,
+            75,
+            MemoryPublicity.Participants,
+            0,
+            []);
+        ValidateHarmfulConsequence(
+            consequence,
+            subjectCharacterId,
+            targetCharacterId,
+            resolutionDate,
+            authoritativeTurnIndex);
+        ValidateId(eventId, "Harmful relationship consequence event ID");
+        return Clone(consequence);
+    }
+
+    internal RelationshipWorldUpdatePlan PrepareHouseholdDecisionConsequence(
+        HouseholdDecisionResolvedEventPayload payload,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId eventId)
+    {
+        if (payload?.RelationshipMemoryConsequence is null)
+        {
+            throw new SimulationValidationException(
+                "Household decision requires one harmful relationship consequence.");
+        }
+
+        return PrepareSourceEventConsequences(
+            [payload.RelationshipMemoryConsequence],
+            RelationshipMemorySourceKind.HouseholdDecision,
+            (sourceEventId, index) => HouseholdDecisionIds.DeriveRelationshipConsequenceId(
+                sourceEventId,
+                index),
+            resolutionDate,
+            authoritativeTurnIndex,
+            eventId,
+            "Household decision",
+            requireHarmful: true);
+    }
+
+    internal RelationshipWorldUpdatePlan PrepareCharacterMarriageConsequence(
+        CharacterMarriageActionResolvedEventPayload payload,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId eventId)
+    {
+        if (payload?.RelationshipMemoryConsequence is null)
+        {
+            throw new SimulationValidationException(
+                "Coerced character-marriage action requires one harmful relationship consequence.");
+        }
+
+        return PrepareSourceEventConsequences(
+            [payload.RelationshipMemoryConsequence],
+            RelationshipMemorySourceKind.CharacterMarriageAction,
+            (sourceEventId, index) => CharacterMarriageIds.DeriveRelationshipConsequenceId(
+                sourceEventId,
+                index),
+            resolutionDate,
+            authoritativeTurnIndex,
+            eventId,
+            "Coerced character-marriage action",
+            requireHarmful: true);
+    }
+
+    internal RelationshipWorldUpdatePlan PrepareCharacterConditionConsequence(
+        CharacterConditionActionResolvedEventPayload payload,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId eventId)
+    {
+        if (payload?.Action is not EnterCharacterCustodyAction
+            || payload.RelationshipMemoryConsequence is null)
+        {
+            throw new SimulationValidationException(
+                "Custody entry requires one harmful relationship consequence.");
+        }
+
+        return PrepareSourceEventConsequences(
+            [payload.RelationshipMemoryConsequence],
+            RelationshipMemorySourceKind.CharacterCondition,
+            (sourceEventId, index) => CharacterConditionIds.DeriveRelationshipConsequenceId(
+                sourceEventId,
+                index),
+            resolutionDate,
+            authoritativeTurnIndex,
+            eventId,
+            "Character custody entry",
+            requireHarmful: true);
+    }
+
+    private RelationshipWorldUpdatePlan PrepareSourceEventConsequences(
+        IReadOnlyList<RelationshipMemoryConsequenceSpecification> specifications,
+        RelationshipMemorySourceKind sourceKind,
+        Func<EntityId, int, EntityId> deriveConsequenceId,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId eventId,
+        string description,
+        bool requireHarmful = false)
+    {
+        if (specifications is null
+            || specifications.Any(item => item is null)
+            || specifications.Count > RelationshipLimits.ConsequencesPerSourceEvent)
+        {
+            throw new SimulationValidationException(
+                $"{description} relationship consequences are null or exceed the supported limit.");
+        }
+
+        if (!Enum.IsDefined(sourceKind)
+            || sourceKind is RelationshipMemorySourceKind.RelationshipAction)
+        {
+            throw new SimulationValidationException(
+                $"{description} relationship consequence source kind is invalid.");
+        }
+
+        ValidateId(eventId, $"{description} event ID");
+        if (!resolutionDate.IsValid || authoritativeTurnIndex < 0)
+        {
+            throw new SimulationValidationException(
+                $"{description} relationship consequence date or turn is invalid.");
+        }
+
+        RelationshipWorldState candidate = new(
+            CaptureSnapshot(),
+            characters,
+            new CampaignCalendar(resolutionDate, authoritativeTurnIndex));
+        for (int index = 0; index < specifications.Count; index++)
+        {
+            RelationshipMemoryConsequenceSpecification specification = specifications[index];
+            if (specification.ContractVersion != RelationshipContractVersions.Consequence
+                || specification.ConsequenceId != deriveConsequenceId(eventId, index))
+            {
+                throw new SimulationValidationException(
+                    $"{description} relationship consequence {index} has an unsupported contract or deterministic identity.");
+            }
+
+            if (requireHarmful)
+            {
+                ValidateHarmfulConsequence(
+                    specification,
+                    specification.SubjectCharacterId,
+                    specification.TargetCharacterId,
+                    resolutionDate,
+                    authoritativeTurnIndex);
+            }
+
             ConsequentialMemory memory = new(
                 RelationshipContractVersions.Memory,
                 RelationshipIds.DeriveMemoryId(
@@ -395,7 +571,7 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
                 specification.TargetCharacterId,
                 specification.WitnessIds?.ToArray()
                     ?? throw new SimulationValidationException(
-                        "Character action relationship consequence witnesses cannot be null."),
+                        $"{description} relationship consequence witnesses cannot be null."),
                 resolutionDate,
                 authoritativeTurnIndex,
                 specification.MeaningId,
@@ -404,10 +580,10 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
                 specification.DecayIntervalTurns,
                 specification.Impact is null
                     ? throw new SimulationValidationException(
-                        "Character action relationship consequence impact cannot be null.")
+                        $"{description} relationship consequence impact cannot be null.")
                     : specification.Impact with { },
                 eventId,
-                RelationshipMemorySourceKind.CharacterAction,
+                sourceKind,
                 RelationshipMemoryIdentityScheme.SourceEventV2,
                 index);
             candidate.ApplyGenericMemory(memory, resolutionDate, authoritativeTurnIndex);
@@ -1003,7 +1179,10 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
                     memory.ResolutionDate,
                     commandId),
             RelationshipMemoryIdentityScheme.SourceEventV2 =>
-                memory.SourceKind == RelationshipMemorySourceKind.CharacterAction
+                memory.SourceKind is RelationshipMemorySourceKind.CharacterAction
+                    or RelationshipMemorySourceKind.HouseholdDecision
+                    or RelationshipMemorySourceKind.CharacterMarriageAction
+                    or RelationshipMemorySourceKind.CharacterCondition
                 && memory.MemoryId == RelationshipIds.DeriveMemoryId(
                     memory.SourceEventId,
                     memory.SubjectCharacterId,
@@ -1389,6 +1568,94 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
         checked(dimensions.Rivalry + impact.Rivalry),
         checked(dimensions.Compatibility + impact.Compatibility));
 
+    private static RelationshipImpact CreateBoundedHarmfulImpact(
+        RelationshipDimensions current)
+    {
+        if (current.Resentment < 100)
+        {
+            return new(0, 0, 0, 0, 0, 0, Math.Min(25, 100 - current.Resentment), 0, 0);
+        }
+
+        if (current.Fear < 100)
+        {
+            return new(0, 0, 0, 0, 0, Math.Min(25, 100 - current.Fear), 0, 0, 0);
+        }
+
+        if (current.Rivalry < 100)
+        {
+            return new(0, 0, 0, 0, 0, 0, 0, Math.Min(25, 100 - current.Rivalry), 0);
+        }
+
+        if (current.Trust > 0)
+        {
+            return new(0, -Math.Min(25, current.Trust), 0, 0, 0, 0, 0, 0, 0);
+        }
+
+        if (current.Affection > 0)
+        {
+            return new(-Math.Min(25, current.Affection), 0, 0, 0, 0, 0, 0, 0, 0);
+        }
+
+        if (current.Respect > 0)
+        {
+            return new(0, 0, -Math.Min(25, current.Respect), 0, 0, 0, 0, 0, 0);
+        }
+
+        if (current.Compatibility > -100)
+        {
+            return new(0, 0, 0, 0, 0, 0, 0, 0, -Math.Min(25, current.Compatibility + 100));
+        }
+
+        return new RelationshipImpact(0, 0, 0, 0, 0, 0, 0, 0, 0);
+    }
+
+    private void ValidateHarmfulConsequence(
+        RelationshipMemoryConsequenceSpecification consequence,
+        EntityId expectedSubjectCharacterId,
+        EntityId expectedTargetCharacterId,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex)
+    {
+        if (consequence is null
+            || consequence.Impact is null
+            || consequence.SubjectCharacterId != expectedSubjectCharacterId
+            || consequence.TargetCharacterId != expectedTargetCharacterId
+            || consequence.Impact.Affection > 0
+            || consequence.Impact.Trust > 0
+            || consequence.Impact.Respect > 0
+            || consequence.Impact.Attraction != 0
+            || consequence.Impact.Compatibility > 0
+            || consequence.Impact.Fear < 0
+            || consequence.Impact.Resentment < 0
+            || consequence.Impact.Rivalry < 0)
+        {
+            throw new SimulationValidationException(
+                "Coercive relationship consequences must leave attraction unchanged, cannot improve other positive dimensions, and cannot reduce fear, resentment, or rivalry.");
+        }
+
+        RelationshipActionCommandPayload validationPayload = new(
+            consequence.TargetCharacterId,
+            consequence.Impact,
+            consequence.MeaningId,
+            consequence.InitialSeverity,
+            consequence.Publicity,
+            consequence.DecayIntervalTurns,
+            consequence.WitnessIds);
+        CommandValidationResult validation = ValidateActionCore(
+            consequence.SubjectCharacterId,
+            validationPayload,
+            resolutionDate,
+            authoritativeTurnIndex,
+            validateResultBounds: true,
+            requireNonZeroImpact: false);
+        if (!validation.IsValid)
+        {
+            throw new SimulationValidationException(
+                "Coercive relationship consequence is invalid: "
+                + string.Join("; ", validation.Issues.Select(issue => issue.Message)));
+        }
+    }
+
     private static long CalculateImportance(
         RelationshipDimensions dimensions,
         IEnumerable<ConsequentialMemory> memories,
@@ -1583,6 +1850,13 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
         WitnessIds = memory.WitnessIds.ToArray(),
         AppliedImpact = memory.AppliedImpact with { },
     };
+
+    private static RelationshipMemoryConsequenceSpecification Clone(
+        RelationshipMemoryConsequenceSpecification consequence) => consequence with
+        {
+            Impact = consequence.Impact with { },
+            WitnessIds = consequence.WitnessIds.ToArray(),
+        };
 
     private static RelationshipDimensions Clone(RelationshipDimensions dimensions) => dimensions with { };
 

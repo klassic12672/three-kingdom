@@ -90,6 +90,197 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
         familyStates.Values.Select(Clone).ToArray(),
         householdStates.Values.Select(Clone).ToArray());
 
+    internal CharacterConditionMutationPlan PrepareConditionAction(
+        ICharacterConditionAction action,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (action is null)
+        {
+            throw new SimulationValidationException("Character-condition action cannot be null.");
+        }
+
+        EntityId characterId = action switch
+        {
+            IncapacitateCharacterAction value => value.CharacterId,
+            RestoreCharacterCapacityAction value => value.CharacterId,
+            EnterCharacterCustodyAction value => value.CharacterId,
+            ReleaseCharacterCustodyAction value => value.CharacterId,
+            _ => throw new SimulationValidationException(
+                $"Unsupported character-condition action '{action.GetType().Name}'."),
+        };
+        CharacterConditionState expected = action switch
+        {
+            IncapacitateCharacterAction value => value.ExpectedCurrent,
+            RestoreCharacterCapacityAction value => value.ExpectedCurrent,
+            EnterCharacterCustodyAction value => value.ExpectedCurrent,
+            ReleaseCharacterCustodyAction value => value.ExpectedCurrent,
+            _ => throw new SimulationValidationException(
+                $"Unsupported character-condition action '{action.GetType().Name}'."),
+        } ?? throw new SimulationValidationException(
+            "Character-condition expected-current state cannot be null.");
+
+        AuthoritativeCharacterProfile profile = RequireCurrentCharacter(
+            characterId,
+            resolutionDate,
+            "Character-condition target");
+        if (profile.Condition != expected)
+        {
+            throw new SimulationValidationException(
+                $"Character-condition expected-current state is stale for '{characterId}'.");
+        }
+
+        if (profile.Condition.VitalStatus != CharacterVitalStatus.Alive)
+        {
+            throw new SimulationValidationException(
+                $"Character-condition target '{characterId}' must be alive.");
+        }
+
+        CharacterConditionState next = action switch
+        {
+            IncapacitateCharacterAction when !profile.Condition.IsIncapacitated =>
+                profile.Condition with { IsIncapacitated = true },
+            IncapacitateCharacterAction => throw new SimulationValidationException(
+                $"Character '{characterId}' is already incapacitated."),
+            RestoreCharacterCapacityAction when profile.Condition.IsIncapacitated
+                && profile.Condition.HealthStatus != CharacterHealthStatus.Critical =>
+                profile.Condition with { IsIncapacitated = false },
+            RestoreCharacterCapacityAction when profile.Condition.HealthStatus
+                == CharacterHealthStatus.Critical => throw new SimulationValidationException(
+                    $"Critical character '{characterId}' cannot restore capacity."),
+            RestoreCharacterCapacityAction => throw new SimulationValidationException(
+                $"Character '{characterId}' already has capacity."),
+            EnterCharacterCustodyAction value => PlanCustodyEntry(
+                profile,
+                value,
+                resolutionDate),
+            ReleaseCharacterCustodyAction when profile.Condition.CustodyStatus
+                != CharacterCustodyStatus.Free => profile.Condition with
+                {
+                    CustodyStatus = CharacterCustodyStatus.Free,
+                    CustodianId = null,
+                },
+            ReleaseCharacterCustodyAction => throw new SimulationValidationException(
+                $"Character '{characterId}' is already free of custody."),
+            _ => throw new SimulationValidationException(
+                $"Unsupported character-condition action '{action.GetType().Name}'."),
+        };
+
+        return PrepareConditionMutation(
+            characterId,
+            profile.Condition,
+            next,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId,
+            allowDeath: false);
+    }
+
+    internal CharacterConditionMutationPlan PrepareDeathPreview(
+        EntityId characterId,
+        CharacterConditionState expectedCurrent,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        AuthoritativeCharacterProfile profile = RequireCurrentCharacter(
+            characterId,
+            resolutionDate,
+            "Character-death preview target");
+        if (expectedCurrent is null || profile.Condition != expectedCurrent)
+        {
+            throw new SimulationValidationException(
+                $"Character-death expected-current state is stale for '{characterId}'.");
+        }
+
+        if (profile.Condition.VitalStatus != CharacterVitalStatus.Alive)
+        {
+            throw new SimulationValidationException(
+                $"Character-death preview target '{characterId}' must be alive.");
+        }
+
+        CharacterConditionState deceased = new(
+            CharacterVitalStatus.Dead,
+            CharacterHealthStatus.Critical,
+            IsIncapacitated: true,
+            CharacterCustodyStatus.Free,
+            null);
+        return PrepareConditionMutation(
+            characterId,
+            profile.Condition,
+            deceased,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId,
+            allowDeath: true);
+    }
+
+    internal HouseholdDecisionMutationPlan PrepareHouseholdDecision(
+        EntityId actingCharacterId,
+        IHouseholdDecisionAction action,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (action is null)
+        {
+            throw new SimulationValidationException("Household decision action cannot be null.");
+        }
+
+        AuthoritativeCharacterProfile actor = RequireCurrentCharacter(
+            actingCharacterId,
+            resolutionDate,
+            "Household decision actor");
+        RequireLivingCapableFree(actor, "Household decision actor");
+
+        HouseholdMembershipTransition transition = action switch
+        {
+            ExpelHouseholdMemberAction value => PlanExpulsion(
+                actor,
+                value,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId,
+                eventId),
+            IncorporateCaptiveHouseholdMemberAction value => PlanIncorporation(
+                actor,
+                value,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId,
+                eventId),
+            _ => throw new SimulationValidationException(
+                $"Unsupported household decision action '{action.GetType().Name}'."),
+        };
+
+        CharacterWorldSnapshot updated = CaptureSnapshot() with
+        {
+            HouseholdStates = ApplyHouseholdTransition(transition),
+        };
+        CampaignDate candidateDate = resolutionDate.CompareTo(campaignDate) > 0
+            ? resolutionDate
+            : campaignDate;
+        return new HouseholdDecisionMutationPlan(
+            transition,
+            new CharacterWorldUpdatePlan(new CharacterWorldState(updated, candidateDate)));
+    }
+
+    internal void ApplyPrepared(CharacterWorldUpdatePlan plan)
+    {
+        if (plan?.Candidate is null)
+        {
+            throw new SimulationValidationException("Prepared character-world update cannot be null.");
+        }
+
+        ReplaceFrom(plan.Candidate);
+    }
+
     internal void UpdateCampaignDate(CampaignDate value)
     {
         if (!value.IsValid)
@@ -106,6 +297,315 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
         }
 
         campaignDate = value;
+    }
+
+    private CharacterConditionMutationPlan PrepareConditionMutation(
+        EntityId characterId,
+        CharacterConditionState previous,
+        CharacterConditionState next,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId,
+        bool allowDeath)
+    {
+        if (!resolutionDate.IsValid
+            || resolutionDate.CompareTo(campaignDate) < 0
+            || authoritativeTurnIndex < 0)
+        {
+            throw new SimulationValidationException(
+                "Character-condition resolution date or turn is invalid.");
+        }
+
+        if (!commandId.IsValid
+            || eventId != CharacterConditionIds.DeriveActionEventId(resolutionDate, commandId))
+        {
+            throw new SimulationValidationException(
+                "Character-condition command or event identity is invalid.");
+        }
+
+        if (!allowDeath && next.VitalStatus != CharacterVitalStatus.Alive)
+        {
+            throw new SimulationValidationException(
+                "Public character-condition actions cannot change vital status; death is reserved for SP-04F.");
+        }
+
+        CharacterWorldSnapshot updated = CaptureSnapshot() with
+        {
+            CharacterStates = characterStates.Values.Select(state =>
+                state.CharacterId == characterId
+                    ? state with { Condition = Clone(next) }
+                    : Clone(state)).ToArray(),
+        };
+        CampaignDate candidateDate = resolutionDate.CompareTo(campaignDate) > 0
+            ? resolutionDate
+            : campaignDate;
+        CharacterConditionChange change = new(
+            CharacterConditionContractVersions.Change,
+            CharacterConditionIds.DeriveChangeId(eventId, characterId),
+            characterId,
+            Clone(previous),
+            Clone(next),
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId);
+        return new CharacterConditionMutationPlan(
+            change,
+            new CharacterWorldUpdatePlan(new CharacterWorldState(updated, candidateDate)));
+    }
+
+    private CharacterConditionState PlanCustodyEntry(
+        AuthoritativeCharacterProfile target,
+        EnterCharacterCustodyAction action,
+        CampaignDate resolutionDate)
+    {
+        if (target.Condition.CustodyStatus != CharacterCustodyStatus.Free)
+        {
+            throw new SimulationValidationException(
+                $"Character '{target.CharacterId}' is already in custody.");
+        }
+
+        if (action.CustodyStatus is CharacterCustodyStatus.Free
+            || !Enum.IsDefined(action.CustodyStatus))
+        {
+            throw new SimulationValidationException(
+                "Custody entry requires a supported non-free custody status.");
+        }
+
+        AuthoritativeCharacterProfile custodian = RequireCurrentCharacter(
+            action.CustodianCharacterId,
+            resolutionDate,
+            "Character custodian");
+        if (custodian.CharacterId == target.CharacterId
+            || custodian.Condition.VitalStatus != CharacterVitalStatus.Alive)
+        {
+            throw new SimulationValidationException(
+                "Character custodian must be a different living character.");
+        }
+
+        return target.Condition with
+        {
+            CustodyStatus = action.CustodyStatus,
+            CustodianId = custodian.CharacterId,
+        };
+    }
+
+    private HouseholdMembershipTransition PlanExpulsion(
+        AuthoritativeCharacterProfile actor,
+        ExpelHouseholdMemberAction action,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (!TryGetHousehold(action.HouseholdId, out AuthoritativeHouseholdView? household))
+        {
+            throw new SimulationValidationException(
+                $"Expulsion household '{action.HouseholdId}' does not exist.");
+        }
+
+        if (household.HeadCharacterId != actor.CharacterId)
+        {
+            throw new SimulationValidationException(
+                "Only the current household head may expel a member.");
+        }
+
+        AuthoritativeCharacterProfile member = RequireCurrentCharacter(
+            action.MemberCharacterId,
+            resolutionDate,
+            "Expulsion target");
+        if (member.HouseholdId != household.HouseholdId)
+        {
+            throw new SimulationValidationException(
+                "Expulsion target is not a current member of the specified household.");
+        }
+
+        if (member.CharacterId == household.HeadCharacterId)
+        {
+            throw new SimulationValidationException("A household head cannot be expelled.");
+        }
+
+        if (member.Condition.VitalStatus != CharacterVitalStatus.Alive)
+        {
+            throw new SimulationValidationException("Expulsion target must be alive.");
+        }
+
+        return CreateTransition(
+            HouseholdDecisionKind.Expulsion,
+            member.CharacterId,
+            household.HouseholdId,
+            null,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+    }
+
+    private HouseholdMembershipTransition PlanIncorporation(
+        AuthoritativeCharacterProfile actor,
+        IncorporateCaptiveHouseholdMemberAction action,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (!TryGetHousehold(
+                action.DestinationHouseholdId,
+                out AuthoritativeHouseholdView? destination))
+        {
+            throw new SimulationValidationException(
+                $"Incorporation household '{action.DestinationHouseholdId}' does not exist.");
+        }
+
+        if (destination.HeadCharacterId != actor.CharacterId)
+        {
+            throw new SimulationValidationException(
+                "Only the destination household head may incorporate a captive member.");
+        }
+
+        AuthoritativeCharacterProfile member = RequireCurrentCharacter(
+            action.MemberCharacterId,
+            resolutionDate,
+            "Incorporation target");
+        if (member.Condition.VitalStatus != CharacterVitalStatus.Alive
+            || member.Condition.CustodyStatus is not (
+                CharacterCustodyStatus.Captive or CharacterCustodyStatus.Hostage)
+            || member.Condition.CustodianId != actor.CharacterId)
+        {
+            throw new SimulationValidationException(
+                "Incorporation requires a living captive or hostage held by the destination household head.");
+        }
+
+        if (member.HouseholdId == destination.HouseholdId)
+        {
+            throw new SimulationValidationException(
+                "Incorporation target already belongs to the destination household.");
+        }
+
+        if (member.HouseholdId is EntityId sourceId
+            && householdStates[sourceId].HeadCharacterId == member.CharacterId)
+        {
+            throw new SimulationValidationException(
+                "A household head cannot be moved by captive incorporation.");
+        }
+
+        return CreateTransition(
+            HouseholdDecisionKind.CaptiveIncorporation,
+            member.CharacterId,
+            member.HouseholdId,
+            destination.HouseholdId,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+    }
+
+    private static HouseholdMembershipTransition CreateTransition(
+        HouseholdDecisionKind kind,
+        EntityId memberCharacterId,
+        EntityId? sourceHouseholdId,
+        EntityId? destinationHouseholdId,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId) => new(
+            HouseholdDecisionContractVersions.Transition,
+            HouseholdDecisionIds.DeriveTransitionId(eventId, memberCharacterId),
+            kind,
+            memberCharacterId,
+            sourceHouseholdId,
+            destinationHouseholdId,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId);
+
+    private HouseholdState[] ApplyHouseholdTransition(HouseholdMembershipTransition transition)
+    {
+        if (transition.ContractVersion != HouseholdDecisionContractVersions.Transition
+            || !Enum.IsDefined(transition.Kind)
+            || transition.TransitionId != HouseholdDecisionIds.DeriveTransitionId(
+                CharacterConditionSafeEventId(transition),
+                transition.MemberCharacterId))
+        {
+            throw new SimulationValidationException(
+                "Household membership transition contract or identity is invalid.");
+        }
+
+        if (!householdByCharacter.TryGetValue(
+                transition.MemberCharacterId,
+                out EntityId currentHouseholdId))
+        {
+            if (transition.SourceHouseholdId is not null)
+            {
+                throw new SimulationValidationException(
+                    "Household transition source does not match current membership.");
+            }
+        }
+        else if (transition.SourceHouseholdId != currentHouseholdId)
+        {
+            throw new SimulationValidationException(
+                "Household transition source does not match current membership.");
+        }
+
+        if (transition.DestinationHouseholdId is EntityId destinationId
+            && !householdStates.ContainsKey(destinationId))
+        {
+            throw new SimulationValidationException(
+                $"Household transition destination '{destinationId}' does not exist.");
+        }
+
+        return householdStates.Values.Select(state =>
+        {
+            IEnumerable<EntityId> members = state.MemberIds;
+            if (transition.SourceHouseholdId == state.HouseholdId)
+            {
+                members = members.Where(id => id != transition.MemberCharacterId);
+            }
+
+            if (transition.DestinationHouseholdId == state.HouseholdId)
+            {
+                members = members.Append(transition.MemberCharacterId);
+            }
+
+            return state with { MemberIds = members.Distinct().Order().ToArray() };
+        }).ToArray();
+    }
+
+    private static EntityId CharacterConditionSafeEventId(
+        HouseholdMembershipTransition transition) =>
+        HouseholdDecisionIds.DeriveActionEventId(
+            transition.ResolutionDate,
+            transition.SourceCommandId);
+
+    private AuthoritativeCharacterProfile RequireCurrentCharacter(
+        EntityId characterId,
+        CampaignDate resolutionDate,
+        string description)
+    {
+        if (!characterId.IsValid
+            || !TryGetCharacterProfile(characterId, out AuthoritativeCharacterProfile? profile)
+            || !resolutionDate.IsValid
+            || resolutionDate.CompareTo(campaignDate) < 0
+            || profile.BirthDate.CompareTo(resolutionDate) > 0)
+        {
+            throw new SimulationValidationException(
+                $"{description} '{characterId}' is unavailable at '{resolutionDate}'.");
+        }
+
+        return profile;
+    }
+
+    private static void RequireLivingCapableFree(
+        AuthoritativeCharacterProfile profile,
+        string description)
+    {
+        if (profile.Condition.VitalStatus != CharacterVitalStatus.Alive
+            || profile.Condition.IsIncapacitated
+            || profile.Condition.CustodyStatus != CharacterCustodyStatus.Free)
+        {
+            throw new SimulationValidationException(
+                $"{description} '{profile.CharacterId}' must be living, capable, and free.");
+        }
     }
 
     private static void ValidateSnapshotShape(CharacterWorldSnapshot snapshot)
@@ -818,6 +1318,72 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
         MemberIds = state.MemberIds.ToArray(),
     };
 
+    private void ReplaceFrom(CharacterWorldState source)
+    {
+        identityDefinitions.Clear();
+        characterDefinitions.Clear();
+        familyDefinitions.Clear();
+        householdDefinitions.Clear();
+        characterStates.Clear();
+        familyStates.Clear();
+        householdStates.Clear();
+        familyByCharacter.Clear();
+        householdByCharacter.Clear();
+        childrenByCharacter.Clear();
+
+        foreach (CharacterIdentityDefinition value in source.identityDefinitions.Values)
+        {
+            identityDefinitions.Add(value.Id, value with { });
+        }
+
+        foreach (CharacterDefinition value in source.characterDefinitions.Values)
+        {
+            characterDefinitions.Add(value.Id, Clone(value));
+        }
+
+        foreach (FamilyDefinition value in source.familyDefinitions.Values)
+        {
+            familyDefinitions.Add(value.Id, value with { });
+        }
+
+        foreach (HouseholdDefinition value in source.householdDefinitions.Values)
+        {
+            householdDefinitions.Add(value.Id, value with { });
+        }
+
+        foreach (CharacterState value in source.characterStates.Values)
+        {
+            characterStates.Add(value.CharacterId, Clone(value));
+        }
+
+        foreach (FamilyState value in source.familyStates.Values)
+        {
+            familyStates.Add(value.FamilyId, Clone(value));
+        }
+
+        foreach (HouseholdState value in source.householdStates.Values)
+        {
+            householdStates.Add(value.HouseholdId, Clone(value));
+        }
+
+        foreach ((EntityId characterId, EntityId familyId) in source.familyByCharacter)
+        {
+            familyByCharacter.Add(characterId, familyId);
+        }
+
+        foreach ((EntityId characterId, EntityId householdId) in source.householdByCharacter)
+        {
+            householdByCharacter.Add(characterId, householdId);
+        }
+
+        foreach ((EntityId characterId, CharacterChildLink[] children) in source.childrenByCharacter)
+        {
+            childrenByCharacter.Add(characterId, children.Select(Clone).ToArray());
+        }
+
+        campaignDate = source.campaignDate;
+    }
+
     private enum VisitState
     {
         Unvisited,
@@ -825,3 +1391,13 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
         Visited,
     }
 }
+
+internal sealed record CharacterWorldUpdatePlan(CharacterWorldState Candidate);
+
+internal sealed record CharacterConditionMutationPlan(
+    CharacterConditionChange Change,
+    CharacterWorldUpdatePlan CharacterPlan);
+
+internal sealed record HouseholdDecisionMutationPlan(
+    HouseholdMembershipTransition Transition,
+    CharacterWorldUpdatePlan CharacterPlan);

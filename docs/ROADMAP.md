@@ -67,6 +67,8 @@ SP-04D1's participant-issued political proposal/response/withdrawal, betrothal c
 
 SP-04D2's mutual-consent adult romance invitation/acceptance, one-step progression, completion/ending, deterministic race handling, bounded retention, legacy-route compatibility, and authenticated schema-11-to-12 package have passing [exact-SHA hosted macOS arm64/Windows x64 evidence](evidence/SP-04D2-EXACT-SHA-62a5007.md) at `62a50075ca86b3466cca9c05825d4374e6cac366`. The package adds no proposal/union, relationship or memory effect, household decision/movement, coercion consequence, lifecycle, succession, content, UI, AI, or platform behavior. The full SP-04 criteria and three-second turn budget remain unchecked.
 
+SP-04D3's narrow head-authorized household decisions, exact-custodian coerced political unions, harmful target-to-actor memories with zero attraction, system-authoritative condition changes, atomic marriage-lifecycle invalidation, internal death preview, and authenticated schema-12-to-13 compatibility package are locally verified. Exact-SHA hosted macOS arm64/Windows x64 evidence is pending, so D3 is not yet accepted. Public death, succession/inheritance, later character packages, the full SP-04 criteria, and the three-second turn budget remain pending.
+
 ## Platform verification gates
 
 - Through M3, Apple Silicon macOS is the primary interactive and visual development platform.
@@ -91,8 +93,8 @@ Before M4, estimates are internal ranges only. After M4, record measured velocit
 9. Preserve SP-04D0's immutable marriage foundation, authenticated schema-9-to-10 migration, independent-remediation record, and exact-SHA hosted evidence at `f7fef247178776d7c6fb1c4bed56f09dece76ff4`.
 10. Preserve SP-04D1's political proposal/response/betrothal/union workflow, causal-group retention, authenticated schema-10-to-11 compatibility package, and exact-SHA hosted evidence at `653ce71d24bd81435ded9e65022dc29afd8f4810`.
 11. Preserve SP-04D2's adult non-explicit mutual-consent romance workflow, authenticated schema-11-to-12 compatibility package, and exact-SHA hosted evidence at `62a50075ca86b3466cca9c05825d4374e6cac366`.
-12. Implement SP-04D3 household decisions, conflict, coercion effects, and atomic condition/lifecycle integration as the next independently verifiable package.
+12. Obtain exact-SHA hosted macOS arm64/Windows x64 evidence for the locally verified SP-04D3 household/coercion/condition-lifecycle package before accepting it and beginning SP-04E.
 
-M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A, SP-04B-L, SP-04C0, SP-04C1, SP-04C2, SP-04C3, SP-04D0, SP-04D1, and SP-04D2 have passing exact-SHA hosted macOS arm64/Windows x64 evidence at their accepted revisions. SP-04D3 is next; SP-05 remains blocked, and later SP-04 packages remain pending.
+M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A, SP-04B-L, SP-04C0, SP-04C1, SP-04C2, SP-04C3, SP-04D0, SP-04D1, and SP-04D2 have passing exact-SHA hosted macOS arm64/Windows x64 evidence at their accepted revisions. SP-04D3 is a locally verified candidate awaiting exact-SHA hosted evidence; SP-05 remains blocked, and later SP-04 packages remain pending.
 
 See the [subsystem plan index](plans/README.md) for dependency status.

@@ -471,6 +471,12 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
                 resolutionDate,
                 authoritativeTurnIndex,
                 commandId),
+            ImposeCoercedUnionAction value => PlanCoercedUnion(
+                actingCharacterId,
+                value,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId),
             _ => throw new SimulationValidationException(
                 "Unsupported character-marriage action type."),
         };
@@ -526,6 +532,25 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
             authoritativeTurnIndex,
             commandId,
             eventId);
+        if (payload.Action is ImposeCoercedUnionAction)
+        {
+            if (payload.RelationshipMemoryConsequence is null)
+            {
+                throw new SimulationValidationException(
+                    "Coerced character-marriage outcome requires a harmful relationship consequence.");
+            }
+
+            expected = expected with
+            {
+                RelationshipMemoryConsequence = Clone(payload.RelationshipMemoryConsequence),
+            };
+        }
+        else if (payload.RelationshipMemoryConsequence is not null)
+        {
+            throw new SimulationValidationException(
+                "Only coerced character-marriage outcomes may contain a relationship consequence.");
+        }
+
         string expectedJson = JsonSerializer.Serialize(expected, SimulationJson.CreateOptions());
         string actualJson = JsonSerializer.Serialize(payload, SimulationJson.CreateOptions());
         if (!StringComparer.Ordinal.Equals(expectedJson, actualJson))
@@ -543,6 +568,144 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
             Math.Max(calendar.TurnIndex, authoritativeTurnIndex));
         CharacterMarriageWorldState candidate = new(updated, characters, candidateCalendar);
         return new CharacterMarriageWorldUpdatePlan(candidate);
+    }
+
+    internal CharacterMarriageLifecycleUpdatePlan PrepareLifecycleChange(
+        IAuthoritativeCharacterWorldQuery candidateCharacters,
+        EntityId changedCharacterId,
+        CharacterMarriageLifecycleReason reason,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId)
+    {
+        if (candidateCharacters is null
+            || !changedCharacterId.IsValid
+            || !Enum.IsDefined(reason)
+            || !resolutionDate.IsValid
+            || resolutionDate.CompareTo(calendar.Date) < 0
+            || authoritativeTurnIndex != calendar.TurnIndex
+            || !commandId.IsValid
+            || !candidateCharacters.TryGetCharacterProfile(
+                changedCharacterId,
+                out AuthoritativeCharacterProfile? changedCharacter))
+        {
+            throw new SimulationValidationException(
+                "Character-marriage lifecycle preparation contains invalid authority, date, turn, or character data.");
+        }
+
+        bool deceased = changedCharacter.Condition.VitalStatus == CharacterVitalStatus.Dead;
+        if (reason == CharacterMarriageLifecycleReason.CharacterDied != deceased)
+        {
+            throw new SimulationValidationException(
+                "Character-marriage lifecycle reason does not match candidate vital status.");
+        }
+
+        bool consentUnavailable = deceased
+            || changedCharacter.Condition.IsIncapacitated
+            || changedCharacter.Condition.CustodyStatus != CharacterCustodyStatus.Free;
+        MarriageProposalState[] invalidatedProposals = proposals.Values
+            .Where(item => item.Status == MarriageProposalStatus.Active
+                && Involves(
+                    item.ProposerCharacterId,
+                    item.RecipientCharacterId,
+                    changedCharacterId)
+                && (deceased
+                    || item.Kind == MarriageProposalKind.LegalUnion
+                        && item.ConsentKind != MarriageConsentKind.Coerced
+                        && consentUnavailable
+                    || item.Kind == MarriageProposalKind.LegalUnion
+                        && item.ConsentKind == MarriageConsentKind.Coerced
+                        && item.ProposerCharacterId == changedCharacterId
+                        && consentUnavailable))
+            .Select(item => TerminalizeProposal(
+                item,
+                MarriageProposalStatus.Invalidated,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId))
+            .OrderBy(item => item.ProposalId)
+            .ToArray();
+        PoliticalBetrothalState[] invalidatedBetrothals = deceased
+            ? betrothals.Values
+                .Where(item => item.Status == PoliticalBetrothalStatus.Active
+                    && Involves(
+                        item.FirstCharacterId,
+                        item.SecondCharacterId,
+                        changedCharacterId))
+                .Select(item => TerminalizeBetrothal(
+                    item,
+                    PoliticalBetrothalStatus.Invalidated,
+                    null,
+                    resolutionDate,
+                    authoritativeTurnIndex,
+                    commandId))
+                .OrderBy(item => item.BetrothalId)
+                .ToArray()
+            : [];
+        MarriageUnionState[] endedUnions = deceased
+            ? unions.Values
+                .Where(item => item.Status == MarriageUnionStatus.Active
+                    && Involves(
+                        item.FirstCharacterId,
+                        item.SecondCharacterId,
+                        changedCharacterId))
+                .Select(item => EndUnionForDeath(
+                    item,
+                    resolutionDate,
+                    authoritativeTurnIndex,
+                    commandId))
+                .OrderBy(item => item.UnionId)
+                .ToArray()
+            : [];
+        RomanceInvitationState[] cancelledInvitations = consentUnavailable
+            ? romanceInvitations.Values
+                .Where(item => Involves(
+                    item.InitiatorCharacterId,
+                    item.RecipientCharacterId,
+                    changedCharacterId))
+                .Select(Clone)
+                .OrderBy(item => item.InvitationId)
+                .ToArray()
+            : [];
+        RomanceRouteState[] invalidatedRoutes = consentUnavailable
+            ? romanceRoutes.Values
+                .Where(item => item.Status == RomanceRouteStatus.Active
+                    && Involves(
+                        item.FirstCharacterId,
+                        item.SecondCharacterId,
+                        changedCharacterId))
+                .Select(item => TerminalizeRomanceRoute(
+                    item,
+                    RomanceRouteStatus.Invalidated,
+                    resolutionDate,
+                    authoritativeTurnIndex,
+                    commandId))
+                .OrderBy(item => item.RouteId)
+                .ToArray()
+            : [];
+
+        CharacterMarriageLifecycleChangeSet changes = new(
+            CharacterMarriageContractVersions.LifecycleChangeSet,
+            reason,
+            invalidatedProposals,
+            invalidatedBetrothals,
+            endedUnions,
+            cancelledInvitations,
+            invalidatedRoutes);
+        CharacterMarriageWorldSnapshot updated = ApplyLifecycleChanges(
+            CaptureSnapshot(),
+            changes);
+        updated = NormalizeRetention(updated);
+        CampaignCalendar candidateCalendar = new(
+            resolutionDate.CompareTo(calendar.Date) > 0 ? resolutionDate : calendar.Date,
+            Math.Max(calendar.TurnIndex, authoritativeTurnIndex));
+        CharacterMarriageWorldState candidate = new(
+            updated,
+            candidateCharacters,
+            candidateCalendar);
+        return new CharacterMarriageLifecycleUpdatePlan(
+            Clone(changes),
+            new CharacterMarriageWorldUpdatePlan(candidate));
     }
 
     internal void ApplyPrepared(CharacterMarriageWorldUpdatePlan plan)
@@ -582,6 +745,67 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
             null,
             null);
         return new MarriageProposalCreatedOutcome(proposal);
+    }
+
+    private ICharacterMarriageActionOutcome PlanCoercedUnion(
+        EntityId actingCharacterId,
+        ImposeCoercedUnionAction action,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId)
+    {
+        EntityId proposalId = CharacterMarriageIds.DeriveProposalId(
+            MarriageProposalKind.LegalUnion,
+            resolutionDate,
+            commandId);
+        MarriageProposalState proposal = new(
+            CharacterMarriageContractVersions.State,
+            proposalId,
+            MarriageProposalKind.LegalUnion,
+            MarriageBasis.Political,
+            action.ProposedForm,
+            MarriageConsentKind.Coerced,
+            actingCharacterId,
+            action.RecipientCharacterId,
+            action.ConcubinagePrincipalCharacterId,
+            action.PracticeId,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            MarriageProposalStatus.Accepted,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId);
+        (EntityId first, EntityId second) = CanonicalPair(
+            actingCharacterId,
+            action.RecipientCharacterId);
+        MarriageUnionState union = CreateCoercedUnion(
+            proposal,
+            first,
+            second,
+            resolutionDate,
+            authoritativeTurnIndex);
+        RomanceRouteState? invalidatedRoute = romanceRoutes.Values
+            .SingleOrDefault(route => route.Status == RomanceRouteStatus.Active
+                && SamePair(
+                    route.FirstCharacterId,
+                    route.SecondCharacterId,
+                    actingCharacterId,
+                    action.RecipientCharacterId));
+        if (invalidatedRoute is not null)
+        {
+            invalidatedRoute = TerminalizeRomanceRoute(
+                invalidatedRoute,
+                RomanceRouteStatus.Invalidated,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId);
+        }
+
+        return new CoercedPoliticalUnionImposedOutcome(
+            proposal,
+            union,
+            invalidatedRoute is null ? null : Clone(invalidatedRoute));
     }
 
     private ICharacterMarriageActionOutcome PlanProposalResponse(
@@ -1176,11 +1400,96 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
                 }
 
                 break;
+            case ImposeCoercedUnionAction action:
+                ValidateCoercedUnionAction(
+                    actingCharacterId,
+                    actor,
+                    action,
+                    resolutionDate,
+                    issues);
+                break;
             default:
                 issues.Add(new(
                     "unsupported_character_marriage_action",
                     "Only registered character-marriage actions are supported."));
                 break;
+        }
+    }
+
+    private void ValidateCoercedUnionAction(
+        EntityId actingCharacterId,
+        AuthoritativeCharacterProfile? actor,
+        ImposeCoercedUnionAction action,
+        CampaignDate resolutionDate,
+        ICollection<ValidationIssue> issues)
+    {
+        if (actor is not null
+            && (actor.Condition.IsIncapacitated
+                || actor.Condition.CustodyStatus != CharacterCustodyStatus.Free))
+        {
+            issues.Add(new(
+                "coercive_actor_requires_agency",
+                "A coerced-union actor must be capable and free."));
+        }
+
+        if (!characters.TryGetCharacterProfile(
+                action.RecipientCharacterId,
+                out AuthoritativeCharacterProfile? recipient))
+        {
+            issues.Add(new(
+                "unknown_coercive_recipient",
+                $"Coerced-union recipient '{action.RecipientCharacterId}' does not exist."));
+        }
+        else if (recipient.Condition.CustodyStatus == CharacterCustodyStatus.Free
+            || recipient.Condition.CustodianId != actingCharacterId)
+        {
+            issues.Add(new(
+                "exact_custodian_authority_required",
+                "Only the recipient's exact current custodian may impose a coerced union."));
+        }
+
+        MarriageEligibilityResult eligibility = EvaluateEligibility(
+            new MarriageEligibilityRequest(
+                CharacterMarriageContractVersions.Eligibility,
+                MarriageEligibilityCategory.CoercivePoliticalAction,
+                actingCharacterId,
+                action.RecipientCharacterId,
+                action.PracticeId,
+                action.ProposedForm,
+                action.ConcubinagePrincipalCharacterId),
+            resolutionDate);
+        foreach (MarriageEligibilityIssue issue in eligibility.Issues)
+        {
+            issues.Add(new(
+                $"coercive_marriage_{issue.Reason.ToString().ToLowerInvariant()}",
+                $"Coerced union is ineligible: {issue.Reason}."));
+        }
+
+        if (proposals.Values.Any(item => item.Status == MarriageProposalStatus.Active
+            && SamePair(
+                item.ProposerCharacterId,
+                item.RecipientCharacterId,
+                actingCharacterId,
+                action.RecipientCharacterId)))
+        {
+            issues.Add(new(
+                "duplicate_active_proposal",
+                "The coerced-union pair already has an active marriage proposal."));
+        }
+
+        foreach (EntityId participantId in new[]
+                 {
+                     actingCharacterId,
+                     action.RecipientCharacterId,
+                 }.Distinct())
+        {
+            if (PinnedProposalCount(participantId)
+                >= CharacterMarriageLimits.RetainedRecordsPerCategoryPerCharacter)
+            {
+                issues.Add(new(
+                    "retained_proposal_capacity_reached",
+                    $"Character '{participantId}' already has the maximum retained active marriage proposals and outcomes."));
+            }
         }
     }
 
@@ -1512,6 +1821,19 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
             ResolutionCommandId = commandId,
         };
 
+    private static RomanceRouteState TerminalizeRomanceRoute(
+        RomanceRouteState route,
+        RomanceRouteStatus status,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId) => route with
+        {
+            Status = status,
+            ResolutionDate = resolutionDate,
+            ResolutionTurnIndex = authoritativeTurnIndex,
+            ResolutionCommandId = commandId,
+        };
+
     private static MarriageUnionState CreateUnion(
         MarriageProposalState acceptedProposal,
         EntityId first,
@@ -1535,6 +1857,105 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
             null,
             null,
             null);
+
+    private static MarriageUnionState CreateCoercedUnion(
+        MarriageProposalState acceptedProposal,
+        EntityId first,
+        EntityId second,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex) => new(
+            CharacterMarriageContractVersions.State,
+            CharacterMarriageIds.DeriveMarriageUnionId(acceptedProposal.ProposalId),
+            first,
+            second,
+            acceptedProposal.ProposedForm,
+            acceptedProposal.ConcubinagePrincipalCharacterId,
+            MarriageBasis.Political,
+            MarriageConsentKind.Coerced,
+            acceptedProposal.PracticeId,
+            acceptedProposal.ProposalId,
+            resolutionDate,
+            authoritativeTurnIndex,
+            MarriageUnionStatus.Active,
+            null,
+            null,
+            null,
+            null);
+
+    private static MarriageUnionState EndUnionForDeath(
+        MarriageUnionState union,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId) => union with
+        {
+            Status = MarriageUnionStatus.Ended,
+            EndDate = resolutionDate,
+            EndTurnIndex = authoritativeTurnIndex,
+            EndCommandId = commandId,
+            EndReason = MarriageUnionEndReason.SpouseDied,
+        };
+
+    private static CharacterMarriageWorldSnapshot ApplyLifecycleChanges(
+        CharacterMarriageWorldSnapshot snapshot,
+        CharacterMarriageLifecycleChangeSet changes)
+    {
+        if (changes is null
+            || changes.ContractVersion
+                != CharacterMarriageContractVersions.LifecycleChangeSet
+            || !Enum.IsDefined(changes.Reason)
+            || changes.InvalidatedProposals is null
+            || changes.InvalidatedBetrothals is null
+            || changes.EndedUnions is null
+            || changes.CancelledInvitations is null
+            || changes.InvalidatedRomanceRoutes is null)
+        {
+            throw new SimulationValidationException(
+                "Character-marriage lifecycle change set is malformed.");
+        }
+
+        List<MarriageProposalState> proposalList = snapshot.Proposals.Select(Clone).ToList();
+        List<PoliticalBetrothalState> betrothalList = snapshot.Betrothals.Select(Clone).ToList();
+        List<MarriageUnionState> unionList = snapshot.Unions.Select(Clone).ToList();
+        List<RomanceInvitationState> invitationList = snapshot.Invitations.Select(Clone).ToList();
+        List<RomanceRouteState> routeList = snapshot.RomanceRoutes.Select(Clone).ToList();
+        foreach (MarriageProposalState proposal in changes.InvalidatedProposals)
+        {
+            Replace(proposalList, proposal, item => item.ProposalId, "marriage proposal");
+        }
+
+        foreach (PoliticalBetrothalState betrothal in changes.InvalidatedBetrothals)
+        {
+            Replace(betrothalList, betrothal, item => item.BetrothalId, "political betrothal");
+        }
+
+        foreach (MarriageUnionState union in changes.EndedUnions)
+        {
+            Replace(unionList, union, item => item.UnionId, "marriage union");
+        }
+
+        foreach (RomanceInvitationState invitation in changes.CancelledInvitations)
+        {
+            Remove(
+                invitationList,
+                invitation.InvitationId,
+                item => item.InvitationId,
+                "romance invitation");
+        }
+
+        foreach (RomanceRouteState route in changes.InvalidatedRomanceRoutes)
+        {
+            Replace(routeList, route, item => item.RouteId, "romance route");
+        }
+
+        return snapshot with
+        {
+            Proposals = proposalList,
+            Betrothals = betrothalList,
+            Unions = unionList,
+            Invitations = invitationList,
+            RomanceRoutes = routeList,
+        };
+    }
 
     private static CharacterMarriageWorldSnapshot ApplyOutcomeToSnapshot(
         CharacterMarriageWorldSnapshot snapshot,
@@ -1621,6 +2042,19 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
                 break;
             case RomanceRouteEndedOutcome value:
                 Replace(routeList, value.Route, item => item.RouteId, "romance route");
+                break;
+            case CoercedPoliticalUnionImposedOutcome value:
+                AddNew(proposalList, value.Proposal, item => item.ProposalId, "marriage proposal");
+                AddNew(unionList, value.Union, item => item.UnionId, "marriage union");
+                if (value.InvalidatedRomanceRoute is not null)
+                {
+                    Replace(
+                        routeList,
+                        value.InvalidatedRomanceRoute,
+                        item => item.RouteId,
+                        "romance route");
+                }
+
                 break;
             default:
                 throw new SimulationValidationException(
@@ -2168,6 +2602,7 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
         WithdrawRomanceInvitationAction item => item with { },
         AdvanceRomanceRouteAction item => item with { },
         EndRomanceRouteAction item => item with { },
+        ImposeCoercedUnionAction item => item with { },
         _ => throw new SimulationValidationException(
             $"Unregistered character-marriage action '{value.GetType().Name}'."),
     };
@@ -2206,6 +2641,13 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
             RomanceRouteCompletedOutcome item => new RomanceRouteCompletedOutcome(
                 Clone(item.Route)),
             RomanceRouteEndedOutcome item => new RomanceRouteEndedOutcome(Clone(item.Route)),
+            CoercedPoliticalUnionImposedOutcome item =>
+                new CoercedPoliticalUnionImposedOutcome(
+                    Clone(item.Proposal),
+                    Clone(item.Union),
+                    item.InvalidatedRomanceRoute is null
+                        ? null
+                        : Clone(item.InvalidatedRomanceRoute)),
             _ => throw new SimulationValidationException(
                 $"Unregistered character-marriage outcome '{value.GetType().Name}'."),
         };
@@ -3842,9 +4284,30 @@ public sealed class CharacterMarriageWorldState : IAuthoritativeCharacterMarriag
 
     private static RomanceRouteState Clone(RomanceRouteState value) => value with { };
 
+    private static RelationshipMemoryConsequenceSpecification Clone(
+        RelationshipMemoryConsequenceSpecification value) => value with
+        {
+            Impact = value.Impact with { },
+            WitnessIds = value.WitnessIds.ToArray(),
+        };
+
     private static CharacterMarriageHistoryAggregate Clone(
         CharacterMarriageHistoryAggregate value) => value with { };
+
+    private static CharacterMarriageLifecycleChangeSet Clone(
+        CharacterMarriageLifecycleChangeSet value) => value with
+        {
+            InvalidatedProposals = value.InvalidatedProposals.Select(Clone).ToArray(),
+            InvalidatedBetrothals = value.InvalidatedBetrothals.Select(Clone).ToArray(),
+            EndedUnions = value.EndedUnions.Select(Clone).ToArray(),
+            CancelledInvitations = value.CancelledInvitations.Select(Clone).ToArray(),
+            InvalidatedRomanceRoutes = value.InvalidatedRomanceRoutes.Select(Clone).ToArray(),
+        };
 }
 
 internal sealed record CharacterMarriageWorldUpdatePlan(
     CharacterMarriageWorldState Candidate);
+
+internal sealed record CharacterMarriageLifecycleUpdatePlan(
+    CharacterMarriageLifecycleChangeSet Changes,
+    CharacterMarriageWorldUpdatePlan MarriagePlan);

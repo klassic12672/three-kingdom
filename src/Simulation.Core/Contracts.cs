@@ -31,6 +31,8 @@ public sealed record CommandValidationResult(bool IsValid, IReadOnlyList<Validat
 [JsonDerivedType(typeof(CharacterActionCommandPayload), "character_action.v1")]
 [JsonDerivedType(typeof(CharacterResourceActionCommandPayload), "character_resource_action.v1")]
 [JsonDerivedType(typeof(CharacterMarriageActionCommandPayload), "character_marriage_action.v1")]
+[JsonDerivedType(typeof(CharacterConditionActionCommandPayload), "character_condition_action.v1")]
+[JsonDerivedType(typeof(HouseholdDecisionCommandPayload), "household_decision.v1")]
 public interface ICampaignCommandPayload;
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "$type", UnknownDerivedTypeHandling = JsonUnknownDerivedTypeHandling.FailSerialization)]
@@ -47,6 +49,8 @@ public interface ICampaignCommandPayload;
 [JsonDerivedType(typeof(CharacterActionResolvedEventPayload), "character_action_resolved.v1")]
 [JsonDerivedType(typeof(CharacterResourceActionResolvedEventPayload), "character_resource_action_resolved.v1")]
 [JsonDerivedType(typeof(CharacterMarriageActionResolvedEventPayload), "character_marriage_action_resolved.v1")]
+[JsonDerivedType(typeof(CharacterConditionActionResolvedEventPayload), "character_condition_action_resolved.v1")]
+[JsonDerivedType(typeof(HouseholdDecisionResolvedEventPayload), "household_decision_resolved.v1")]
 public interface ICampaignEventPayload;
 
 public sealed record AdjustResourcesCommandPayload(EntityId Target, long PeopleDelta, long FoodDelta, long GoldDelta)
@@ -91,6 +95,8 @@ public sealed record CampaignCommand(
         CharacterActionCommandPayload => "character_action.v1",
         CharacterResourceActionCommandPayload => "character_resource_action.v1",
         CharacterMarriageActionCommandPayload => "character_marriage_action.v1",
+        CharacterConditionActionCommandPayload => "character_condition_action.v1",
+        HouseholdDecisionCommandPayload => "household_decision.v1",
         _ => "unregistered",
     };
 
@@ -136,6 +142,8 @@ public sealed record CampaignEvent(
         CharacterActionResolvedEventPayload => "character_action_resolved.v1",
         CharacterResourceActionResolvedEventPayload => "character_resource_action_resolved.v1",
         CharacterMarriageActionResolvedEventPayload => "character_marriage_action_resolved.v1",
+        CharacterConditionActionResolvedEventPayload => "character_condition_action_resolved.v1",
+        HouseholdDecisionResolvedEventPayload => "household_decision_resolved.v1",
         _ => "unregistered",
     };
 }

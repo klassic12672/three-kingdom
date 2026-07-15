@@ -268,13 +268,13 @@ public sealed class CampaignSimulation
                         "Character-marriage actions must resolve in the Commands phase."));
                 }
 
-                AddIssues(
+                CommandValidationResult marriageValidation =
                     World.CharacterMarriages.ValidateAction(
                         command.IssuingActor,
                         marriageAction,
                         command.IssuedDate,
-                        World.Calendar.TurnIndex),
-                    issues);
+                        World.Calendar.TurnIndex);
+                AddIssues(marriageValidation, issues);
                 if (command.CommandId.IsValid && command.IssuedDate.IsValid)
                 {
                     try
@@ -283,10 +283,85 @@ public sealed class CampaignSimulation
                             command.IssuedDate,
                             command.CommandId);
                     }
-                    catch (Exception exception) when (exception is ArgumentException
+                    catch (Exception exception) when (exception is SimulationValidationException
+                        or ArgumentException
                         or OverflowException)
                     {
                         issues.Add(new("invalid_character_marriage_action", exception.Message));
+                    }
+                }
+
+                break;
+            case CharacterConditionActionCommandPayload conditionAction:
+                if (command.Phase != ResolutionPhase.Commands)
+                {
+                    issues.Add(new(
+                        "character_condition_phase",
+                        "Character-condition actions must resolve in the Commands phase."));
+                }
+
+                if (command.IssuingActor != CharacterConditionSystem.AuthoritativeActorId)
+                {
+                    issues.Add(new(
+                        "character_condition_authority",
+                        "Character-condition actions require the reserved authoritative simulation actor."));
+                }
+
+                if (command.CommandId.IsValid && command.IssuedDate.IsValid)
+                {
+                    try
+                    {
+                        EntityId eventId = CharacterConditionIds.DeriveActionEventId(
+                            command.IssuedDate,
+                            command.CommandId);
+                        if (command.IssuingActor == CharacterConditionSystem.AuthoritativeActorId)
+                        {
+                            _ = World.PrepareCharacterConditionAction(
+                                command.IssuingActor,
+                                conditionAction,
+                                command.IssuedDate,
+                                World.Calendar.TurnIndex,
+                                command.CommandId,
+                                eventId);
+                        }
+                    }
+                    catch (Exception exception) when (exception is SimulationValidationException
+                        or ArgumentException
+                        or OverflowException)
+                    {
+                        issues.Add(new("invalid_character_condition_action", exception.Message));
+                    }
+                }
+
+                break;
+            case HouseholdDecisionCommandPayload householdDecision:
+                if (command.Phase != ResolutionPhase.Commands)
+                {
+                    issues.Add(new(
+                        "household_decision_phase",
+                        "Household decisions must resolve in the Commands phase."));
+                }
+
+                if (command.CommandId.IsValid && command.IssuedDate.IsValid)
+                {
+                    try
+                    {
+                        EntityId eventId = HouseholdDecisionIds.DeriveActionEventId(
+                            command.IssuedDate,
+                            command.CommandId);
+                        _ = World.PrepareHouseholdDecision(
+                            command.IssuingActor,
+                            householdDecision,
+                            command.IssuedDate,
+                            World.Calendar.TurnIndex,
+                            command.CommandId,
+                            eventId);
+                    }
+                    catch (Exception exception) when (exception is SimulationValidationException
+                        or ArgumentException
+                        or OverflowException)
+                    {
+                        issues.Add(new("invalid_household_decision", exception.Message));
                     }
                 }
 
@@ -490,23 +565,74 @@ public sealed class CampaignSimulation
                     try
                     {
                         EntityId marriageEventId = GetEventId(command);
-                        CharacterMarriageActionResolvedEventPayload resolvedMarriageAction =
-                            World.CharacterMarriages.PlanAction(
+                        CharacterMarriageAggregatePlan aggregate =
+                            World.PrepareCharacterMarriageAction(
                                 command.IssuingActor,
                                 marriageAction,
                                 date,
                                 World.Calendar.TurnIndex,
                                 command.CommandId,
                                 marriageEventId);
-                        World.CharacterMarriages.PrevalidateOutcome(
-                            resolvedMarriageAction,
-                            date,
-                            World.Calendar.TurnIndex,
-                            command.CommandId,
-                            marriageEventId);
-                        payload = resolvedMarriageAction;
+                        payload = aggregate.ResolvedPayload;
                         affected = WorldState.GetCharacterMarriageActionAffectedIds(
-                            resolvedMarriageAction);
+                            aggregate.ResolvedPayload,
+                            marriageEventId);
+                    }
+                    catch (Exception exception) when (exception is SimulationValidationException
+                        or ArgumentException
+                        or OverflowException)
+                    {
+                        payload = new CommandCancelledEventPayload(
+                            "command_invalidated",
+                            exception.Message);
+                        affected = [];
+                    }
+
+                    break;
+                case CharacterConditionActionCommandPayload conditionAction:
+                    try
+                    {
+                        EntityId conditionEventId = GetEventId(command);
+                        CharacterConditionAggregatePlan aggregate =
+                            World.PrepareCharacterConditionAction(
+                                command.IssuingActor,
+                                conditionAction,
+                                date,
+                                World.Calendar.TurnIndex,
+                                command.CommandId,
+                                conditionEventId);
+                        payload = aggregate.ResolvedPayload;
+                        affected = WorldState.GetCharacterConditionActionAffectedIds(
+                            aggregate.ResolvedPayload,
+                            conditionEventId);
+                    }
+                    catch (Exception exception) when (exception is SimulationValidationException
+                        or ArgumentException
+                        or OverflowException)
+                    {
+                        payload = new CommandCancelledEventPayload(
+                            "command_invalidated",
+                            exception.Message);
+                        affected = [];
+                    }
+
+                    break;
+                case HouseholdDecisionCommandPayload householdDecision:
+                    try
+                    {
+                        EntityId householdEventId = GetEventId(command);
+                        HouseholdDecisionAggregatePlan aggregate =
+                            World.PrepareHouseholdDecision(
+                                command.IssuingActor,
+                                householdDecision,
+                                date,
+                                World.Calendar.TurnIndex,
+                                command.CommandId,
+                                householdEventId);
+                        payload = aggregate.ResolvedPayload;
+                        affected = WorldState.GetHouseholdDecisionAffectedIds(
+                            aggregate.ResolvedPayload,
+                            householdEventId);
                     }
                     catch (Exception exception) when (exception is SimulationValidationException
                         or ArgumentException
@@ -553,12 +679,21 @@ public sealed class CampaignSimulation
         }
     }
 
-    private bool IsActorAvailable(CampaignCommand command) => command.Payload is RelationshipActionCommandPayload
-        or CharacterActionCommandPayload
-        or CharacterResourceActionCommandPayload
-        or CharacterMarriageActionCommandPayload
-        ? World.Characters.TryGetCharacterProfile(command.IssuingActor, out _)
-        : World.TryGetEntity(command.IssuingActor, out _);
+    private bool IsActorAvailable(CampaignCommand command)
+    {
+        if (command.Payload is CharacterConditionActionCommandPayload)
+        {
+            return command.IssuingActor == CharacterConditionSystem.AuthoritativeActorId;
+        }
+
+        return command.Payload is RelationshipActionCommandPayload
+            or CharacterActionCommandPayload
+            or CharacterResourceActionCommandPayload
+            or CharacterMarriageActionCommandPayload
+            or HouseholdDecisionCommandPayload
+            ? World.Characters.TryGetCharacterProfile(command.IssuingActor, out _)
+            : World.TryGetEntity(command.IssuingActor, out _);
+    }
 
     private static EntityId GetEventId(CampaignCommand command)
     {
@@ -582,6 +717,20 @@ public sealed class CampaignSimulation
         if (command.Payload is CharacterMarriageActionCommandPayload)
         {
             return CharacterMarriageIds.DeriveActionEventId(
+                command.IssuedDate,
+                command.CommandId);
+        }
+
+        if (command.Payload is CharacterConditionActionCommandPayload)
+        {
+            return CharacterConditionIds.DeriveActionEventId(
+                command.IssuedDate,
+                command.CommandId);
+        }
+
+        if (command.Payload is HouseholdDecisionCommandPayload)
+        {
+            return HouseholdDecisionIds.DeriveActionEventId(
                 command.IssuedDate,
                 command.CommandId);
         }

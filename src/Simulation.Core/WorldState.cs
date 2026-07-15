@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Text.Json;
 
 namespace Simulation.Core;
 
@@ -430,6 +431,12 @@ public sealed class WorldState : IWorldQuery
             case CharacterMarriageActionResolvedEventPayload marriageAction:
                 ApplyCharacterMarriageAction(campaignEvent, marriageAction);
                 break;
+            case CharacterConditionActionResolvedEventPayload conditionAction:
+                ApplyCharacterConditionAction(campaignEvent, conditionAction);
+                break;
+            case HouseholdDecisionResolvedEventPayload householdDecision:
+                ApplyHouseholdDecision(campaignEvent, householdDecision);
+                break;
             default:
                 throw new SimulationValidationException($"Unregistered event payload '{campaignEvent.Payload.GetType().Name}'.");
         }
@@ -451,6 +458,223 @@ public sealed class WorldState : IWorldQuery
 
     internal IReadOnlyList<CampaignEvent> PlanGeographicEvents(CampaignDate date) =>
         Geography.PlanDailyEvents(date, Calendar.TurnIndex);
+
+    internal CharacterConditionAggregatePlan PrepareCharacterConditionAction(
+        EntityId actingActorId,
+        CharacterConditionActionCommandPayload payload,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (actingActorId != CharacterConditionSystem.AuthoritativeActorId
+            || payload?.Action is null
+            || eventId != CharacterConditionIds.DeriveActionEventId(
+                resolutionDate,
+                commandId))
+        {
+            throw new SimulationValidationException(
+                "Character-condition actions require the reserved authoritative simulation actor and exact event identity.");
+        }
+
+        CharacterConditionMutationPlan character = Characters.PrepareConditionAction(
+            payload.Action,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+        CharacterMarriageLifecycleUpdatePlan marriage = CharacterMarriages.PrepareLifecycleChange(
+            character.CharacterPlan.Candidate,
+            character.Change.CharacterId,
+            CharacterMarriageLifecycleReason.ConditionChanged,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId);
+        RelationshipMemoryConsequenceSpecification? consequence = null;
+        RelationshipWorldUpdatePlan? relationship = null;
+        if (payload.Action is EnterCharacterCustodyAction custody)
+        {
+            consequence = Relationships.PlanHarmfulConsequence(
+                eventId,
+                CharacterConditionIds.DeriveRelationshipConsequenceId(eventId, 0),
+                character.Change.CharacterId,
+                custody.CustodianCharacterId,
+                new EntityId("memory_meaning:condition/entered_custody"),
+                resolutionDate,
+                authoritativeTurnIndex);
+        }
+
+        CharacterConditionActionResolvedEventPayload resolved = new(
+            actingActorId,
+            payload.Action,
+            new CharacterConditionChangedOutcome(
+                character.Change,
+                marriage.Changes),
+            consequence);
+        if (consequence is not null)
+        {
+            relationship = Relationships.PrepareCharacterConditionConsequence(
+                resolved,
+                resolutionDate,
+                authoritativeTurnIndex,
+                eventId);
+        }
+
+        return new CharacterConditionAggregatePlan(
+            resolved,
+            character.CharacterPlan,
+            marriage.MarriagePlan,
+            relationship);
+    }
+
+    internal CharacterDeathPreviewAggregatePlan PrepareCharacterDeathPreview(
+        EntityId characterId,
+        CharacterConditionState expectedCurrent,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (eventId != CharacterConditionIds.DeriveActionEventId(
+                resolutionDate,
+                commandId))
+        {
+            throw new SimulationValidationException(
+                "Character-death preview requires the exact reserved condition event identity.");
+        }
+
+        CharacterConditionMutationPlan character = Characters.PrepareDeathPreview(
+            characterId,
+            expectedCurrent,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+        CharacterMarriageLifecycleUpdatePlan marriage = CharacterMarriages.PrepareLifecycleChange(
+            character.CharacterPlan.Candidate,
+            characterId,
+            CharacterMarriageLifecycleReason.CharacterDied,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId);
+        return new CharacterDeathPreviewAggregatePlan(
+            character.Change,
+            marriage.Changes,
+            character.CharacterPlan,
+            marriage.MarriagePlan);
+    }
+
+    internal HouseholdDecisionAggregatePlan PrepareHouseholdDecision(
+        EntityId actingCharacterId,
+        HouseholdDecisionCommandPayload payload,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (payload?.Action is null
+            || eventId != HouseholdDecisionIds.DeriveActionEventId(
+                resolutionDate,
+                commandId))
+        {
+            throw new SimulationValidationException(
+                "Household decision requires a registered action and exact event identity.");
+        }
+
+        HouseholdDecisionMutationPlan character = Characters.PrepareHouseholdDecision(
+            actingCharacterId,
+            payload.Action,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+        EntityId meaningId = character.Transition.Kind switch
+        {
+            HouseholdDecisionKind.Expulsion =>
+                new EntityId("memory_meaning:household/expulsion"),
+            HouseholdDecisionKind.CaptiveIncorporation =>
+                new EntityId("memory_meaning:household/captive_incorporation"),
+            _ => throw new SimulationValidationException(
+                "Household decision produced an unregistered transition kind."),
+        };
+        RelationshipMemoryConsequenceSpecification consequence =
+            Relationships.PlanHarmfulConsequence(
+                eventId,
+                HouseholdDecisionIds.DeriveRelationshipConsequenceId(eventId, 0),
+                character.Transition.MemberCharacterId,
+                actingCharacterId,
+                meaningId,
+                resolutionDate,
+                authoritativeTurnIndex);
+        HouseholdDecisionResolvedEventPayload resolved = new(
+            actingCharacterId,
+            payload.Action,
+            new HouseholdMembershipChangedOutcome(character.Transition),
+            consequence);
+        RelationshipWorldUpdatePlan relationship =
+            Relationships.PrepareHouseholdDecisionConsequence(
+                resolved,
+                resolutionDate,
+                authoritativeTurnIndex,
+                eventId);
+        return new HouseholdDecisionAggregatePlan(
+            resolved,
+            character.CharacterPlan,
+            relationship);
+    }
+
+    internal CharacterMarriageAggregatePlan PrepareCharacterMarriageAction(
+        EntityId actingCharacterId,
+        CharacterMarriageActionCommandPayload payload,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (payload?.Action is null
+            || eventId != CharacterMarriageIds.DeriveActionEventId(
+                resolutionDate,
+                commandId))
+        {
+            throw new SimulationValidationException(
+                "Character-marriage action requires a registered action and exact event identity.");
+        }
+
+        CharacterMarriageActionResolvedEventPayload resolved = CharacterMarriages.PlanAction(
+            actingCharacterId,
+            payload,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+        RelationshipWorldUpdatePlan? relationship = null;
+        if (payload.Action is ImposeCoercedUnionAction coercive)
+        {
+            RelationshipMemoryConsequenceSpecification consequence =
+                Relationships.PlanHarmfulConsequence(
+                    eventId,
+                    CharacterMarriageIds.DeriveRelationshipConsequenceId(eventId, 0),
+                    coercive.RecipientCharacterId,
+                    actingCharacterId,
+                    new EntityId("memory_meaning:marriage/coerced_union"),
+                    resolutionDate,
+                    authoritativeTurnIndex);
+            resolved = resolved with { RelationshipMemoryConsequence = consequence };
+            relationship = Relationships.PrepareCharacterMarriageConsequence(
+                resolved,
+                resolutionDate,
+                authoritativeTurnIndex,
+                eventId);
+        }
+
+        CharacterMarriageWorldUpdatePlan marriage = CharacterMarriages.PrepareOutcome(
+            resolved,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+        return new CharacterMarriageAggregatePlan(resolved, marriage, relationship);
+    }
 
     private void ApplyAdjustment(ResourcesAdjustedEventPayload adjustment)
     {
@@ -574,23 +798,121 @@ public sealed class WorldState : IWorldQuery
         if (campaignEvent.EventId != expectedEventId
             || campaignEvent.AffectedIds is null
             || !campaignEvent.AffectedIds.SequenceEqual(
-                GetCharacterMarriageActionAffectedIds(payload)))
+                GetCharacterMarriageActionAffectedIds(payload, campaignEvent.EventId)))
         {
             throw new SimulationValidationException(
                 "Character-marriage action event identity or affected IDs do not match its exact deterministic outcome.");
         }
 
-        CharacterMarriageWorldUpdatePlan marriagePlan = CharacterMarriages.PrepareOutcome(
-            payload,
+        CharacterMarriageAggregatePlan aggregate = PrepareCharacterMarriageAction(
+            payload.ActingCharacterId,
+            new CharacterMarriageActionCommandPayload(payload.Action),
             campaignEvent.ResolutionDate,
             Calendar.TurnIndex,
             commandId,
             campaignEvent.EventId);
-        CharacterMarriages.ApplyPrepared(marriagePlan);
+        if (!PayloadsEqual(aggregate.ResolvedPayload, payload))
+        {
+            throw new SimulationValidationException(
+                "Character-marriage action event payload does not match its exact deterministic plan.");
+        }
+
+        CharacterMarriages.ApplyPrepared(aggregate.MarriagePlan);
+        if (aggregate.RelationshipPlan is not null)
+        {
+            Relationships.ApplyPrepared(aggregate.RelationshipPlan);
+        }
+    }
+
+    private void ApplyCharacterConditionAction(
+        CampaignEvent campaignEvent,
+        CharacterConditionActionResolvedEventPayload payload)
+    {
+        if (campaignEvent.Phase != ResolutionPhase.Commands
+            || campaignEvent.CausalId is not EntityId commandId
+            || !commandId.IsValid)
+        {
+            throw new SimulationValidationException(
+                "Character-condition action events require the Commands phase and a valid causal command ID.");
+        }
+
+        EntityId expectedEventId = CharacterConditionIds.DeriveActionEventId(
+            campaignEvent.ResolutionDate,
+            commandId);
+        if (campaignEvent.EventId != expectedEventId
+            || campaignEvent.AffectedIds is null
+            || !campaignEvent.AffectedIds.SequenceEqual(
+                GetCharacterConditionActionAffectedIds(payload, campaignEvent.EventId)))
+        {
+            throw new SimulationValidationException(
+                "Character-condition action event identity or affected IDs do not match its exact deterministic outcome.");
+        }
+
+        CharacterConditionAggregatePlan aggregate = PrepareCharacterConditionAction(
+            payload.ActingActorId,
+            new CharacterConditionActionCommandPayload(payload.Action),
+            campaignEvent.ResolutionDate,
+            Calendar.TurnIndex,
+            commandId,
+            campaignEvent.EventId);
+        if (!PayloadsEqual(aggregate.ResolvedPayload, payload))
+        {
+            throw new SimulationValidationException(
+                "Character-condition action event payload does not match its exact deterministic plan.");
+        }
+
+        Characters.ApplyPrepared(aggregate.CharacterPlan);
+        CharacterMarriages.ApplyPrepared(aggregate.MarriagePlan);
+        if (aggregate.RelationshipPlan is not null)
+        {
+            Relationships.ApplyPrepared(aggregate.RelationshipPlan);
+        }
+    }
+
+    private void ApplyHouseholdDecision(
+        CampaignEvent campaignEvent,
+        HouseholdDecisionResolvedEventPayload payload)
+    {
+        if (campaignEvent.Phase != ResolutionPhase.Commands
+            || campaignEvent.CausalId is not EntityId commandId
+            || !commandId.IsValid)
+        {
+            throw new SimulationValidationException(
+                "Household decision events require the Commands phase and a valid causal command ID.");
+        }
+
+        EntityId expectedEventId = HouseholdDecisionIds.DeriveActionEventId(
+            campaignEvent.ResolutionDate,
+            commandId);
+        if (campaignEvent.EventId != expectedEventId
+            || campaignEvent.AffectedIds is null
+            || !campaignEvent.AffectedIds.SequenceEqual(
+                GetHouseholdDecisionAffectedIds(payload, campaignEvent.EventId)))
+        {
+            throw new SimulationValidationException(
+                "Household decision event identity or affected IDs do not match its exact deterministic outcome.");
+        }
+
+        HouseholdDecisionAggregatePlan aggregate = PrepareHouseholdDecision(
+            payload.ActingCharacterId,
+            new HouseholdDecisionCommandPayload(payload.Action),
+            campaignEvent.ResolutionDate,
+            Calendar.TurnIndex,
+            commandId,
+            campaignEvent.EventId);
+        if (!PayloadsEqual(aggregate.ResolvedPayload, payload))
+        {
+            throw new SimulationValidationException(
+                "Household decision event payload does not match its exact deterministic plan.");
+        }
+
+        Characters.ApplyPrepared(aggregate.CharacterPlan);
+        Relationships.ApplyPrepared(aggregate.RelationshipPlan);
     }
 
     internal static EntityId[] GetCharacterMarriageActionAffectedIds(
-        CharacterMarriageActionResolvedEventPayload payload)
+        CharacterMarriageActionResolvedEventPayload payload,
+        EntityId? eventId = null)
     {
         if (payload is null
             || payload.Action is null
@@ -607,9 +929,9 @@ public sealed class WorldState : IWorldQuery
             case ProposePoliticalMarriageAction action:
                 affected.Add(action.RecipientCharacterId);
                 affected.Add(action.PracticeId);
-                if (action.ConcubinagePrincipalCharacterId is EntityId principal)
+                if (action.ConcubinagePrincipalCharacterId is EntityId proposalPrincipal)
                 {
-                    affected.Add(principal);
+                    affected.Add(proposalPrincipal);
                 }
 
                 break;
@@ -640,6 +962,15 @@ public sealed class WorldState : IWorldQuery
                 break;
             case EndRomanceRouteAction action:
                 affected.Add(action.RouteId);
+                break;
+            case ImposeCoercedUnionAction action:
+                affected.Add(action.RecipientCharacterId);
+                affected.Add(action.PracticeId);
+                if (action.ConcubinagePrincipalCharacterId is EntityId coercivePrincipal)
+                {
+                    affected.Add(coercivePrincipal);
+                }
+
                 break;
             default:
                 throw new SimulationValidationException(
@@ -701,9 +1032,33 @@ public sealed class WorldState : IWorldQuery
             case RomanceRouteEndedOutcome value:
                 AddRomanceRoute(affected, value.Route);
                 break;
+            case CoercedPoliticalUnionImposedOutcome value:
+                AddMarriageProposal(affected, value.Proposal);
+                AddMarriageUnion(affected, value.Union);
+                if (value.InvalidatedRomanceRoute is not null)
+                {
+                    AddRomanceRoute(affected, value.InvalidatedRomanceRoute);
+                }
+
+                break;
             default:
                 throw new SimulationValidationException(
                     $"Unregistered character-marriage outcome '{payload.Outcome.GetType().Name}'.");
+        }
+
+        if (payload.RelationshipMemoryConsequence is not null)
+        {
+            if (eventId is not EntityId sourceEventId || !sourceEventId.IsValid)
+            {
+                throw new SimulationValidationException(
+                    "Character-marriage relationship consequences require their source event ID.");
+            }
+
+            AddRelationshipConsequence(
+                affected,
+                payload.RelationshipMemoryConsequence,
+                sourceEventId,
+                0);
         }
 
         if (affected.Any(id => !id.IsValid))
@@ -713,6 +1068,168 @@ public sealed class WorldState : IWorldQuery
         }
 
         return affected.Order().ToArray();
+    }
+
+    internal static EntityId[] GetCharacterConditionActionAffectedIds(
+        CharacterConditionActionResolvedEventPayload payload,
+        EntityId? eventId = null)
+    {
+        if (payload?.Action is null
+            || payload.Outcome is not CharacterConditionChangedOutcome outcome
+            || outcome.Change is null
+            || outcome.MarriageChanges is null)
+        {
+            throw new SimulationValidationException(
+                "Character-condition action event contains null or unsupported data.");
+        }
+
+        HashSet<EntityId> affected =
+        [
+            payload.ActingActorId,
+            outcome.Change.ChangeId,
+            outcome.Change.CharacterId,
+        ];
+        AddConditionCustodian(affected, outcome.Change.PreviousCondition);
+        AddConditionCustodian(affected, outcome.Change.CurrentCondition);
+        AddMarriageLifecycleChanges(affected, outcome.MarriageChanges);
+        if (payload.RelationshipMemoryConsequence is not null)
+        {
+            if (eventId is not EntityId sourceEventId || !sourceEventId.IsValid)
+            {
+                throw new SimulationValidationException(
+                    "Character-condition relationship consequences require their source event ID.");
+            }
+
+            AddRelationshipConsequence(
+                affected,
+                payload.RelationshipMemoryConsequence,
+                sourceEventId,
+                0);
+        }
+
+        if (affected.Any(id => !id.IsValid))
+        {
+            throw new SimulationValidationException(
+                "Character-condition action event contains an invalid affected ID.");
+        }
+
+        return affected.Order().ToArray();
+    }
+
+    internal static EntityId[] GetHouseholdDecisionAffectedIds(
+        HouseholdDecisionResolvedEventPayload payload,
+        EntityId eventId)
+    {
+        if (payload?.Action is null
+            || payload.Outcome is not HouseholdMembershipChangedOutcome outcome
+            || outcome.Transition is null
+            || payload.RelationshipMemoryConsequence is null
+            || !eventId.IsValid)
+        {
+            throw new SimulationValidationException(
+                "Household decision event contains null or unsupported data.");
+        }
+
+        HouseholdMembershipTransition transition = outcome.Transition;
+        HashSet<EntityId> affected =
+        [
+            payload.ActingCharacterId,
+            transition.TransitionId,
+            transition.MemberCharacterId,
+        ];
+        if (transition.SourceHouseholdId is EntityId source)
+        {
+            affected.Add(source);
+        }
+
+        if (transition.DestinationHouseholdId is EntityId destination)
+        {
+            affected.Add(destination);
+        }
+
+        AddRelationshipConsequence(
+            affected,
+            payload.RelationshipMemoryConsequence,
+            eventId,
+            0);
+        if (affected.Any(id => !id.IsValid))
+        {
+            throw new SimulationValidationException(
+                "Household decision event contains an invalid affected ID.");
+        }
+
+        return affected.Order().ToArray();
+    }
+
+    private static void AddConditionCustodian(
+        ISet<EntityId> affected,
+        CharacterConditionState condition)
+    {
+        if (condition?.CustodianId is EntityId custodian)
+        {
+            affected.Add(custodian);
+        }
+    }
+
+    private static void AddMarriageLifecycleChanges(
+        ISet<EntityId> affected,
+        CharacterMarriageLifecycleChangeSet changes)
+    {
+        if (changes.ContractVersion
+                != CharacterMarriageContractVersions.LifecycleChangeSet
+            || changes.InvalidatedProposals is null
+            || changes.InvalidatedBetrothals is null
+            || changes.EndedUnions is null
+            || changes.CancelledInvitations is null
+            || changes.InvalidatedRomanceRoutes is null)
+        {
+            throw new SimulationValidationException(
+                "Character-marriage lifecycle changes are malformed.");
+        }
+
+        foreach (MarriageProposalState proposal in changes.InvalidatedProposals)
+        {
+            AddMarriageProposal(affected, proposal);
+        }
+
+        foreach (PoliticalBetrothalState betrothal in changes.InvalidatedBetrothals)
+        {
+            AddPoliticalBetrothal(affected, betrothal);
+        }
+
+        foreach (MarriageUnionState union in changes.EndedUnions)
+        {
+            AddMarriageUnion(affected, union);
+        }
+
+        foreach (RomanceInvitationState invitation in changes.CancelledInvitations)
+        {
+            AddRomanceInvitation(affected, invitation);
+        }
+
+        foreach (RomanceRouteState route in changes.InvalidatedRomanceRoutes)
+        {
+            AddRomanceRoute(affected, route);
+        }
+    }
+
+    private static void AddRelationshipConsequence(
+        ISet<EntityId> affected,
+        RelationshipMemoryConsequenceSpecification consequence,
+        EntityId eventId,
+        int zeroBasedIndex)
+    {
+        affected.Add(consequence.ConsequenceId);
+        affected.Add(consequence.SubjectCharacterId);
+        affected.Add(consequence.TargetCharacterId);
+        affected.Add(RelationshipIds.DeriveRelationshipId(
+            consequence.SubjectCharacterId,
+            consequence.TargetCharacterId));
+        affected.Add(RelationshipIds.DeriveMemoryId(
+            eventId,
+            consequence.SubjectCharacterId,
+            consequence.TargetCharacterId,
+            zeroBasedIndex));
     }
 
     private static void AddMarriageProposal(
@@ -950,6 +1467,11 @@ public sealed class WorldState : IWorldQuery
             affected.Add(roleId);
         }
     }
+
+    private static bool PayloadsEqual<T>(T expected, T actual) =>
+        StringComparer.Ordinal.Equals(
+            JsonSerializer.Serialize(expected, SimulationJson.CreateOptions()),
+            JsonSerializer.Serialize(actual, SimulationJson.CreateOptions()));
 
     private void ValidateEventOrder(CampaignEvent campaignEvent)
     {
@@ -1359,7 +1881,9 @@ public sealed class WorldState : IWorldQuery
             command => command.Payload is RelationshipActionCommandPayload
                 or CharacterActionCommandPayload
                 or CharacterResourceActionCommandPayload
-                or CharacterMarriageActionCommandPayload))
+                or CharacterMarriageActionCommandPayload
+                or CharacterConditionActionCommandPayload
+                or HouseholdDecisionCommandPayload))
         {
             try
             {
@@ -1375,6 +1899,12 @@ public sealed class WorldState : IWorldQuery
                         command.IssuedDate,
                         command.CommandId),
                     CharacterMarriageActionCommandPayload => CharacterMarriageIds.DeriveActionEventId(
+                        command.IssuedDate,
+                        command.CommandId),
+                    CharacterConditionActionCommandPayload => CharacterConditionIds.DeriveActionEventId(
+                        command.IssuedDate,
+                        command.CommandId),
+                    HouseholdDecisionCommandPayload => HouseholdDecisionIds.DeriveActionEventId(
                         command.IssuedDate,
                         command.CommandId),
                     _ => throw new SimulationValidationException(
@@ -1395,6 +1925,28 @@ public sealed class WorldState : IWorldQuery
         PendingWork = entity.PendingWork.ToArray(),
     };
 }
+
+internal sealed record CharacterConditionAggregatePlan(
+    CharacterConditionActionResolvedEventPayload ResolvedPayload,
+    CharacterWorldUpdatePlan CharacterPlan,
+    CharacterMarriageWorldUpdatePlan MarriagePlan,
+    RelationshipWorldUpdatePlan? RelationshipPlan);
+
+internal sealed record CharacterDeathPreviewAggregatePlan(
+    CharacterConditionChange Change,
+    CharacterMarriageLifecycleChangeSet MarriageChanges,
+    CharacterWorldUpdatePlan CharacterPlan,
+    CharacterMarriageWorldUpdatePlan MarriagePlan);
+
+internal sealed record HouseholdDecisionAggregatePlan(
+    HouseholdDecisionResolvedEventPayload ResolvedPayload,
+    CharacterWorldUpdatePlan CharacterPlan,
+    RelationshipWorldUpdatePlan RelationshipPlan);
+
+internal sealed record CharacterMarriageAggregatePlan(
+    CharacterMarriageActionResolvedEventPayload ResolvedPayload,
+    CharacterMarriageWorldUpdatePlan MarriagePlan,
+    RelationshipWorldUpdatePlan? RelationshipPlan);
 
 internal sealed class CommandComparer : IComparer<CampaignCommand>
 {

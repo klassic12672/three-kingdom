@@ -31,6 +31,7 @@ public sealed class SaveSchemaRegistry
             new SaveMigrationV9ToV10(),
             new SaveMigrationV10ToV11(),
             new SaveMigrationV11ToV12(),
+            new SaveMigrationV12ToV13(),
         ]).ToArray();
         if (registered.Any(item => item.ToSchemaVersion != item.FromSchemaVersion + 1))
         {
@@ -100,7 +101,7 @@ public sealed class SaveSchemaRegistry
 
     internal static void ValidateHistoricalSourceChecksum(JsonObject source, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 11)
+        if (schemaVersion is < 1 or > 12)
         {
             throw new SaveCompatibilityException($"Save schema {schemaVersion} has no historical checksum contract.");
         }
@@ -175,7 +176,7 @@ public sealed class SaveSchemaRegistry
                 $"Schema {schemaVersion} unexpectedly contains schema 10 character-marriage data.");
         }
 
-        if (schemaVersion is 10 or 11)
+        if (schemaVersion is 10 or 11 or 12)
         {
             ValidateCharacterMarriageSnapshotShape(
                 RequireHistoricalObject(
@@ -184,20 +185,25 @@ public sealed class SaveSchemaRegistry
                     schemaVersion,
                     "snapshot.characterMarriages"),
                 $"Save schema {schemaVersion}",
-                expectedSnapshotVersion: 1,
-                requireInvitations: false,
-                allowVersionTwoRoutes: false);
+                expectedSnapshotVersion: schemaVersion == 12
+                    ? CharacterMarriageContractVersions.Snapshot
+                    : 1,
+                requireInvitations: schemaVersion == 12,
+                allowVersionTwoRoutes: schemaVersion == 12);
             JsonObject[] marriageSystemVersions = systemVersions
                 .Where(version => IsSystemId(version, CharacterMarriageSystem.SystemId))
                 .ToArray();
+            int expectedMarriageSystemVersion = schemaVersion == 12
+                ? CharacterMarriageSystem.Version
+                : 1;
             if (marriageSystemVersions.Length != 1
                 || !IsSystemVersion(
                     marriageSystemVersions[0],
                     CharacterMarriageSystem.SystemId,
-                    1))
+                    expectedMarriageSystemVersion))
             {
                 throw new SaveCompatibilityException(
-                    $"Save schema {schemaVersion} requires exactly one '{CharacterMarriageSystem.SystemId}@1' system-version registration.");
+                    $"Save schema {schemaVersion} requires exactly one '{CharacterMarriageSystem.SystemId}@{expectedMarriageSystemVersion}' system-version registration.");
             }
 
             JsonArray pendingCommands = RequireHistoricalArray(
@@ -221,11 +227,23 @@ public sealed class SaveSchemaRegistry
                 RejectD1Discriminators(diagnosticCommands, "diagnostic commands");
                 RejectD1Discriminators(diagnosticEvents, "diagnostic events");
             }
-            else
+            else if (schemaVersion == 11)
             {
                 RejectD2Discriminators(pendingCommands, "snapshot pending commands");
                 RejectD2Discriminators(diagnosticCommands, "diagnostic commands");
                 RejectD2Discriminators(diagnosticEvents, "diagnostic events");
+            }
+            else
+            {
+                RejectD3Discriminators(pendingCommands, "snapshot pending commands");
+                RejectD3Discriminators(diagnosticCommands, "diagnostic commands");
+                RejectD3Discriminators(diagnosticEvents, "diagnostic events");
+                RejectD3RelationshipSourceKinds(
+                    snapshot,
+                    "authoritative snapshot");
+                RejectD3RelationshipSourceKinds(
+                    diagnosticEvents,
+                    "diagnostic events");
             }
         }
 
@@ -1566,6 +1584,26 @@ public sealed class SaveSchemaRegistry
         }
     }
 
+    private static void RejectD3Discriminators(JsonNode node, string description)
+    {
+        if (ContainsD3Discriminator(node) || ContainsD3Property(node))
+        {
+            throw new SaveCompatibilityException(
+                $"Save schema 12 unexpectedly contains schema 13 character-condition, household, or coercion data in {description}.");
+        }
+    }
+
+    private static void RejectD3RelationshipSourceKinds(
+        JsonNode node,
+        string description)
+    {
+        if (ContainsPostD2RelationshipSourceKind(node))
+        {
+            throw new SaveCompatibilityException(
+                $"Save schema 12 unexpectedly contains a schema 13 relationship-memory source kind in {description}.");
+        }
+    }
+
     private static bool ContainsD1Discriminator(JsonNode? node)
     {
         if (node is JsonObject value)
@@ -1615,6 +1653,58 @@ public sealed class SaveSchemaRegistry
         return node is JsonArray array && array.Any(ContainsD2Discriminator);
     }
 
+    private static bool ContainsD3Discriminator(JsonNode? node)
+    {
+        if (node is JsonObject value)
+        {
+            if (value["$type"] is JsonValue discriminator
+                && discriminator.TryGetValue(out string? type)
+                && IsD3Discriminator(type))
+            {
+                return true;
+            }
+
+            return value.Any(property => ContainsD3Discriminator(property.Value));
+        }
+
+        return node is JsonArray array && array.Any(ContainsD3Discriminator);
+    }
+
+    private static bool ContainsD3Property(JsonNode? node)
+    {
+        if (node is JsonObject value)
+        {
+            if (value.ContainsKey("relationshipMemoryConsequence"))
+            {
+                return true;
+            }
+
+            return value.Any(property => ContainsD3Property(property.Value));
+        }
+
+        return node is JsonArray array && array.Any(ContainsD3Property);
+    }
+
+    private static bool ContainsPostD2RelationshipSourceKind(JsonNode? node)
+    {
+        if (node is JsonObject value)
+        {
+            if (value["sourceKind"] is JsonValue sourceKind
+                && sourceKind.TryGetValue(out int kind)
+                && kind is not ((int)RelationshipMemorySourceKind.RelationshipAction)
+                    and not ((int)RelationshipMemorySourceKind.CharacterAction))
+            {
+                return true;
+            }
+
+            return value.Any(property =>
+                ContainsPostD2RelationshipSourceKind(property.Value));
+        }
+
+        return node is JsonArray array
+            && array.Any(ContainsPostD2RelationshipSourceKind);
+    }
+
     private static bool IsD2Discriminator(string? type) => type is
         "offer_romance_route.v1"
         or "respond_to_romance_invitation.v1"
@@ -1629,6 +1719,22 @@ public sealed class SaveSchemaRegistry
         or "romance_route_advanced.v1"
         or "romance_route_completed.v1"
         or "romance_route_ended.v1";
+
+    private static bool IsD3Discriminator(string? type) => type is
+        "character_condition_action.v1"
+        or "household_decision.v1"
+        or "character_condition_action_resolved.v1"
+        or "household_decision_resolved.v1"
+        or "incapacitate_character.v1"
+        or "restore_character_capacity.v1"
+        or "enter_character_custody.v1"
+        or "release_character_custody.v1"
+        or "character_condition_changed.v1"
+        or "expel_household_member.v1"
+        or "incorporate_captive_household_member.v1"
+        or "household_membership_changed.v1"
+        or "impose_coerced_union.v1"
+        or "coerced_political_union_imposed.v1";
 }
 
 public sealed class SaveMigrationV1ToV2 : ISaveMigration
@@ -2194,6 +2300,30 @@ public sealed class SaveMigrationV11ToV12 : ISaveMigration
         WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(
             SimulationJson.CreateOptions())
             ?? throw new SaveCompatibilityException("Migrated schema 12 snapshot is empty.");
+        source["checksum"] = SimulationChecksum.Compute(migratedSnapshot).Value;
+        source["schemaVersion"] = ToSchemaVersion;
+        return source;
+    }
+}
+
+public sealed class SaveMigrationV12ToV13 : ISaveMigration
+{
+    public int FromSchemaVersion => 12;
+
+    public int ToSchemaVersion => 13;
+
+    public JsonObject Migrate(JsonObject source)
+    {
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(source, FromSchemaVersion);
+        if (source["snapshot"] is not JsonObject snapshot)
+        {
+            throw new SaveCompatibilityException(
+                "Schema 12 save is missing authoritative snapshot data.");
+        }
+
+        WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(
+            SimulationJson.CreateOptions())
+            ?? throw new SaveCompatibilityException("Migrated schema 13 snapshot is empty.");
         source["checksum"] = SimulationChecksum.Compute(migratedSnapshot).Value;
         source["schemaVersion"] = ToSchemaVersion;
         return source;
