@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2/SP-04C3 exact-SHA hosted verified; SP-04D0 locally verified/hosted pending; later packages pending |
+| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1/SP-04C2/SP-04C3/SP-04D0 exact-SHA hosted verified; later packages pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -303,7 +303,7 @@ Accepted revision `7b9f795320e5f4c14aa7e14185e7ba035fdf6847` subsequently passed
 
 Physical/economic estate records, geography, production, taxation, grants, marriage/romance, lifecycle mutation, inheritance/succession resolution, content, UI, battle, and AI remain deferred. Every full SP-04 acceptance criterion below remains unchecked, the full three-second budget remains unmet, and SP-05 remains blocked.
 
-## Active package: SP-04D0 immutable marriage foundation
+## Accepted package: SP-04D0 immutable marriage foundation
 
 SP-04D0 is the state/query/persistence foundation for workstream 4. Dependencies through accepted SP-04C3 revision `7b9f795320e5f4c14aa7e14185e7ba035fdf6847` are satisfied. The boundary preserves pure deterministic .NET, stable namespaced identity, inward dependencies, forward-only persistence, the existing non-explicit-content rule, and `CharacterWorldSnapshot.HouseholdStates` as the sole household residence authority; no ADR is required.
 
@@ -340,13 +340,15 @@ Save schema 10 requires complete marriage state and `simulation.character_marria
 | D015 | A 1,000-character fixture records bounded construction/query/snapshot/checksum behavior without a brittle threshold | Raw local Apple Silicon macOS measurement | Local macOS pass; full three-second SP-04 budget remains unmet/unproven |
 | D016 | Repository validation, complete Release tests, touched-file formatting, diff, and LFS gates pass | Local repository gates | Local pass |
 | D017 | Independent adversarial re-review finds no remaining correctness or boundary blocker | Read-only review and focused rerun | Local pass after remediation |
-| D018 | The same accepted revision passes deterministic validation and complete suites on hosted macOS arm64 and Windows x64 | Exact-SHA clean-checkout hosted evidence | Pending |
+| D018 | The same accepted revision passes deterministic validation and complete suites on hosted macOS arm64 and Windows x64 | Exact-SHA clean-checkout hosted evidence | Pass at `f7fef247178776d7c6fb1c4bed56f09dece76ff4` |
 
 Local integrated verification on 2026-07-15 used Darwin 25.5.0 arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retained 1,295 records and 2,820 translations with registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` built with zero warnings and passed 374 Simulation.Core, 71 Game.Content, 6 Game.Application, and 18 repository tests. The focused marriage/save slice passed 200 tests. The ten-year/1,000-entity checksum is `0a92aa6dec435a9b33a399898ed7985210d7142dc10027b23a0bc4e392666b36`. Touched-file formatting, `git diff --check`, and `git lfs fsck` passed.
 
 Independent adversarial verification initially found missing proposal/outcome bijection and betrothal fulfillment identity, unbounded future turns, eligibility/state limit mismatches, pre-birth history, and incomplete semantic-save/fixture/checksum evidence. The corrected tree adds the exact causal links and calendar bounds, aligns all legal-relationship eligibility categories, rejects impossible history, authenticates nonempty C3 estate state, and expands current-save and checksum coverage. Final review then corrected the practice-minimum age for coercive unions and prohibited coercive command reuse only for positive romance creation/completion while allowing the same command to end or invalidate a route. Release-focused re-review passed 38/38 marriage tests and found no remaining D0 correctness or boundary blocker.
 
-The final local Release performance fixture contains 1,000 characters, 250 active proposals, and 250 active adult romance routes. Construction measured 38.405 ms, 1,000 aggregate record queries measured 67.561 ms, and snapshot plus full-world checksum measured 191.298 ms; checksum `6542e48b7ccdceee890fc757fd9104c6b4f73164ef4263b7b451947766777e06`. The test asserts shape and correctness, not a wall-clock threshold. These working-tree results are not exact-SHA, hosted, cross-platform, physical-Windows, signing, Steam, release, or full-turn performance evidence. D018 remains pending; every full SP-04 acceptance criterion remains unchecked and SP-05 remains blocked.
+The final local Release performance fixture contains 1,000 characters, 250 active proposals, and 250 active adult romance routes. Construction measured 38.405 ms, 1,000 aggregate record queries measured 67.561 ms, and snapshot plus full-world checksum measured 191.298 ms; checksum `6542e48b7ccdceee890fc757fd9104c6b4f73164ef4263b7b451947766777e06`. The test asserts shape and correctness, not a wall-clock threshold. These working-tree results are not themselves exact-SHA, hosted, cross-platform, physical-Windows, signing, Steam, release, or full-turn performance evidence. Every full SP-04 acceptance criterion remains unchecked and SP-05 remains blocked.
+
+Subsequent exact-SHA evidence on 2026-07-15 does not retroactively relabel the raw working-tree performance measurements. Accepted revision `f7fef247178776d7c6fb1c4bed56f09dece76ff4` passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and static artifact verification](../evidence/SP-04D0-EXACT-SHA-f7fef24.md). D018 therefore passes at that revision. Physical Windows remains an M4 gate, production signing and Steam remain SP-15 gates, and the full SP-04 three-second budget remains unmet.
 
 ## Edge cases and failure handling
 
