@@ -18,7 +18,7 @@ public readonly record struct SimulationChecksum(string Value)
 
     internal static SimulationChecksum ComputeForSaveSchema(WorldSnapshot snapshot, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 6)
+        if (schemaVersion is < 1 or > 7)
         {
             throw new ArgumentOutOfRangeException(nameof(schemaVersion));
         }
@@ -27,14 +27,19 @@ public readonly record struct SimulationChecksum(string Value)
         // Schemas 1-4 predate relationships; schemas 1-3 predate characters;
         // schemas 1-2 predate geography. Schemas 4-5 used character contract v1,
         // schemas 5-6 used relationship contract v1, and all historical schemas
-        // predate the separate career world.
-        canonical.Remove("careers");
+        // schemas 1-6 predate the separate career world, and all historical
+        // schemas predate the separate character-resource world.
+        canonical.Remove("characterResources");
+        if (schemaVersion < 7)
+        {
+            canonical.Remove("careers");
+        }
         DowngradeSystemVersions(canonical, schemaVersion);
         if (schemaVersion < 5)
         {
             canonical.Remove("relationships");
         }
-        else
+        else if (schemaVersion < 7)
         {
             StripRelationshipV2Fields(canonical);
         }
@@ -151,11 +156,18 @@ public readonly record struct SimulationChecksum(string Value)
             }
 
             string? systemId = version["systemId"]?.GetValue<string>();
-            if (StringComparer.Ordinal.Equals(systemId, "simulation.character_careers"))
+            if (schemaVersion < 7
+                && StringComparer.Ordinal.Equals(systemId, "simulation.character_careers"))
             {
                 versions.RemoveAt(index);
             }
-            else if (schemaVersion >= 5
+            else if (StringComparer.Ordinal.Equals(
+                systemId,
+                CharacterResourceSystem.SystemId))
+            {
+                versions.RemoveAt(index);
+            }
+            else if (schemaVersion is >= 5 and < 7
                 && StringComparer.Ordinal.Equals(systemId, "simulation.relationships"))
             {
                 version["version"] = RelationshipContractVersions.LegacySnapshot;
@@ -176,6 +188,7 @@ public readonly record struct SimulationChecksum(string Value)
         Characters = snapshot.Characters.Canonicalize(),
         Relationships = CanonicalizeRelationships(snapshot.Relationships),
         Careers = snapshot.Careers.Canonicalize(),
+        CharacterResources = snapshot.CharacterResources.Canonicalize(),
     };
 
     private static RelationshipWorldSnapshot CanonicalizeRelationships(RelationshipWorldSnapshot snapshot) =>

@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1 exact-SHA hosted verified; later packages pending |
+| Status | Active — SP-04A/SP-04B/SP-04C0/SP-04C1 exact-SHA hosted verified; SP-04C2 local pass/hosted pending; later packages pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -219,7 +219,48 @@ These results established an uncommitted local working tree only. They were not 
 
 Subsequent exact-SHA evidence does not relabel those historical local measurements. Accepted revision `d5d2705d3516c67a06e127dcfa867a854b37a21f` passed hosted macOS arm64 and Windows x64 validation, complete 243/71/6/18 suites, import, native export, automated smoke, manifest inspection, artifact upload, and static artifact verification. See the [SP-04C1 exact-SHA report](../evidence/SP-04C1-EXACT-SHA-d5d2705.md). Physical Windows remains an M4 gate, signing/Steam remain SP-15 gates, and the full SP-04 three-second budget remains unmet.
 
-Personal resources, faction/subfaction/imperial allegiance, offices/titles, marriage/romance, household expansion, birth/death resolution, inheritance/succession, battle, AI, historical/shipped content, UI, platform, signing, and release behavior remain deferred. Consequently every full SP-04 acceptance criterion below remains unchecked and SP-05 remains blocked.
+Personal resources, faction/subfaction/imperial allegiance, offices/titles, marriage/romance, household expansion, birth/death resolution, inheritance/succession, battle, AI, historical/shipped content, UI, platform, signing, and release behavior remained deferred by C1. Consequently every full SP-04 acceptance criterion below remained unchecked and SP-05 remained blocked.
+
+## Active package: SP-04C2 personal-wealth kernel
+
+SP-04C2 implements the personal-resource half of workstream 3 as a separately versioned abstract-wealth subsystem. SP-01/SP-02/SP-03 and SP-04A/B/C0/C1 dependencies are satisfied. The package preserves deterministic pure-.NET domain ownership, registered command/event mutation, stable namespaced IDs, forward-only persistence, and the existing content boundary, so no ADR is required.
+
+`CharacterResourceWorldState` is a version-1 default-empty subsystem registered as `simulation.character_resources@1`. It exposes defensive canonical accounts, recent ledger entries, and folded history through `IAuthoritativeCharacterResourceWorldQuery`. Accounts are sparse and character-owned: absence means zero, positive balances produce exact derived account IDs, and zero-balance rows are removed. The quantity is deliberately abstract wealth, not a named currency, commodity, exchange rate, debt, income, estate valuation, treasury, or economy contract.
+
+`character_resource_action.v1` is the registered outer command; its sole C2 variant is `transfer_wealth.v1`. `character_resource_action_resolved.v1` is the persistent event. The source and recipient must be distinct existing characters who have been born and are alive on the resolution date; the source must be able to act, and the amount must be positive. Resolution revalidates against intervening commands. A successful event atomically debits and credits candidate state with checked conservation; stale insufficient-funds or recipient-overflow outcomes cancel explicitly without partial mutation. Resource calendar state advances for later-day commands.
+
+Versioned length-framed SHA-256 derivation binds account IDs to characters, action events to authoritative dates and commands, transfers to events, and incoming/outgoing entries to transfers and characters. Each success creates an exact two-sided ledger. At most 64 detailed entries remain per involved character; deterministic eviction folds incoming/outgoing counts, amounts, and date range into checked fixed-size history. Snapshot, query, action, outcome, nested record, cross-record, date/turn, ID, canonical-order, retention, and overflow validation reject malformed state before commit.
+
+Save schema 8 requires the complete resource-v1 snapshot and `simulation.character_resources@1` in addition to the existing character-v2, relationship-v2, and career-v1 state. A frozen literal nonempty schema-7 fixture was generated with the exact accepted SP-04C1 binary at `d5d2705d3516c67a06e127dcfa867a854b37a21f`; its authoritative stored checksum is `0c9033c2a0e145a73218aa234f3725878fc7b781b9e6a8e83adad74b10b79d72`, and the checked-in fixture SHA-256 is `34e0c3955df7784d6c4e6b766ce0d0a1d74734552d89ce28e9fb3dd8ce7058a5`. The authenticated 7→8 migration rejects future resource snapshot/system/command/event data, injects empty resource state, recomputes the destination checksum, and preserves source bytes. Current raw-shape validation, diagnostics, recovery, restore, checksum, save/load, and the complete 1→8 chain cover C2.
+
+### SP-04C2 verification matrix
+
+| ID | Observable package criterion | Required evidence | Closeout classification |
+|---|---|---|---|
+| C201 | M2/SP-04 are Active; SP-01/SP-02/SP-03 and SP-04A/B/C0/C1 dependencies are satisfied; scope stays inside C2 | Source-of-truth and package-boundary review | Local pass |
+| C202 | Version-1 sparse personal-wealth accounts, two-sided ledger, folded history, authoritative query, and exact stable IDs are explicit and defensive | Contract review and focused Core tests | Local pass |
+| C203 | Registered commands/events enforce actor/recipient existence, birth, life, agency, distinct parties, positive amount, and exact affected IDs | Campaign integration and negative tests | Local pass |
+| C204 | Transfers conserve wealth and commit atomically; stale insufficient funds and recipient overflow cancel without partial state, including later-day campaign resolution | Direct/campaign rollback and calendar tests | Local pass after remediation |
+| C205 | Account/event/transfer/entry IDs and source command/event/date/turn/counterparty fields validate exactly | Golden-ID, malformed-state, and event-validation tests | Local pass |
+| C206 | The 64-entry per-character bound, deterministic eviction, checked folded aggregate, canonical ordering, overflow rejection, and defensive copies hold | Limit, shuffle, overflow, and copy tests | Local pass |
+| C207 | Current schema-8 saves require complete resource-v1 state and system registration; raw nested shape, diagnostics, recovery, and unknown discriminators fail deliberately | Current-save and serialization tests | Local pass |
+| C208 | Literal nonempty exact-C1 schema-7 history authenticates before 7→8; migration preserves prior data/source bytes and rejects injected future resource fields | Frozen fixture, checksum, migration, corruption, and byte-preservation tests | Local pass; schema-1/2 field compatibility remains unverified |
+| C209 | Canonical checksum/restore/save/load include resource state; the ten-year golden advances to `07507a7058b13603e3ecc377870f9e13551ce5bde237012ba90c377cd5e2f79c` | Checksum, round-trip, and soak tests | Local pass |
+| C210 | A 1,000-character/1,000-transfer fixture records bounded shape, query, checksum, save, and load measurements without a brittle threshold | Raw local Apple Silicon macOS measurement | Local macOS pass; full three-second SP-04 turn budget remains unmet/unproven |
+| C211 | Repository validation, complete tests, diff/LFS checks, and C2-touched-file format verification pass | Local repository gates | Local pass |
+| C212 | No estates, household/family/faction/court treasuries, debt/currency/commodities, income/economy/land, relationship effect, marriage/lifecycle/succession, content, UI, battle, AI, platform, or release behavior enters C2 | Diff and architecture review | Local pass |
+| C213 | Independent architecture and verification review finds no unresolved issue after remediation | Review record and focused regressions | Local pass |
+| C214 | The same accepted revision passes deterministic validation on hosted macOS arm64 and Windows x64 | Exact-SHA clean-checkout hosted evidence | Pending |
+
+The final local fixture contains 1,000 characters and plans/applies 1,000 direct transfers, resulting in 1,000 accounts and 2,000 detailed ledger entries. On Apple Silicon macOS, transfer processing measured 8,077.354 ms, query/snapshot JSON 9.857 ms, full-world checksum 91.771 ms, save 196.321 ms, and load 95.900 ms. The snapshot JSON contained 1,462,065 characters; the save was 259,434 bytes with checksum `989c242311a374c57ea4c306219d08aac12f2b0111f44d1d4df659c1cc657bf0`. These are raw correctness-fixture measurements without wall-clock assertions. They do not satisfy or waive the full SP-04 three-second campaign-turn budget.
+
+Independent review found one campaign integration defect and one coverage gap. Later-day resource commands initially prepared outcomes against the correct authoritative date but retained the turn-start resource calendar during commit; the corrected candidate advances date and turn monotonically. Recipient-overflow cancellation initially had direct-state coverage only; the final campaign regression submits two initially valid incoming transfers, verifies one success and one `RecipientOverflow` cancellation, and observes exactly one ledger pair. Final architecture and verification re-review found no remaining issue.
+
+Local integrated verification on 2026-07-15 used macOS 26.5.1 build 25F80 on arm64, .NET SDK 10.0.301, and Godot 4.6.1. `./scripts/validate.sh` retained 1,295 records and 2,820 translations with registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` built with zero warnings and passed 280 Simulation.Core, 71 Game.Content, 6 Game.Application, and 18 repository tests. The current ten-year/1,000-entity golden checksum is `07507a7058b13603e3ecc377870f9e13551ce5bde237012ba90c377cd5e2f79c`; the headless soak completed in 830 ms on the same local machine. Touched-file formatter verification, `git diff --check`, and `git lfs fsck` passed.
+
+The implementation remains uncommitted at this documentation point. These results prove only the local integrated working tree; exact-SHA clean-checkout hosted macOS arm64/Windows x64 validation, physical Windows, signing, Steam, and release evidence remain pending or out of scope. C2 is not accepted until C214 passes.
+
+Opaque character-owned estate holdings are reserved for SP-04C3 so SP-04 can establish inheritance and succession inputs without circularly importing SP-06. SP-06 will later own geography, production, taxation, land grants, and estate economic value. Household/family/faction/court treasuries, debt, currency, commodities, income, spending, prices, relationship effects, marriage/romance, lifecycle, inheritance/succession, content, UI, battle, and AI remain outside C2. Every full SP-04 acceptance criterion below therefore remains unchecked, and SP-05 remains blocked.
 
 ## Edge cases and failure handling
 

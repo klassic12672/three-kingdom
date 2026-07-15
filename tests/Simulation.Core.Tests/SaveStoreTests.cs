@@ -14,6 +14,7 @@ public sealed class SaveStoreTests : IDisposable
     private const string FrozenSchemaFourChecksum = "48b94dad9d4dda78591243341afa16ece40e0ed157368f84c1189641684ecd3e";
     private const string FrozenSchemaFiveChecksum = "4ef74d59d48b7415cc86a40eca98ca3ac3fdafe5c0a5047bdb3b1ff3d5f3ea14";
     private const string FrozenSchemaSixChecksum = "90c27f2dd9954e0d3d2a304e9b661bf1ef25f2e4f620743d78bc60382d780bd4";
+    private const string FrozenSchemaSevenChecksum = "0c9033c2a0e145a73218aa234f3725878fc7b781b9e6a8e83adad74b10b79d72";
     // Reconstructed literally from the exact schema-4 serializer contract at eaa3aaf.
     // Unlike the inferred schema-1/2 fixtures, this contains nonempty character history.
     private const string FrozenSchemaFourFixture = """{"schemaVersion":4,"contractVersion":2,"gameVersion":"0.1.0","createdUtc":"2026-07-15T00:00:00+00:00","contentManifests":[{"packId":{"value":"base:synthetic"},"version":"1.0.0","checksum":"sha256:abc","requiredForSimulation":true}],"seed":99,"snapshot":{"contractVersion":1,"calendar":{"date":{"year":191,"month":7,"day":14},"turnIndex":0,"daysInCurrentTurn":3},"rootSeed":99,"randomStreams":[],"entities":[],"pendingCommands":[],"systemVersions":[{"systemId":"simulation.calendar","version":1},{"systemId":"simulation.synthetic_entities","version":1},{"systemId":"simulation.command_events","version":1},{"systemId":"simulation.geography","version":1},{"systemId":"simulation.characters","version":1}],"lastEventDate":null,"lastEventPhase":null,"lastEventPriority":null,"lastEventId":null,"geography":{"graph":{"regions":[],"districts":[],"localities":[],"stops":[],"routes":[]},"season":0,"weather":0,"locations":[],"routes":[],"armies":[]},"characters":{"contractVersion":1,"identityDefinitions":[{"contractVersion":1,"id":{"value":"ability:synthetic/command"},"kind":0,"nameKey":{"value":"loc:ability/synthetic_command"}}],"characterDefinitions":[{"contractVersion":1,"id":{"value":"character:synthetic/adult"},"nameKey":{"value":"loc:character/synthetic_adult"},"birthDate":{"year":160,"month":1,"day":1},"abilityIds":[{"value":"ability:synthetic/command"}],"aptitudeIds":[],"traitIds":[],"ambitionIds":[],"reputationIds":[]}],"familyDefinitions":[],"householdDefinitions":[],"characterStates":[{"contractVersion":1,"characterId":{"value":"character:synthetic/adult"},"parentIds":[]}],"familyStates":[],"householdStates":[]}},"diagnosticCommands":[],"diagnosticEvents":[],"checksum":"48b94dad9d4dda78591243341afa16ece40e0ed157368f84c1189641684ecd3e"}""";
@@ -42,7 +43,40 @@ public sealed class SaveStoreTests : IDisposable
     }
 
     [Fact]
-    public void SchemaSeven_SaveLoad_RoundTripsCharacterRelationshipAndCareerState()
+    public void SchemaEight_RoundTripsNonemptyCharacterResourcesAndDiagnostics()
+    {
+        CampaignSimulation simulation = CreateCharacterResourceSimulation();
+        EntityId child = new("character:synthetic/child");
+        EntityId parent = new("character:synthetic/parent");
+        CampaignCommand command = CampaignCommand.Create(
+            new EntityId("command:test/wealth-transfer"),
+            child,
+            simulation.World.Calendar.Date,
+            new CharacterResourceActionCommandPayload(new TransferWealthAction(parent, 25)));
+        Assert.True(simulation.Submit(command).IsValid);
+        CampaignEvent resolved = Assert.Single(simulation.ResolveTurn());
+        Assert.IsType<CharacterResourceActionResolvedEventPayload>(resolved.Payload);
+        SaveEnvelope expected = CreateEnvelope(simulation);
+        string path = Path.Combine(directory, "character-resources.save.gz");
+
+        new SaveStore().SaveAtomic(path, expected);
+        SaveEnvelope actual = new SaveStore().Load(path, expected.ContentManifests);
+
+        Assert.Equal(75, actual.Snapshot.CharacterResources.Accounts.Single(
+            account => account.CharacterId == child).Wealth);
+        Assert.Equal(25, actual.Snapshot.CharacterResources.Accounts.Single(
+            account => account.CharacterId == parent).Wealth);
+        Assert.Equal(2, actual.Snapshot.CharacterResources.LedgerEntries.Count);
+        Assert.IsType<CharacterResourceActionCommandPayload>(Assert.Single(actual.DiagnosticCommands).Payload);
+        Assert.IsType<CharacterResourceActionResolvedEventPayload>(Assert.Single(actual.DiagnosticEvents).Payload);
+        WorldState restored = WorldState.Restore(actual.Snapshot);
+        Assert.Equal(75, restored.CharacterResources.GetWealth(child));
+        Assert.Equal(25, restored.CharacterResources.GetWealth(parent));
+        Assert.Equal(expected.Checksum, actual.Checksum);
+    }
+
+    [Fact]
+    public void SchemaEight_SaveLoad_RoundTripsCharacterRelationshipCareerAndResourceState()
     {
         SaveEnvelope expected = CreateEnvelope(CreateCharacterSimulation());
         string path = Path.Combine(directory, "characters.save.gz");
@@ -57,6 +91,7 @@ public sealed class SaveStoreTests : IDisposable
         Assert.Equal(expected.Checksum, actual.Checksum);
         Assert.Empty(actual.Snapshot.Relationships.Subjects);
         Assert.Empty(actual.Snapshot.Careers.Proposals);
+        Assert.Empty(actual.Snapshot.CharacterResources.Accounts);
         Assert.True(WorldState.Restore(actual.Snapshot).Characters.TryGetCharacterProfile(
             new EntityId("character:synthetic/child"),
             out AuthoritativeCharacterProfile? profile));
@@ -93,7 +128,11 @@ public sealed class SaveStoreTests : IDisposable
     [InlineData("null-careers")]
     [InlineData("partial-careers")]
     [InlineData("missing-career-system-version")]
-    public void SchemaSeven_RequiresCompleteCharacterRelationshipAndCareerDataWithoutChangingSource(string mutation)
+    [InlineData("missing-character-resources")]
+    [InlineData("null-character-resources")]
+    [InlineData("partial-character-resources")]
+    [InlineData("missing-character-resource-system-version")]
+    public void SchemaEight_RequiresCompleteCharacterRelationshipCareerAndResourceDataWithoutChangingSource(string mutation)
     {
         JsonObject current = JsonSerializer.SerializeToNode(
             CreateEnvelope(CreateCharacterSimulation()),
@@ -199,11 +238,23 @@ public sealed class SaveStoreTests : IDisposable
             case "missing-career-system-version":
                 RemoveSystemVersion(snapshot, "simulation.character_careers");
                 break;
+            case "missing-character-resources":
+                snapshot.Remove("characterResources");
+                break;
+            case "null-character-resources":
+                snapshot["characterResources"] = null;
+                break;
+            case "partial-character-resources":
+                snapshot["characterResources"]!.AsObject().Remove("ledgerEntries");
+                break;
+            case "missing-character-resource-system-version":
+                RemoveSystemVersion(snapshot, CharacterResourceSystem.SystemId);
+                break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(mutation));
         }
 
-        string path = Path.Combine(directory, $"schema-six-{mutation}.save.gz");
+        string path = Path.Combine(directory, $"schema-eight-{mutation}.save.gz");
         WriteJsonGzip(path, current);
         byte[] sourceBytes = File.ReadAllBytes(path);
 
@@ -212,7 +263,7 @@ public sealed class SaveStoreTests : IDisposable
     }
 
     [Fact]
-    public void SchemaSeven_RejectsImpossibleRelationshipImpactWithoutChangingSource()
+    public void SchemaEight_RejectsImpossibleRelationshipImpactWithoutChangingSource()
     {
         CampaignSimulation simulation = CreateCharacterSimulation();
         CampaignCommand command = CampaignCommand.Create(
@@ -253,7 +304,7 @@ public sealed class SaveStoreTests : IDisposable
     [InlineData("missing-consequence-index")]
     [InlineData("legacy-source-field")]
     [InlineData("unsupported-memory-contract")]
-    public void SchemaSeven_RequiresCompleteRelationshipMemoryV2ShapeWithoutChangingSource(
+    public void SchemaEight_RequiresCompleteRelationshipMemoryV2ShapeWithoutChangingSource(
         string mutation)
     {
         CampaignSimulation simulation = CreateCharacterSimulation();
@@ -309,7 +360,7 @@ public sealed class SaveStoreTests : IDisposable
     }
 
     [Fact]
-    public void SchemaSeven_RejectsUnsupportedCareerStateWithoutChangingSource()
+    public void SchemaEight_RejectsUnsupportedCareerStateWithoutChangingSource()
     {
         CampaignSimulation simulation = CreateCharacterSimulation();
         CampaignCommand command = CampaignCommand.Create(
@@ -325,6 +376,54 @@ public sealed class SaveStoreTests : IDisposable
             CanonicalJson.Options)!.AsObject();
         invalid["snapshot"]!["careers"]!["proposals"]![0]!["contractVersion"] = 999;
         string path = Path.Combine(directory, "schema-seven-unsupported-career.save.gz");
+        WriteJsonGzip(path, invalid);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        Assert.Throws<SaveCompatibilityException>(() => new SaveStore().Load(path));
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Theory]
+    [InlineData("missing-account-id")]
+    [InlineData("null-account-wealth")]
+    [InlineData("missing-ledger-source-event")]
+    [InlineData("unsupported-ledger-contract")]
+    public void SchemaEight_RequiresCompleteCharacterResourceEntryShapeWithoutChangingSource(
+        string mutation)
+    {
+        CampaignSimulation simulation = CreateCharacterResourceSimulation();
+        CampaignCommand command = CampaignCommand.Create(
+            new EntityId("command:test/current-resource-shape"),
+            new EntityId("character:synthetic/child"),
+            simulation.World.Calendar.Date,
+            new CharacterResourceActionCommandPayload(new TransferWealthAction(
+                new EntityId("character:synthetic/parent"),
+                1)));
+        Assert.True(simulation.Submit(command).IsValid);
+        Assert.Single(simulation.ResolveTurn());
+        JsonObject invalid = JsonSerializer.SerializeToNode(
+            CreateEnvelope(simulation),
+            CanonicalJson.Options)!.AsObject();
+        JsonObject resources = invalid["snapshot"]!["characterResources"]!.AsObject();
+        switch (mutation)
+        {
+            case "missing-account-id":
+                resources["accounts"]![0]!.AsObject().Remove("accountId");
+                break;
+            case "null-account-wealth":
+                resources["accounts"]![0]!["wealth"] = null;
+                break;
+            case "missing-ledger-source-event":
+                resources["ledgerEntries"]![0]!.AsObject().Remove("sourceEventId");
+                break;
+            case "unsupported-ledger-contract":
+                resources["ledgerEntries"]![0]!["contractVersion"] = 999;
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(mutation));
+        }
+
+        string path = Path.Combine(directory, $"schema-eight-resource-{mutation}.save.gz");
         WriteJsonGzip(path, invalid);
         byte[] sourceBytes = File.ReadAllBytes(path);
 
@@ -687,6 +786,91 @@ public sealed class SaveStoreTests : IDisposable
         Assert.Equal(sourceBytes, File.ReadAllBytes(path));
     }
 
+    [Fact]
+    public void SchemaSeven_AuthenticatesAndMigratesNonemptyC1StateWithoutChangingSource()
+    {
+        JsonObject frozen = CreateHistoricalFixture(7);
+        Assert.Equal(FrozenSchemaSevenChecksum, frozen["checksum"]!.GetValue<string>());
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(frozen, 7);
+        WorldSnapshot historical = frozen["snapshot"]!.Deserialize<WorldSnapshot>(CanonicalJson.Options)!;
+        string path = Path.Combine(directory, "schema-seven-history-backed.save.gz");
+        WriteFrozenHistoricalFixture(path, 7);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        SaveEnvelope migrated = new SaveStore().Load(path);
+
+        Assert.Equal(SaveEnvelope.CurrentSchemaVersion, migrated.SchemaVersion);
+        Assert.Equal(SimulationChecksum.Compute(migrated.Snapshot).Value, migrated.Checksum);
+        Assert.Contains(migrated.Snapshot.SystemVersions, version =>
+            version == new SystemVersion(
+                CharacterResourceSystem.SystemId,
+                CharacterResourceSystem.Version));
+        Assert.Empty(migrated.Snapshot.CharacterResources.Accounts);
+        Assert.Empty(migrated.Snapshot.CharacterResources.LedgerEntries);
+        Assert.Empty(migrated.Snapshot.CharacterResources.History);
+        Assert.Equal(
+            JsonSerializer.Serialize(historical.Characters, CanonicalJson.Options),
+            JsonSerializer.Serialize(migrated.Snapshot.Characters, CanonicalJson.Options));
+        Assert.Equal(
+            JsonSerializer.Serialize(historical.Relationships, CanonicalJson.Options),
+            JsonSerializer.Serialize(migrated.Snapshot.Relationships, CanonicalJson.Options));
+        Assert.Equal(
+            JsonSerializer.Serialize(historical.Careers, CanonicalJson.Options),
+            JsonSerializer.Serialize(migrated.Snapshot.Careers, CanonicalJson.Options));
+        Assert.Single(migrated.Snapshot.Careers.RetinueMemberships);
+        Assert.Equal(2, migrated.DiagnosticCommands.Count);
+        Assert.Equal(2, migrated.DiagnosticEvents.Count);
+        Assert.All(migrated.DiagnosticCommands, command =>
+            Assert.IsType<CharacterActionCommandPayload>(command.Payload));
+        Assert.All(migrated.DiagnosticEvents, campaignEvent =>
+            Assert.IsType<CharacterActionResolvedEventPayload>(campaignEvent.Payload));
+        _ = WorldState.Restore(migrated.Snapshot);
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
+    [Theory]
+    [InlineData("resource-snapshot")]
+    [InlineData("resource-system-version")]
+    [InlineData("resource-command")]
+    [InlineData("resource-event")]
+    public void SchemaSeven_RejectsInjectedSchemaEightDataWithoutChangingSource(string mutation)
+    {
+        JsonObject invalid = CreateHistoricalFixture(7);
+        JsonObject snapshot = invalid["snapshot"]!.AsObject();
+        switch (mutation)
+        {
+            case "resource-snapshot":
+                snapshot["characterResources"] = JsonSerializer.SerializeToNode(
+                    CharacterResourceWorldSnapshot.Empty,
+                    CanonicalJson.Options);
+                break;
+            case "resource-system-version":
+                snapshot["systemVersions"]!.AsArray().Add(new JsonObject
+                {
+                    ["systemId"] = CharacterResourceSystem.SystemId,
+                    ["version"] = CharacterResourceSystem.Version,
+                });
+                break;
+            case "resource-command":
+                invalid["diagnosticCommands"]![0]!["payload"]!["$type"] =
+                    "character_resource_action.v1";
+                break;
+            case "resource-event":
+                invalid["diagnosticEvents"]![0]!["payload"]!["$type"] =
+                    "character_resource_action_resolved.v1";
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(mutation));
+        }
+
+        string path = Path.Combine(directory, $"schema-seven-injected-{mutation}.save.gz");
+        WriteJsonGzip(path, invalid);
+        byte[] sourceBytes = File.ReadAllBytes(path);
+
+        Assert.Throws<SaveCompatibilityException>(() => new SaveStore().Load(path));
+        Assert.Equal(sourceBytes, File.ReadAllBytes(path));
+    }
+
     [Theory]
     [InlineData("career-snapshot")]
     [InlineData("career-system-version")]
@@ -796,6 +980,8 @@ public sealed class SaveStoreTests : IDisposable
         RemoveSystemVersion(snapshot, "simulation.relationships");
         snapshot.Remove("careers");
         RemoveSystemVersion(snapshot, "simulation.character_careers");
+        snapshot.Remove("characterResources");
+        RemoveSystemVersion(snapshot, CharacterResourceSystem.SystemId);
         DowngradeCharactersToLegacy(snapshot);
         schemaFour["schemaVersion"] = 4;
         WorldSnapshot historical = snapshot.Deserialize<WorldSnapshot>(CanonicalJson.Options)!;
@@ -863,6 +1049,7 @@ public sealed class SaveStoreTests : IDisposable
             Characters = snapshot.Characters.Canonicalize(),
         };
         JsonObject historicalShape = JsonSerializer.SerializeToNode(canonical, CanonicalJson.Options)!.AsObject();
+        historicalShape.Remove("characterResources");
         historicalShape.Remove("careers");
         if (schemaVersion < 5)
         {
@@ -1213,6 +1400,61 @@ public sealed class SaveStoreTests : IDisposable
     }
 
     [Fact]
+    public void LegacyStandaloneSnapshotOmittingCharacterResources_RestoresAsEmpty()
+    {
+        WorldSnapshot current = SyntheticSimulation.CreateWorld(1, 99).CaptureSnapshot();
+        JsonObject legacyJson = JsonSerializer.SerializeToNode(current, CanonicalJson.Options)!.AsObject();
+        legacyJson.Remove("characterResources");
+        JsonArray versions = legacyJson["systemVersions"]!.AsArray();
+        JsonNode resourceVersion = versions.Single(
+            node => node!["systemId"]!.GetValue<string>() == CharacterResourceSystem.SystemId)!;
+        versions.Remove(resourceVersion);
+        WorldSnapshot legacy = legacyJson.Deserialize<WorldSnapshot>(CanonicalJson.Options)
+            ?? throw new InvalidDataException("Legacy standalone snapshot did not deserialize.");
+
+        WorldState restored = WorldState.Restore(legacy);
+
+        Assert.Empty(restored.CharacterResources.Accounts);
+        Assert.Contains(restored.CaptureSnapshot().SystemVersions, version =>
+            version == new SystemVersion(
+                CharacterResourceSystem.SystemId,
+                CharacterResourceSystem.Version));
+    }
+
+    [Fact]
+    public void LegacyStandaloneSnapshotWithPartialNullCharacterResources_FailsDeliberately()
+    {
+        WorldSnapshot current = SyntheticSimulation.CreateWorld(1, 99).CaptureSnapshot();
+        WorldSnapshot invalid = WithoutCharacterResourceSystemVersion(current) with
+        {
+            CharacterResources = CharacterResourceWorldSnapshot.Empty with { Accounts = null! },
+        };
+
+        SaveCompatibilityException exception = Assert.Throws<SaveCompatibilityException>(
+            () => WorldState.Restore(invalid));
+
+        Assert.Contains(
+            "complete, valid, empty character-resource snapshot",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LegacyStandaloneSnapshotWithNonemptyCharacterResources_FailsDeliberately()
+    {
+        WorldSnapshot current = CreateCharacterResourceSimulation().World.CaptureSnapshot();
+        WorldSnapshot invalid = WithoutCharacterResourceSystemVersion(current);
+
+        SaveCompatibilityException exception = Assert.Throws<SaveCompatibilityException>(
+            () => WorldState.Restore(invalid));
+
+        Assert.Contains(
+            "complete, valid, empty character-resource snapshot",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MissingRequiredManifest_BlocksLoadWithPreciseList()
     {
         SaveEnvelope envelope = CreateEnvelope(CreateSimulation());
@@ -1346,6 +1588,33 @@ public sealed class SaveStoreTests : IDisposable
         return new CampaignSimulation(world);
     }
 
+    private static CampaignSimulation CreateCharacterResourceSimulation()
+    {
+        WorldSnapshot characterSnapshot = CreateCharacterSimulation().World.CaptureSnapshot();
+        EntityId child = new("character:synthetic/child");
+        CharacterResourceWorldSnapshot resources = CharacterResourceWorldSnapshot.Empty with
+        {
+            Accounts =
+            [
+                new CharacterWealthAccountState(
+                    CharacterResourceContractVersions.State,
+                    CharacterResourceIds.DeriveWealthAccountId(child),
+                    child,
+                    100),
+            ],
+        };
+        WorldState world = WorldState.Create(
+            characterSnapshot.Calendar.Date,
+            99,
+            [],
+            GeographicWorldSnapshot.Empty,
+            characterSnapshot.Characters,
+            RelationshipWorldSnapshot.Empty,
+            CareerWorldSnapshot.Empty,
+            resources);
+        return new CampaignSimulation(world);
+    }
+
     private static CharacterIdentityDefinition Identity(string id, CharacterIdentityKind kind) => new(
         CharacterContractVersions.Definition,
         new EntityId(id),
@@ -1401,6 +1670,14 @@ public sealed class SaveStoreTests : IDisposable
             .ToArray(),
     };
 
+    private static WorldSnapshot WithoutCharacterResourceSystemVersion(WorldSnapshot snapshot) =>
+        snapshot with
+        {
+            SystemVersions = snapshot.SystemVersions
+                .Where(version => version.SystemId != CharacterResourceSystem.SystemId)
+                .ToArray(),
+        };
+
     private static void WriteJsonGzip(string path, JsonObject json)
     {
         using FileStream file = File.Create(path);
@@ -1422,6 +1699,7 @@ public sealed class SaveStoreTests : IDisposable
         // Schema 4 is reconstructed from the exact schema-4 contract at eaa3aaf.
         // Schema 5 is reconstructed from the exact schema-5 contract at ff7420f.
         // Schema 6 is generated from the exact SP-04C0 contract at 7d4612d.
+        // Schema 7 is generated from the exact SP-04C1 contract at d5d2705.
         // Schema 1/2 are synthetic fixtures inferred from the registered migration contracts.
         string fileName = schemaVersion switch
         {
@@ -1431,6 +1709,7 @@ public sealed class SaveStoreTests : IDisposable
             4 => string.Empty,
             5 => "save-schema-5-history-backed.json",
             6 => "save-schema-6-history-backed.json",
+            7 => "save-schema-7-history-backed.json",
             _ => throw new ArgumentOutOfRangeException(nameof(schemaVersion)),
         };
         return schemaVersion == 4

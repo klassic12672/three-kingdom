@@ -44,9 +44,9 @@ public sealed class TierAndSoakTests
 
         Assert.True(result.Turns > 1_000);
         Assert.Equal(200, result.FinalDate.Year);
-        // SP-04C1 adds the empty career world and relationship-v2 system identity, so the
+        // SP-04C2 adds the empty character-resource world and system identity, so the
         // canonical golden changes without altering the soak inputs or simulated outcomes.
-        Assert.Equal("14136a6a415a7c687cc5265709f1bbe7384c67527d9dc328dc111c4d6a523ff2", result.Checksum.Value);
+        Assert.Equal("07507a7058b13603e3ecc377870f9e13551ce5bde237012ba90c377cd5e2f79c", result.Checksum.Value);
     }
 
     [Theory]

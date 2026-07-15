@@ -29,6 +29,7 @@ public sealed record CommandValidationResult(bool IsValid, IReadOnlyList<Validat
 [JsonDerivedType(typeof(ChangeControlCommandPayload), "change_control.v1")]
 [JsonDerivedType(typeof(RelationshipActionCommandPayload), "relationship_action.v1")]
 [JsonDerivedType(typeof(CharacterActionCommandPayload), "character_action.v1")]
+[JsonDerivedType(typeof(CharacterResourceActionCommandPayload), "character_resource_action.v1")]
 public interface ICampaignCommandPayload;
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "$type", UnknownDerivedTypeHandling = JsonUnknownDerivedTypeHandling.FailSerialization)]
@@ -43,6 +44,7 @@ public interface ICampaignCommandPayload;
 [JsonDerivedType(typeof(ArmySupplyConsumedEventPayload), "army_supply_consumed.v1")]
 [JsonDerivedType(typeof(RelationshipActionResolvedEventPayload), "relationship_action_resolved.v2")]
 [JsonDerivedType(typeof(CharacterActionResolvedEventPayload), "character_action_resolved.v1")]
+[JsonDerivedType(typeof(CharacterResourceActionResolvedEventPayload), "character_resource_action_resolved.v1")]
 public interface ICampaignEventPayload;
 
 public sealed record AdjustResourcesCommandPayload(EntityId Target, long PeopleDelta, long FoodDelta, long GoldDelta)
@@ -85,6 +87,7 @@ public sealed record CampaignCommand(
         ChangeControlCommandPayload => "change_control.v1",
         RelationshipActionCommandPayload => "relationship_action.v1",
         CharacterActionCommandPayload => "character_action.v1",
+        CharacterResourceActionCommandPayload => "character_resource_action.v1",
         _ => "unregistered",
     };
 
@@ -128,6 +131,7 @@ public sealed record CampaignEvent(
         ArmySupplyConsumedEventPayload => "army_supply_consumed.v1",
         RelationshipActionResolvedEventPayload => "relationship_action_resolved.v2",
         CharacterActionResolvedEventPayload => "character_action_resolved.v1",
+        CharacterResourceActionResolvedEventPayload => "character_resource_action_resolved.v1",
         _ => "unregistered",
     };
 }
@@ -188,4 +192,7 @@ public sealed record WorldSnapshot(
     public RelationshipWorldSnapshot Relationships { get; init; } = RelationshipWorldSnapshot.Empty;
 
     public CareerWorldSnapshot Careers { get; init; } = CareerWorldSnapshot.Empty;
+
+    public CharacterResourceWorldSnapshot CharacterResources { get; init; } =
+        CharacterResourceWorldSnapshot.Empty;
 }

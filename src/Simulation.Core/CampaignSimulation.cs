@@ -227,6 +227,39 @@ public sealed class CampaignSimulation
                 }
 
                 break;
+            case CharacterResourceActionCommandPayload resourceAction:
+                CommandValidationResult resourceValidation = World.CharacterResources.ValidateAction(
+                    command.IssuingActor,
+                    resourceAction,
+                    command.IssuedDate,
+                    World.Calendar.TurnIndex);
+                AddIssues(resourceValidation, issues);
+                if (resourceValidation.IsValid
+                    && command.CommandId.IsValid
+                    && command.IssuedDate.IsValid)
+                {
+                    try
+                    {
+                        EntityId eventId = CharacterResourceIds.DeriveActionEventId(
+                            command.IssuedDate,
+                            command.CommandId);
+                        _ = World.CharacterResources.PlanAction(
+                            command.IssuingActor,
+                            resourceAction,
+                            command.IssuedDate,
+                            World.Calendar.TurnIndex,
+                            command.CommandId,
+                            eventId);
+                    }
+                    catch (Exception exception) when (exception is SimulationValidationException
+                        or ArgumentException
+                        or OverflowException)
+                    {
+                        issues.Add(new("invalid_character_resource_action", exception.Message));
+                    }
+                }
+
+                break;
             default:
                 issues.Add(new("unregistered_payload", $"Command payload '{command.Payload?.GetType().Name ?? "null"}' is not registered."));
                 break;
@@ -395,6 +428,33 @@ public sealed class CampaignSimulation
                     }
 
                     break;
+                case CharacterResourceActionCommandPayload resourceAction:
+                    try
+                    {
+                        EntityId resourceEventId = GetEventId(command);
+                        CharacterResourceActionResolvedEventPayload resolvedResourceAction =
+                            World.CharacterResources.PlanAction(
+                                command.IssuingActor,
+                                resourceAction,
+                                date,
+                                World.Calendar.TurnIndex,
+                                command.CommandId,
+                                resourceEventId);
+                        payload = resolvedResourceAction;
+                        affected = WorldState.GetCharacterResourceActionAffectedIds(
+                            resolvedResourceAction);
+                    }
+                    catch (Exception exception) when (exception is SimulationValidationException
+                        or ArgumentException
+                        or OverflowException)
+                    {
+                        payload = new CommandCancelledEventPayload(
+                            "command_invalidated",
+                            exception.Message);
+                        affected = [];
+                    }
+
+                    break;
                 default:
                     throw new SimulationValidationException($"Unregistered command payload '{command.Payload.GetType().Name}'.");
             }
@@ -431,6 +491,7 @@ public sealed class CampaignSimulation
 
     private bool IsActorAvailable(CampaignCommand command) => command.Payload is RelationshipActionCommandPayload
         or CharacterActionCommandPayload
+        or CharacterResourceActionCommandPayload
         ? World.Characters.TryGetCharacterProfile(command.IssuingActor, out _)
         : World.TryGetEntity(command.IssuingActor, out _);
 
@@ -444,6 +505,13 @@ public sealed class CampaignSimulation
         if (command.Payload is CharacterActionCommandPayload)
         {
             return CareerIds.DeriveCharacterActionEventId(command.IssuedDate, command.CommandId);
+        }
+
+        if (command.Payload is CharacterResourceActionCommandPayload)
+        {
+            return CharacterResourceIds.DeriveActionEventId(
+                command.IssuedDate,
+                command.CommandId);
         }
 
         string eventPath = command.CommandId.Value.Replace(':', '/');

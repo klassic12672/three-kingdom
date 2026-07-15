@@ -16,6 +16,8 @@ public interface IWorldQuery
 
     IAuthoritativeCareerWorldQuery Careers { get; }
 
+    IAuthoritativeCharacterResourceWorldQuery CharacterResources { get; }
+
     bool TryGetEntity(EntityId id, [NotNullWhen(true)] out SyntheticEntitySnapshot? entity);
 }
 
@@ -30,6 +32,7 @@ public sealed class WorldState : IWorldQuery
         new("simulation.characters", CharacterContractVersions.Snapshot),
         new("simulation.relationships", RelationshipContractVersions.Snapshot),
         new("simulation.character_careers", CareerContractVersions.Snapshot),
+        new(CharacterResourceSystem.SystemId, CharacterResourceSystem.Version),
     ];
 
     private readonly SortedDictionary<EntityId, SyntheticEntitySnapshot> entities = [];
@@ -46,7 +49,8 @@ public sealed class WorldState : IWorldQuery
         GeographicWorldSnapshot geography,
         CharacterWorldSnapshot characters,
         RelationshipWorldSnapshot relationships,
-        CareerWorldSnapshot careers)
+        CareerWorldSnapshot careers,
+        CharacterResourceWorldSnapshot characterResources)
     {
         if (!calendar.Date.IsValid || calendar.TurnIndex < 0)
         {
@@ -60,6 +64,10 @@ public sealed class WorldState : IWorldQuery
         Characters = new CharacterWorldState(characters, calendar.Date);
         Relationships = new RelationshipWorldState(relationships, Characters, calendar);
         Careers = new CharacterCareerWorldState(careers, Characters, calendar);
+        CharacterResources = new CharacterResourceWorldState(
+            characterResources,
+            Characters,
+            calendar);
     }
 
     public CampaignCalendar Calendar { get; private set; }
@@ -76,6 +84,8 @@ public sealed class WorldState : IWorldQuery
 
     public CharacterCareerWorldState Careers { get; }
 
+    public CharacterResourceWorldState CharacterResources { get; }
+
     IGeographicWorldQuery IWorldQuery.Geography => Geography;
 
     IAuthoritativeCharacterWorldQuery IWorldQuery.Characters => Characters;
@@ -83,6 +93,8 @@ public sealed class WorldState : IWorldQuery
     IAuthoritativeRelationshipWorldQuery IWorldQuery.Relationships => Relationships;
 
     IAuthoritativeCareerWorldQuery IWorldQuery.Careers => Careers;
+
+    IAuthoritativeCharacterResourceWorldQuery IWorldQuery.CharacterResources => CharacterResources;
 
     public IReadOnlyList<SyntheticEntitySnapshot> Entities => entities.Values.Select(CloneEntity).ToArray();
 
@@ -97,7 +109,8 @@ public sealed class WorldState : IWorldQuery
             geography ?? GeographicWorldSnapshot.Empty,
             CharacterWorldSnapshot.Empty,
             RelationshipWorldSnapshot.Empty,
-            CareerWorldSnapshot.Empty);
+            CareerWorldSnapshot.Empty,
+            CharacterResourceWorldSnapshot.Empty);
 
     public static WorldState Create(
         CampaignDate startDate,
@@ -111,7 +124,8 @@ public sealed class WorldState : IWorldQuery
             geography,
             characters,
             RelationshipWorldSnapshot.Empty,
-            CareerWorldSnapshot.Empty);
+            CareerWorldSnapshot.Empty,
+            CharacterResourceWorldSnapshot.Empty);
 
     public static WorldState Create(
         CampaignDate startDate,
@@ -126,7 +140,8 @@ public sealed class WorldState : IWorldQuery
             geography,
             characters,
             relationships,
-            CareerWorldSnapshot.Empty);
+            CareerWorldSnapshot.Empty,
+            CharacterResourceWorldSnapshot.Empty);
 
     public static WorldState Create(
         CampaignDate startDate,
@@ -135,7 +150,25 @@ public sealed class WorldState : IWorldQuery
         GeographicWorldSnapshot geography,
         CharacterWorldSnapshot characters,
         RelationshipWorldSnapshot relationships,
-        CareerWorldSnapshot careers)
+        CareerWorldSnapshot careers) => Create(
+            startDate,
+            seed,
+            initialEntities,
+            geography,
+            characters,
+            relationships,
+            careers,
+            CharacterResourceWorldSnapshot.Empty);
+
+    public static WorldState Create(
+        CampaignDate startDate,
+        ulong seed,
+        IEnumerable<SyntheticEntitySnapshot> initialEntities,
+        GeographicWorldSnapshot geography,
+        CharacterWorldSnapshot characters,
+        RelationshipWorldSnapshot relationships,
+        CareerWorldSnapshot careers,
+        CharacterResourceWorldSnapshot characterResources)
     {
         WorldState world = new(
             new CampaignCalendar(startDate, 0),
@@ -144,7 +177,8 @@ public sealed class WorldState : IWorldQuery
             geography,
             characters,
             relationships,
-            careers);
+            careers,
+            characterResources);
         foreach (SyntheticEntitySnapshot entity in initialEntities.OrderBy(item => item.Id))
         {
             SyntheticEntitySnapshot canonical = ValidateEntity(entity).Canonicalize();
@@ -168,6 +202,7 @@ public sealed class WorldState : IWorldQuery
             || snapshot.Characters is null
             || snapshot.Relationships is null
             || snapshot.Careers is null
+            || snapshot.CharacterResources is null
             || snapshot.Entities.Any(entity => entity is null)
             || snapshot.PendingCommands.Any(command => command is null))
         {
@@ -179,11 +214,12 @@ public sealed class WorldState : IWorldQuery
             throw new SaveCompatibilityException($"Unsupported world snapshot contract version {snapshot.ContractVersion}.");
         }
 
-        (CharacterWorldSnapshot characters, CareerWorldSnapshot careers) = ValidateSystemVersions(
+        (CharacterWorldSnapshot characters, CareerWorldSnapshot careers, CharacterResourceWorldSnapshot characterResources) = ValidateSystemVersions(
             snapshot.SystemVersions,
             snapshot.Characters,
             snapshot.Relationships,
-            snapshot.Careers);
+            snapshot.Careers,
+            snapshot.CharacterResources);
         ValidatePendingCommands(snapshot.PendingCommands);
 
         WorldState world = new(
@@ -193,7 +229,8 @@ public sealed class WorldState : IWorldQuery
             snapshot.Geography,
             characters,
             snapshot.Relationships,
-            careers)
+            careers,
+            characterResources)
         {
             lastEventDate = snapshot.LastEventDate,
             lastEventPhase = snapshot.LastEventPhase,
@@ -243,6 +280,7 @@ public sealed class WorldState : IWorldQuery
         Characters = Characters.CaptureSnapshot(),
         Relationships = Relationships.CaptureSnapshot(),
         Careers = Careers.CaptureSnapshot(),
+        CharacterResources = CharacterResources.CaptureSnapshot(),
     };
 
     internal void Enqueue(CampaignCommand command)
@@ -299,6 +337,9 @@ public sealed class WorldState : IWorldQuery
             case CharacterActionResolvedEventPayload characterAction:
                 ApplyCharacterAction(campaignEvent, characterAction);
                 break;
+            case CharacterResourceActionResolvedEventPayload resourceAction:
+                ApplyCharacterResourceAction(campaignEvent, resourceAction);
+                break;
             default:
                 throw new SimulationValidationException($"Unregistered event payload '{campaignEvent.Payload.GetType().Name}'.");
         }
@@ -314,6 +355,7 @@ public sealed class WorldState : IWorldQuery
         Calendar = Calendar.NextTurn();
         Characters.UpdateCampaignDate(Calendar.Date);
         Careers.UpdateCampaignCalendar(Calendar);
+        CharacterResources.UpdateCampaignCalendar(Calendar);
     }
 
     internal IReadOnlyList<CampaignEvent> PlanGeographicEvents(CampaignDate date) =>
@@ -386,6 +428,82 @@ public sealed class WorldState : IWorldQuery
             campaignEvent.EventId);
         Careers.ApplyPrepared(careerPlan);
         Relationships.ApplyPrepared(relationshipPlan);
+    }
+
+    private void ApplyCharacterResourceAction(
+        CampaignEvent campaignEvent,
+        CharacterResourceActionResolvedEventPayload payload)
+    {
+        if (campaignEvent.CausalId is not EntityId commandId || !commandId.IsValid)
+        {
+            throw new SimulationValidationException(
+                "Character-resource action event requires a valid causal command ID.");
+        }
+
+        EntityId expectedEventId = CharacterResourceIds.DeriveActionEventId(
+            campaignEvent.ResolutionDate,
+            commandId);
+        if (campaignEvent.EventId != expectedEventId
+            || campaignEvent.AffectedIds is null
+            || !campaignEvent.AffectedIds.SequenceEqual(
+                GetCharacterResourceActionAffectedIds(payload)))
+        {
+            throw new SimulationValidationException(
+                "Character-resource action event identity or affected IDs do not match its exact deterministic outcome.");
+        }
+
+        CharacterResourceWorldUpdatePlan resourcePlan = CharacterResources.PrepareOutcome(
+            payload,
+            campaignEvent.ResolutionDate,
+            Calendar.TurnIndex,
+            commandId,
+            campaignEvent.EventId);
+        CharacterResources.ApplyPrepared(resourcePlan);
+    }
+
+    internal static EntityId[] GetCharacterResourceActionAffectedIds(
+        CharacterResourceActionResolvedEventPayload payload)
+    {
+        if (payload is null
+            || payload.Action is not TransferWealthAction action
+            || payload.Outcome is null)
+        {
+            throw new SimulationValidationException(
+                "Character-resource action event contains null or unsupported data.");
+        }
+
+        HashSet<EntityId> affected =
+        [
+            payload.ActingCharacterId,
+            action.RecipientCharacterId,
+        ];
+        switch (payload.Outcome)
+        {
+            case WealthTransferredOutcome value:
+                affected.Add(value.Transfer.TransferId);
+                affected.Add(value.Transfer.SourceCharacterId);
+                affected.Add(value.Transfer.RecipientCharacterId);
+                affected.Add(CharacterResourceIds.DeriveWealthAccountId(
+                    value.Transfer.SourceCharacterId));
+                affected.Add(CharacterResourceIds.DeriveWealthAccountId(
+                    value.Transfer.RecipientCharacterId));
+                affected.Add(value.OutgoingEntry.EntryId);
+                affected.Add(value.IncomingEntry.EntryId);
+                break;
+            case WealthTransferCancelledOutcome value when Enum.IsDefined(value.Reason):
+                break;
+            default:
+                throw new SimulationValidationException(
+                    $"Unregistered character-resource action outcome '{payload.Outcome.GetType().Name}'.");
+        }
+
+        if (affected.Any(id => !id.IsValid))
+        {
+            throw new SimulationValidationException(
+                "Character-resource action event contains an invalid affected ID.");
+        }
+
+        return affected.Order().ToArray();
     }
 
     internal static EntityId[] GetCharacterActionAffectedIds(
@@ -576,11 +694,15 @@ public sealed class WorldState : IWorldQuery
         return entity;
     }
 
-    private static (CharacterWorldSnapshot Characters, CareerWorldSnapshot Careers) ValidateSystemVersions(
+    private static (
+        CharacterWorldSnapshot Characters,
+        CareerWorldSnapshot Careers,
+        CharacterResourceWorldSnapshot CharacterResources) ValidateSystemVersions(
         IReadOnlyList<SystemVersion> versions,
         CharacterWorldSnapshot characters,
         RelationshipWorldSnapshot relationships,
-        CareerWorldSnapshot careers)
+        CareerWorldSnapshot careers,
+        CharacterResourceWorldSnapshot characterResources)
     {
         if (versions is null || versions.Any(version => version is null))
         {
@@ -602,17 +724,24 @@ public sealed class WorldState : IWorldQuery
             throw new SaveCompatibilityException("Snapshot character-career state is missing.");
         }
 
+        if (characterResources is null)
+        {
+            throw new SaveCompatibilityException("Snapshot character-resource state is missing.");
+        }
+
         string[] expectedCore = CurrentSystemVersions
             .Where(version => version.SystemId is not "simulation.characters"
                 and not "simulation.relationships"
-                and not "simulation.character_careers")
+                and not "simulation.character_careers"
+                and not CharacterResourceSystem.SystemId)
             .Select(version => $"{version.SystemId}@{version.Version}")
             .Order(StringComparer.Ordinal)
             .ToArray();
         string[] actualCore = versions
             .Where(version => version.SystemId is not "simulation.characters"
                 and not "simulation.relationships"
-                and not "simulation.character_careers")
+                and not "simulation.character_careers"
+                and not CharacterResourceSystem.SystemId)
             .Select(version => $"{version.SystemId}@{version.Version}")
             .Order(StringComparer.Ordinal)
             .ToArray();
@@ -708,7 +837,40 @@ public sealed class WorldState : IWorldQuery
                 $"Snapshot career system version is incompatible. Expected 'simulation.character_careers@{CareerContractVersions.Snapshot}'.");
         }
 
-        return (normalizedCharacters, normalizedCareers);
+        SystemVersion[] characterResourceVersions = versions
+            .Where(version => StringComparer.Ordinal.Equals(
+                version.SystemId,
+                CharacterResourceSystem.SystemId))
+            .ToArray();
+        CharacterResourceWorldSnapshot normalizedCharacterResources;
+        if (characterResourceVersions.Length == 1
+            && characterResourceVersions[0].Version == CharacterResourceSystem.Version)
+        {
+            if (characterResources.ContractVersion != CharacterResourceContractVersions.Snapshot)
+            {
+                throw new SaveCompatibilityException(
+                    $"Snapshot declares '{CharacterResourceSystem.SystemId}@{CharacterResourceSystem.Version}' but contains character-resource contract {characterResources.ContractVersion}.");
+            }
+
+            normalizedCharacterResources = characterResources;
+        }
+        else if (characterResourceVersions.Length == 0)
+        {
+            if (!IsCompleteEmptyCharacterResourceSnapshot(characterResources))
+            {
+                throw new SaveCompatibilityException(
+                    "A legacy snapshot without current character-resource data must contain a complete, valid, empty character-resource snapshot.");
+            }
+
+            normalizedCharacterResources = CharacterResourceWorldSnapshot.Empty;
+        }
+        else
+        {
+            throw new SaveCompatibilityException(
+                $"Snapshot character-resource system version is incompatible. Expected '{CharacterResourceSystem.SystemId}@{CharacterResourceSystem.Version}'.");
+        }
+
+        return (normalizedCharacters, normalizedCareers, normalizedCharacterResources);
     }
 
     private static bool IsCompleteEmptyCharacterSnapshot(CharacterWorldSnapshot characters) =>
@@ -735,6 +897,13 @@ public sealed class WorldState : IWorldQuery
         && careers.EmploymentTenures is { Count: 0 }
         && careers.History is { Count: 0 };
 
+    private static bool IsCompleteEmptyCharacterResourceSnapshot(
+        CharacterResourceWorldSnapshot characterResources) =>
+        characterResources.ContractVersion == CharacterResourceContractVersions.Snapshot
+        && characterResources.Accounts is { Count: 0 }
+        && characterResources.LedgerEntries is { Count: 0 }
+        && characterResources.History is { Count: 0 };
+
     private static void ValidatePendingCommands(IReadOnlyList<CampaignCommand> commands)
     {
         if (commands.Select(command => command.CommandId).Distinct().Count() != commands.Count)
@@ -754,13 +923,25 @@ public sealed class WorldState : IWorldQuery
 
         foreach (CampaignCommand command in commands.Where(
             command => command.Payload is RelationshipActionCommandPayload
-                or CharacterActionCommandPayload))
+                or CharacterActionCommandPayload
+                or CharacterResourceActionCommandPayload))
         {
             try
             {
-                _ = command.Payload is RelationshipActionCommandPayload
-                    ? RelationshipWorldState.DeriveEventId(command.IssuedDate, command.CommandId)
-                    : CareerIds.DeriveCharacterActionEventId(command.IssuedDate, command.CommandId);
+                _ = command.Payload switch
+                {
+                    RelationshipActionCommandPayload => RelationshipWorldState.DeriveEventId(
+                        command.IssuedDate,
+                        command.CommandId),
+                    CharacterActionCommandPayload => CareerIds.DeriveCharacterActionEventId(
+                        command.IssuedDate,
+                        command.CommandId),
+                    CharacterResourceActionCommandPayload => CharacterResourceIds.DeriveActionEventId(
+                        command.IssuedDate,
+                        command.CommandId),
+                    _ => throw new SimulationValidationException(
+                        "Snapshot character-domain command payload is unregistered."),
+                };
             }
             catch (Exception exception) when (exception is SimulationValidationException
                 or ArgumentException)
