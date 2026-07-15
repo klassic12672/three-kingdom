@@ -44,9 +44,9 @@ public sealed class TierAndSoakTests
 
         Assert.True(result.Turns > 1_000);
         Assert.Equal(200, result.FinalDate.Year);
-        // SP-04C0 advances the authoritative character snapshot to v2, so the canonical golden
-        // changes without altering the soak inputs or simulated outcomes.
-        Assert.Equal("37504979fcaa25789cc9e12af7084c351d115c1195054e062ca7f7ea6ba943dd", result.Checksum.Value);
+        // SP-04C1 adds the empty career world and relationship-v2 system identity, so the
+        // canonical golden changes without altering the soak inputs or simulated outcomes.
+        Assert.Equal("14136a6a415a7c687cc5265709f1bbe7384c67527d9dc328dc111c4d6a523ff2", result.Checksum.Value);
     }
 
     [Theory]

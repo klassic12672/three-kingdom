@@ -5,7 +5,7 @@ namespace Game.Application;
 
 public static class RelationshipQueryContractVersions
 {
-    public const int Summary = 1;
+    public const int Summary = 2;
 }
 
 public sealed record RelationshipMemorySummary(
@@ -21,7 +21,10 @@ public sealed record RelationshipMemorySummary(
     MemoryPublicity Publicity,
     int DecayIntervalTurns,
     RelationshipImpact AppliedImpact,
-    EntityId SourceRelationshipActionEventId);
+    EntityId SourceEventId,
+    RelationshipMemorySourceKind SourceKind,
+    RelationshipMemoryIdentityScheme IdentityScheme,
+    int ConsequenceIndex);
 
 public sealed record VisibleDirectionalRelationshipSummary(
     EntityId RelationshipId,

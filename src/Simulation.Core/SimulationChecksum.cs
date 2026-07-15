@@ -18,24 +18,32 @@ public readonly record struct SimulationChecksum(string Value)
 
     internal static SimulationChecksum ComputeForSaveSchema(WorldSnapshot snapshot, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 5)
+        if (schemaVersion is < 1 or > 6)
         {
             throw new ArgumentOutOfRangeException(nameof(schemaVersion));
         }
 
         JsonObject canonical = JsonSerializer.SerializeToNode(Canonicalize(snapshot), CanonicalJson.Options)!.AsObject();
         // Schemas 1-4 predate relationships; schemas 1-3 predate characters;
-        // schemas 1-2 predate geography. Schemas 4-5 used character contract v1.
+        // schemas 1-2 predate geography. Schemas 4-5 used character contract v1,
+        // schemas 5-6 used relationship contract v1, and all historical schemas
+        // predate the separate career world.
+        canonical.Remove("careers");
+        DowngradeSystemVersions(canonical, schemaVersion);
         if (schemaVersion < 5)
         {
             canonical.Remove("relationships");
+        }
+        else
+        {
+            StripRelationshipV2Fields(canonical);
         }
 
         if (schemaVersion < 4)
         {
             canonical.Remove("characters");
         }
-        else
+        else if (schemaVersion < 6)
         {
             StripCharacterV2Fields(canonical);
         }
@@ -78,6 +86,83 @@ public readonly record struct SimulationChecksum(string Value)
         }
     }
 
+    private static void StripRelationshipV2Fields(JsonObject canonical)
+    {
+        if (canonical["relationships"] is not JsonObject relationships)
+        {
+            return;
+        }
+
+        relationships["contractVersion"] = RelationshipContractVersions.LegacySnapshot;
+        if (relationships["subjects"] is not JsonArray subjects)
+        {
+            return;
+        }
+
+        foreach (JsonObject subject in subjects.OfType<JsonObject>())
+        {
+            if (subject["detailedRelationships"] is not JsonArray detailed)
+            {
+                continue;
+            }
+
+            foreach (JsonObject relationship in detailed.OfType<JsonObject>())
+            {
+                if (relationship["memories"] is not JsonArray memories)
+                {
+                    continue;
+                }
+
+                foreach (JsonObject memory in memories.OfType<JsonObject>())
+                {
+                    if (memory["identityScheme"]?.GetValue<int>()
+                        != (int)RelationshipMemoryIdentityScheme.LegacyRelationshipActionV1
+                        || memory["sourceKind"]?.GetValue<int>()
+                        != (int)RelationshipMemorySourceKind.RelationshipAction
+                        || memory["consequenceIndex"]?.GetValue<int>() != 0)
+                    {
+                        throw new SaveCompatibilityException(
+                            "A current relationship memory cannot be represented by historical relationship contract v1.");
+                    }
+
+                    memory["contractVersion"] = RelationshipContractVersions.LegacyMemory;
+                    memory["sourceRelationshipActionEventId"] = memory["sourceEventId"]?.DeepClone();
+                    memory.Remove("sourceEventId");
+                    memory.Remove("sourceKind");
+                    memory.Remove("identityScheme");
+                    memory.Remove("consequenceIndex");
+                }
+            }
+        }
+    }
+
+    private static void DowngradeSystemVersions(JsonObject canonical, int schemaVersion)
+    {
+        if (canonical["systemVersions"] is not JsonArray versions)
+        {
+            return;
+        }
+
+        for (int index = versions.Count - 1; index >= 0; index--)
+        {
+            if (versions[index] is not JsonObject version)
+            {
+                continue;
+            }
+
+            string? systemId = version["systemId"]?.GetValue<string>();
+            if (StringComparer.Ordinal.Equals(systemId, "simulation.character_careers"))
+            {
+                versions.RemoveAt(index);
+            }
+            else if (schemaVersion >= 5
+                && StringComparer.Ordinal.Equals(systemId, "simulation.relationships"))
+            {
+                version["version"] = RelationshipContractVersions.LegacySnapshot;
+            }
+        }
+    }
+
     private static WorldSnapshot Canonicalize(WorldSnapshot snapshot) => snapshot with
     {
         RandomStreams = snapshot.RandomStreams.OrderBy(item => item.Context, StringComparer.Ordinal).ToArray(),
@@ -90,6 +175,7 @@ public readonly record struct SimulationChecksum(string Value)
         Geography = snapshot.Geography.Canonicalize(),
         Characters = snapshot.Characters.Canonicalize(),
         Relationships = CanonicalizeRelationships(snapshot.Relationships),
+        Careers = snapshot.Careers.Canonicalize(),
     };
 
     private static RelationshipWorldSnapshot CanonicalizeRelationships(RelationshipWorldSnapshot snapshot) =>

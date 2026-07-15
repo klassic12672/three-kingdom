@@ -14,6 +14,8 @@ public interface IWorldQuery
 
     IAuthoritativeRelationshipWorldQuery Relationships { get; }
 
+    IAuthoritativeCareerWorldQuery Careers { get; }
+
     bool TryGetEntity(EntityId id, [NotNullWhen(true)] out SyntheticEntitySnapshot? entity);
 }
 
@@ -26,7 +28,8 @@ public sealed class WorldState : IWorldQuery
         new("simulation.command_events", 1),
         new("simulation.geography", 1),
         new("simulation.characters", CharacterContractVersions.Snapshot),
-        new("simulation.relationships", 1),
+        new("simulation.relationships", RelationshipContractVersions.Snapshot),
+        new("simulation.character_careers", CareerContractVersions.Snapshot),
     ];
 
     private readonly SortedDictionary<EntityId, SyntheticEntitySnapshot> entities = [];
@@ -42,7 +45,8 @@ public sealed class WorldState : IWorldQuery
         IEnumerable<RandomStreamState>? streams,
         GeographicWorldSnapshot geography,
         CharacterWorldSnapshot characters,
-        RelationshipWorldSnapshot relationships)
+        RelationshipWorldSnapshot relationships,
+        CareerWorldSnapshot careers)
     {
         if (!calendar.Date.IsValid || calendar.TurnIndex < 0)
         {
@@ -55,6 +59,7 @@ public sealed class WorldState : IWorldQuery
         Geography = new GeographicWorldState(geography);
         Characters = new CharacterWorldState(characters, calendar.Date);
         Relationships = new RelationshipWorldState(relationships, Characters, calendar);
+        Careers = new CharacterCareerWorldState(careers, Characters, calendar);
     }
 
     public CampaignCalendar Calendar { get; private set; }
@@ -69,11 +74,15 @@ public sealed class WorldState : IWorldQuery
 
     public RelationshipWorldState Relationships { get; }
 
+    public CharacterCareerWorldState Careers { get; }
+
     IGeographicWorldQuery IWorldQuery.Geography => Geography;
 
     IAuthoritativeCharacterWorldQuery IWorldQuery.Characters => Characters;
 
     IAuthoritativeRelationshipWorldQuery IWorldQuery.Relationships => Relationships;
+
+    IAuthoritativeCareerWorldQuery IWorldQuery.Careers => Careers;
 
     public IReadOnlyList<SyntheticEntitySnapshot> Entities => entities.Values.Select(CloneEntity).ToArray();
 
@@ -87,7 +96,8 @@ public sealed class WorldState : IWorldQuery
             initialEntities,
             geography ?? GeographicWorldSnapshot.Empty,
             CharacterWorldSnapshot.Empty,
-            RelationshipWorldSnapshot.Empty);
+            RelationshipWorldSnapshot.Empty,
+            CareerWorldSnapshot.Empty);
 
     public static WorldState Create(
         CampaignDate startDate,
@@ -100,7 +110,8 @@ public sealed class WorldState : IWorldQuery
             initialEntities,
             geography,
             characters,
-            RelationshipWorldSnapshot.Empty);
+            RelationshipWorldSnapshot.Empty,
+            CareerWorldSnapshot.Empty);
 
     public static WorldState Create(
         CampaignDate startDate,
@@ -108,7 +119,23 @@ public sealed class WorldState : IWorldQuery
         IEnumerable<SyntheticEntitySnapshot> initialEntities,
         GeographicWorldSnapshot geography,
         CharacterWorldSnapshot characters,
-        RelationshipWorldSnapshot relationships)
+        RelationshipWorldSnapshot relationships) => Create(
+            startDate,
+            seed,
+            initialEntities,
+            geography,
+            characters,
+            relationships,
+            CareerWorldSnapshot.Empty);
+
+    public static WorldState Create(
+        CampaignDate startDate,
+        ulong seed,
+        IEnumerable<SyntheticEntitySnapshot> initialEntities,
+        GeographicWorldSnapshot geography,
+        CharacterWorldSnapshot characters,
+        RelationshipWorldSnapshot relationships,
+        CareerWorldSnapshot careers)
     {
         WorldState world = new(
             new CampaignCalendar(startDate, 0),
@@ -116,7 +143,8 @@ public sealed class WorldState : IWorldQuery
             null,
             geography,
             characters,
-            relationships);
+            relationships,
+            careers);
         foreach (SyntheticEntitySnapshot entity in initialEntities.OrderBy(item => item.Id))
         {
             SyntheticEntitySnapshot canonical = ValidateEntity(entity).Canonicalize();
@@ -139,6 +167,7 @@ public sealed class WorldState : IWorldQuery
             || snapshot.Geography is null
             || snapshot.Characters is null
             || snapshot.Relationships is null
+            || snapshot.Careers is null
             || snapshot.Entities.Any(entity => entity is null)
             || snapshot.PendingCommands.Any(command => command is null))
         {
@@ -150,10 +179,11 @@ public sealed class WorldState : IWorldQuery
             throw new SaveCompatibilityException($"Unsupported world snapshot contract version {snapshot.ContractVersion}.");
         }
 
-        CharacterWorldSnapshot characters = ValidateSystemVersions(
+        (CharacterWorldSnapshot characters, CareerWorldSnapshot careers) = ValidateSystemVersions(
             snapshot.SystemVersions,
             snapshot.Characters,
-            snapshot.Relationships);
+            snapshot.Relationships,
+            snapshot.Careers);
         ValidatePendingCommands(snapshot.PendingCommands);
 
         WorldState world = new(
@@ -162,7 +192,8 @@ public sealed class WorldState : IWorldQuery
             snapshot.RandomStreams,
             snapshot.Geography,
             characters,
-            snapshot.Relationships)
+            snapshot.Relationships,
+            careers)
         {
             lastEventDate = snapshot.LastEventDate,
             lastEventPhase = snapshot.LastEventPhase,
@@ -211,6 +242,7 @@ public sealed class WorldState : IWorldQuery
         Geography = Geography.CaptureSnapshot(),
         Characters = Characters.CaptureSnapshot(),
         Relationships = Relationships.CaptureSnapshot(),
+        Careers = Careers.CaptureSnapshot(),
     };
 
     internal void Enqueue(CampaignCommand command)
@@ -264,6 +296,9 @@ public sealed class WorldState : IWorldQuery
             case RelationshipActionResolvedEventPayload:
                 Relationships.Apply(campaignEvent, Calendar.TurnIndex);
                 break;
+            case CharacterActionResolvedEventPayload characterAction:
+                ApplyCharacterAction(campaignEvent, characterAction);
+                break;
             default:
                 throw new SimulationValidationException($"Unregistered event payload '{campaignEvent.Payload.GetType().Name}'.");
         }
@@ -278,6 +313,7 @@ public sealed class WorldState : IWorldQuery
     {
         Calendar = Calendar.NextTurn();
         Characters.UpdateCampaignDate(Calendar.Date);
+        Careers.UpdateCampaignCalendar(Calendar);
     }
 
     internal IReadOnlyList<CampaignEvent> PlanGeographicEvents(CampaignDate date) =>
@@ -313,6 +349,161 @@ public sealed class WorldState : IWorldQuery
         }
 
         entities[entity.Id] = entity with { Tier = transition.Tier };
+    }
+
+    private void ApplyCharacterAction(
+        CampaignEvent campaignEvent,
+        CharacterActionResolvedEventPayload payload)
+    {
+        if (campaignEvent.CausalId is not EntityId commandId || !commandId.IsValid)
+        {
+            throw new SimulationValidationException(
+                "Character action event requires a valid causal command ID.");
+        }
+
+        EntityId expectedEventId = CareerIds.DeriveCharacterActionEventId(
+            campaignEvent.ResolutionDate,
+            commandId);
+        if (campaignEvent.EventId != expectedEventId
+            || campaignEvent.AffectedIds is null
+            || !campaignEvent.AffectedIds.SequenceEqual(
+                GetCharacterActionAffectedIds(payload, campaignEvent.EventId)))
+        {
+            throw new SimulationValidationException(
+                "Character action event identity or affected IDs do not match its exact deterministic consequences.");
+        }
+
+        CharacterCareerWorldUpdatePlan careerPlan = Careers.PrepareOutcome(
+            payload,
+            campaignEvent.ResolutionDate,
+            Calendar.TurnIndex,
+            commandId,
+            campaignEvent.EventId);
+        RelationshipWorldUpdatePlan relationshipPlan = Relationships.PrepareCharacterActionConsequences(
+            payload,
+            campaignEvent.ResolutionDate,
+            Calendar.TurnIndex,
+            campaignEvent.EventId);
+        Careers.ApplyPrepared(careerPlan);
+        Relationships.ApplyPrepared(relationshipPlan);
+    }
+
+    internal static EntityId[] GetCharacterActionAffectedIds(
+        CharacterActionResolvedEventPayload payload,
+        EntityId eventId)
+    {
+        if (payload is null
+            || payload.Outcome is null
+            || payload.RelationshipMemoryConsequences is null)
+        {
+            throw new SimulationValidationException(
+                "Character action event contains null consequence data.");
+        }
+
+        HashSet<EntityId> affected = [payload.ActingCharacterId];
+        switch (payload.Outcome)
+        {
+            case CareerProposalCreatedOutcome value:
+                AddProposal(affected, value.Proposal);
+                break;
+            case CareerProposalRefusedOutcome value:
+                AddProposal(affected, value.Proposal);
+                break;
+            case CareerProposalWithdrawnOutcome value:
+                AddProposal(affected, value.Proposal);
+                break;
+            case CareerProposalInvalidatedOutcome value:
+                AddProposal(affected, value.Proposal);
+                break;
+            case RetinueInvitationAcceptedOutcome value:
+                AddProposal(affected, value.Proposal);
+                affected.Add(value.Retinue.RetinueId);
+                affected.Add(value.Retinue.LeaderCharacterId);
+                affected.Add(value.Membership.MembershipId);
+                affected.Add(value.Membership.MemberCharacterId);
+                break;
+            case RetinueMembershipEndedOutcome value:
+                affected.Add(value.Membership.MembershipId);
+                affected.Add(value.Membership.RetinueId);
+                affected.Add(value.Membership.LeaderCharacterId);
+                affected.Add(value.Membership.MemberCharacterId);
+                break;
+            case PatronageOfferAcceptedOutcome value:
+                AddProposal(affected, value.Proposal);
+                affected.Add(value.Bond.BondId);
+                affected.Add(value.Bond.PatronCharacterId);
+                affected.Add(value.Bond.BeneficiaryCharacterId);
+                break;
+            case PatronageBondEndedOutcome value:
+                affected.Add(value.Bond.BondId);
+                affected.Add(value.Bond.PatronCharacterId);
+                affected.Add(value.Bond.BeneficiaryCharacterId);
+                break;
+            case RecommendationRecordedOutcome value:
+                affected.Add(value.Recommendation.RecommendationId);
+                affected.Add(value.Recommendation.RecommenderCharacterId);
+                affected.Add(value.Recommendation.BeneficiaryCharacterId);
+                affected.Add(value.Recommendation.Principal.PrincipalId);
+                if (value.Recommendation.RecommendedRoleId is EntityId roleId)
+                {
+                    affected.Add(roleId);
+                }
+
+                break;
+            case EmploymentOfferAcceptedOutcome value:
+                AddProposal(affected, value.Proposal);
+                affected.Add(value.Tenure.TenureId);
+                affected.Add(value.Tenure.EmployeeCharacterId);
+                affected.Add(value.Tenure.Employer.PrincipalId);
+                affected.Add(value.Tenure.RoleId);
+                break;
+            case EmploymentTenureEndedOutcome value:
+                affected.Add(value.Tenure.TenureId);
+                affected.Add(value.Tenure.EmployeeCharacterId);
+                affected.Add(value.Tenure.Employer.PrincipalId);
+                affected.Add(value.Tenure.RoleId);
+                break;
+            default:
+                throw new SimulationValidationException(
+                    $"Unregistered character action outcome '{payload.Outcome.GetType().Name}'.");
+        }
+
+        for (int index = 0; index < payload.RelationshipMemoryConsequences.Count; index++)
+        {
+            RelationshipMemoryConsequenceSpecification consequence =
+                payload.RelationshipMemoryConsequences[index];
+            affected.Add(consequence.ConsequenceId);
+            affected.Add(consequence.SubjectCharacterId);
+            affected.Add(consequence.TargetCharacterId);
+            affected.Add(RelationshipIds.DeriveRelationshipId(
+                consequence.SubjectCharacterId,
+                consequence.TargetCharacterId));
+            affected.Add(RelationshipIds.DeriveMemoryId(
+                eventId,
+                consequence.SubjectCharacterId,
+                consequence.TargetCharacterId,
+                index));
+        }
+
+        if (affected.Any(id => !id.IsValid))
+        {
+            throw new SimulationValidationException(
+                "Character action event contains an invalid affected ID.");
+        }
+
+        return affected.Order().ToArray();
+    }
+
+    private static void AddProposal(ISet<EntityId> affected, CareerProposalState proposal)
+    {
+        affected.Add(proposal.ProposalId);
+        affected.Add(proposal.ProposerCharacterId);
+        affected.Add(proposal.RecipientCharacterId);
+        affected.Add(proposal.Principal.PrincipalId);
+        if (proposal.ProposedRoleId is EntityId roleId)
+        {
+            affected.Add(roleId);
+        }
     }
 
     private void ValidateEventOrder(CampaignEvent campaignEvent)
@@ -385,10 +576,11 @@ public sealed class WorldState : IWorldQuery
         return entity;
     }
 
-    private static CharacterWorldSnapshot ValidateSystemVersions(
+    private static (CharacterWorldSnapshot Characters, CareerWorldSnapshot Careers) ValidateSystemVersions(
         IReadOnlyList<SystemVersion> versions,
         CharacterWorldSnapshot characters,
-        RelationshipWorldSnapshot relationships)
+        RelationshipWorldSnapshot relationships,
+        CareerWorldSnapshot careers)
     {
         if (versions is null || versions.Any(version => version is null))
         {
@@ -405,13 +597,22 @@ public sealed class WorldState : IWorldQuery
             throw new SaveCompatibilityException("Snapshot relationship state is missing.");
         }
 
+        if (careers is null)
+        {
+            throw new SaveCompatibilityException("Snapshot character-career state is missing.");
+        }
+
         string[] expectedCore = CurrentSystemVersions
-            .Where(version => version.SystemId is not "simulation.characters" and not "simulation.relationships")
+            .Where(version => version.SystemId is not "simulation.characters"
+                and not "simulation.relationships"
+                and not "simulation.character_careers")
             .Select(version => $"{version.SystemId}@{version.Version}")
             .Order(StringComparer.Ordinal)
             .ToArray();
         string[] actualCore = versions
-            .Where(version => version.SystemId is not "simulation.characters" and not "simulation.relationships")
+            .Where(version => version.SystemId is not "simulation.characters"
+                and not "simulation.relationships"
+                and not "simulation.character_careers")
             .Select(version => $"{version.SystemId}@{version.Version}")
             .Order(StringComparer.Ordinal)
             .ToArray();
@@ -464,7 +665,7 @@ public sealed class WorldState : IWorldQuery
             if (!IsCompleteEmptyRelationshipSnapshot(relationships))
             {
                 throw new SaveCompatibilityException(
-                    "A legacy snapshot without 'simulation.relationships@1' must contain a complete, valid, empty relationship snapshot.");
+                    $"A legacy snapshot without 'simulation.relationships@{RelationshipContractVersions.Snapshot}' must contain a complete, valid, empty relationship snapshot.");
             }
         }
         else if (relationshipVersions.Length != 1
@@ -474,7 +675,40 @@ public sealed class WorldState : IWorldQuery
                 $"Snapshot relationship system version is incompatible. Expected 'simulation.relationships@{RelationshipContractVersions.Snapshot}'.");
         }
 
-        return normalizedCharacters;
+        SystemVersion[] careerVersions = versions
+            .Where(version => StringComparer.Ordinal.Equals(
+                version.SystemId,
+                "simulation.character_careers"))
+            .ToArray();
+        CareerWorldSnapshot normalizedCareers;
+        if (careerVersions.Length == 1
+            && careerVersions[0].Version == CareerContractVersions.Snapshot)
+        {
+            if (careers.ContractVersion != CareerContractVersions.Snapshot)
+            {
+                throw new SaveCompatibilityException(
+                    $"Snapshot declares 'simulation.character_careers@{CareerContractVersions.Snapshot}' but contains career contract {careers.ContractVersion}.");
+            }
+
+            normalizedCareers = careers;
+        }
+        else if (careerVersions.Length == 0)
+        {
+            if (!IsCompleteEmptyCareerSnapshot(careers))
+            {
+                throw new SaveCompatibilityException(
+                    "A legacy snapshot without current character-career data must contain a complete, valid, empty career snapshot.");
+            }
+
+            normalizedCareers = CareerWorldSnapshot.Empty;
+        }
+        else
+        {
+            throw new SaveCompatibilityException(
+                $"Snapshot career system version is incompatible. Expected 'simulation.character_careers@{CareerContractVersions.Snapshot}'.");
+        }
+
+        return (normalizedCharacters, normalizedCareers);
     }
 
     private static bool IsCompleteEmptyCharacterSnapshot(CharacterWorldSnapshot characters) =>
@@ -490,6 +724,16 @@ public sealed class WorldState : IWorldQuery
     private static bool IsCompleteEmptyRelationshipSnapshot(RelationshipWorldSnapshot relationships) =>
         relationships.ContractVersion == RelationshipContractVersions.Snapshot
         && relationships.Subjects is { Count: 0 };
+
+    private static bool IsCompleteEmptyCareerSnapshot(CareerWorldSnapshot careers) =>
+        careers.ContractVersion == CareerContractVersions.Snapshot
+        && careers.Proposals is { Count: 0 }
+        && careers.Retinues is { Count: 0 }
+        && careers.RetinueMemberships is { Count: 0 }
+        && careers.PatronageBonds is { Count: 0 }
+        && careers.Recommendations is { Count: 0 }
+        && careers.EmploymentTenures is { Count: 0 }
+        && careers.History is { Count: 0 };
 
     private static void ValidatePendingCommands(IReadOnlyList<CampaignCommand> commands)
     {
@@ -509,16 +753,20 @@ public sealed class WorldState : IWorldQuery
         }
 
         foreach (CampaignCommand command in commands.Where(
-            command => command.Payload is RelationshipActionCommandPayload))
+            command => command.Payload is RelationshipActionCommandPayload
+                or CharacterActionCommandPayload))
         {
             try
             {
-                _ = RelationshipWorldState.DeriveEventId(command.IssuedDate, command.CommandId);
+                _ = command.Payload is RelationshipActionCommandPayload
+                    ? RelationshipWorldState.DeriveEventId(command.IssuedDate, command.CommandId)
+                    : CareerIds.DeriveCharacterActionEventId(command.IssuedDate, command.CommandId);
             }
-            catch (SimulationValidationException exception)
+            catch (Exception exception) when (exception is SimulationValidationException
+                or ArgumentException)
             {
                 throw new SimulationValidationException(
-                    $"Snapshot contains a relationship command with invalid event identity: {exception.Message}");
+                    $"Snapshot contains a character-domain command with invalid event identity: {exception.Message}");
             }
         }
     }

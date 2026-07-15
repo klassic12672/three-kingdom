@@ -159,7 +159,7 @@ public sealed class RelationshipTests
         Assert.Equal(4, relationship.Dimensions.Trust);
         ConsequentialMemory memory = Assert.Single(relationship.Memories);
         Assert.Equal(planned.Memory.MemoryId, memory.MemoryId);
-        Assert.Equal(eventId, memory.SourceRelationshipActionEventId);
+        Assert.Equal(eventId, memory.SourceEventId);
         Assert.False(state.TryGetSubjectHistory(Target, out _));
     }
 
@@ -199,7 +199,7 @@ public sealed class RelationshipTests
             .ToArray();
         Assert.Equal(2, memories.Length);
         Assert.NotEqual(memories[0].MemoryId, memories[1].MemoryId);
-        Assert.NotEqual(memories[0].SourceRelationshipActionEventId, memories[1].SourceRelationshipActionEventId);
+        Assert.NotEqual(memories[0].SourceEventId, memories[1].SourceEventId);
 
         EntityId tooLong = new($"command:{new string('a', 152)}");
         CampaignCommand tooLongCommand = CampaignCommand.Create(
@@ -534,7 +534,7 @@ public sealed class RelationshipTests
         CharacterWorldState characters = CreateCharacters(4);
         CampaignCalendar calendar = new(Date, 0);
 
-        AssertInvalidSnapshot(valid with { ContractVersion = 2 }, characters, calendar);
+        AssertInvalidSnapshot(valid with { ContractVersion = 3 }, characters, calendar);
         AssertInvalidSnapshot(valid with { Subjects = [subject, subject with { }] }, characters, calendar);
         AssertInvalidSnapshot(valid with
         {
@@ -629,7 +629,7 @@ public sealed class RelationshipTests
         {
             ResolutionDate = beforeBirth,
             MemoryId = RelationshipIds.DeriveMemoryId(beforeBirth, causalCommand),
-            SourceRelationshipActionEventId = EventId(causalCommand, beforeBirth),
+            SourceEventId = EventId(causalCommand, beforeBirth),
         };
         CharacterWorldState bornOnCurrentDate = CreateCharacters(
             [Subject, Target, Witness, Character(3)],
@@ -1015,7 +1015,7 @@ public sealed class RelationshipTests
             Assert.Equal(MemoryPublicity.Witnessed, memory.Publicity);
             Assert.Equal(0, memory.DecayIntervalTurns);
             Assert.Equal(3, memory.AppliedImpact.Respect);
-            Assert.Equal(resolved.EventId, memory.SourceRelationshipActionEventId);
+            Assert.Equal(resolved.EventId, memory.SourceEventId);
 
             SaveEnvelope envelope = SaveEnvelope.Create(
                 "0.1.0",
@@ -1058,7 +1058,7 @@ public sealed class RelationshipTests
             command.CommandId,
             EventId(command.CommandId));
         string eventJson = JsonSerializer.Serialize(CreateEvent(payload, command.CommandId, Date), options)
-            .Replace("relationship_action_resolved.v1", "relationship_action_resolved.v999", StringComparison.Ordinal);
+            .Replace("relationship_action_resolved.v2", "relationship_action_resolved.v999", StringComparison.Ordinal);
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<CampaignEvent>(eventJson, options));
     }
 
@@ -1155,7 +1155,7 @@ public sealed class RelationshipTests
                     [
                         relationship with
                         {
-                            Memories = [memory with { ContractVersion = 2 }],
+                            Memories = [memory with { ContractVersion = 3 }],
                         },
                     ],
                 },
@@ -1345,7 +1345,7 @@ public sealed class RelationshipTests
     {
         EntityId eventId = EventId(commandId);
         return new ConsequentialMemory(
-            RelationshipContractVersions.State,
+            RelationshipContractVersions.Memory,
             RelationshipIds.DeriveMemoryId(Date, commandId),
             subject,
             target,
@@ -1357,7 +1357,10 @@ public sealed class RelationshipTests
             MemoryPublicity.Private,
             decay,
             Impact(affection: 1),
-            eventId);
+            eventId,
+            RelationshipMemorySourceKind.RelationshipAction,
+            RelationshipMemoryIdentityScheme.LegacyRelationshipActionV1,
+            0);
     }
 
     private static EntityId Character(int index) => index switch

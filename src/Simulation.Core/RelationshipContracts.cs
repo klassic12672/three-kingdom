@@ -2,14 +2,30 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json.Serialization;
 
 namespace Simulation.Core;
 
 public static class RelationshipContractVersions
 {
-    public const int Snapshot = 1;
+    public const int LegacySnapshot = 1;
+    public const int Snapshot = 2;
+    public const int LegacyMemory = 1;
+    public const int Memory = 2;
     public const int State = 1;
     public const int AuthoritativeQuery = 1;
+}
+
+public enum RelationshipMemorySourceKind
+{
+    RelationshipAction = 0,
+    CharacterAction = 1,
+}
+
+public enum RelationshipMemoryIdentityScheme
+{
+    LegacyRelationshipActionV1 = 0,
+    SourceEventV2 = 1,
 }
 
 public enum MemoryPublicity
@@ -56,6 +72,7 @@ public sealed record RelationshipImpact(
         || Compatibility != 0;
 }
 
+[method: JsonConstructor]
 public sealed record ConsequentialMemory(
     int ContractVersion,
     EntityId MemoryId,
@@ -69,7 +86,10 @@ public sealed record ConsequentialMemory(
     MemoryPublicity Publicity,
     int DecayIntervalTurns,
     RelationshipImpact AppliedImpact,
-    EntityId SourceRelationshipActionEventId);
+    EntityId SourceEventId,
+    RelationshipMemorySourceKind SourceKind,
+    RelationshipMemoryIdentityScheme IdentityScheme,
+    int ConsequenceIndex);
 
 public sealed record FoldedMemorySummary(
     long MemoryCount,
@@ -186,6 +206,39 @@ public static class RelationshipIds
             "\n",
             commandId.Value);
         return Hash("memory", canonical);
+    }
+
+    public static EntityId DeriveMemoryId(
+        EntityId sourceEventId,
+        EntityId subjectCharacterId,
+        EntityId targetCharacterId,
+        int consequenceIndex)
+    {
+        if (!sourceEventId.IsValid
+            || !subjectCharacterId.IsValid
+            || !targetCharacterId.IsValid
+            || subjectCharacterId == targetCharacterId
+            || consequenceIndex < 0)
+        {
+            throw new ArgumentException(
+                "Source-event memory IDs require a valid source event, different valid participants, and a non-negative consequence index.");
+        }
+
+        StringBuilder canonical = new();
+        AppendField(canonical, "memory.source-event.v2");
+        AppendField(canonical, sourceEventId.Value);
+        AppendField(canonical, subjectCharacterId.Value);
+        AppendField(canonical, targetCharacterId.Value);
+        AppendField(canonical, consequenceIndex.ToString(CultureInfo.InvariantCulture));
+        return Hash("memory", canonical.ToString());
+    }
+
+    private static void AppendField(StringBuilder target, string value)
+    {
+        target.Append(value.Length.ToString(CultureInfo.InvariantCulture));
+        target.Append(':');
+        target.Append(value);
+        target.Append(';');
     }
 
     private static EntityId Hash(string entityNamespace, string canonical)

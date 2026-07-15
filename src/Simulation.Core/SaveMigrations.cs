@@ -25,6 +25,7 @@ public sealed class SaveSchemaRegistry
             new SaveMigrationV3ToV4(),
             new SaveMigrationV4ToV5(),
             new SaveMigrationV5ToV6(),
+            new SaveMigrationV6ToV7(),
         ]).ToArray();
         if (registered.Any(item => item.ToSchemaVersion != item.FromSchemaVersion + 1))
         {
@@ -94,7 +95,7 @@ public sealed class SaveSchemaRegistry
 
     internal static void ValidateHistoricalSourceChecksum(JsonObject source, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 5)
+        if (schemaVersion is < 1 or > 6)
         {
             throw new SaveCompatibilityException($"Save schema {schemaVersion} has no historical checksum contract.");
         }
@@ -102,8 +103,11 @@ public sealed class SaveSchemaRegistry
         ValidateHistoricalSourceShape(source, schemaVersion);
         string storedChecksum = source["checksum"]?.GetValue<string>()
             ?? throw new SaveCompatibilityException($"Save schema {schemaVersion} is missing its checksum.");
-        WorldSnapshot snapshot = source["snapshot"]?.Deserialize<WorldSnapshot>(SimulationJson.CreateOptions())
-            ?? throw new SaveCompatibilityException($"Save schema {schemaVersion} is missing its authoritative snapshot.");
+        WorldSnapshot snapshot = DeserializeHistoricalSnapshotForChecksum(
+            source["snapshot"] as JsonObject
+                ?? throw new SaveCompatibilityException(
+                    $"Save schema {schemaVersion} is missing its authoritative snapshot."),
+            schemaVersion);
         string actualChecksum = SimulationChecksum.ComputeForSaveSchema(snapshot, schemaVersion).Value;
         if (!StringComparer.Ordinal.Equals(storedChecksum, actualChecksum))
         {
@@ -111,6 +115,22 @@ public sealed class SaveSchemaRegistry
                 $"Save schema {schemaVersion} checksum does not match its authoritative snapshot "
                 + $"(stored {storedChecksum}, actual {actualChecksum}).");
         }
+    }
+
+    internal static WorldSnapshot DeserializeHistoricalSnapshotForChecksum(
+        JsonObject historicalSnapshot,
+        int schemaVersion)
+    {
+        JsonObject compatible = (JsonObject)historicalSnapshot.DeepClone();
+        if (schemaVersion >= 5
+            && compatible["relationships"] is JsonObject relationships)
+        {
+            UpgradeLegacyRelationshipSnapshot(relationships);
+        }
+
+        return compatible.Deserialize<WorldSnapshot>(SimulationJson.CreateOptions())
+            ?? throw new SaveCompatibilityException(
+                $"Save schema {schemaVersion} is missing its authoritative snapshot.");
     }
 
     private static void ValidateHistoricalSourceShape(JsonObject source, int schemaVersion)
@@ -140,6 +160,15 @@ public sealed class SaveSchemaRegistry
             schemaVersion,
             "snapshot.systemVersions");
 
+        if (snapshot.ContainsKey("careers")
+            || systemVersions.Any(version => IsSystemId(
+                version,
+                "simulation.character_careers")))
+        {
+            throw new SaveCompatibilityException(
+                $"Schema {schemaVersion} unexpectedly contains schema 7 character-career data.");
+        }
+
         if (schemaVersion < 5
             && (snapshot.ContainsKey("relationships")
                 || systemVersions.Any(version => IsSystemId(version, "simulation.relationships"))))
@@ -148,15 +177,17 @@ public sealed class SaveSchemaRegistry
                 $"Schema {schemaVersion} unexpectedly contains schema 5 relationship data.");
         }
 
-        if (schemaVersion == 5)
+        if (schemaVersion >= 5)
         {
             ValidateRelationshipSnapshotShape(
                 RequireHistoricalObject(snapshot, "relationships", schemaVersion, "snapshot.relationships"),
-                $"Save schema {schemaVersion}");
+                $"Save schema {schemaVersion}",
+                RelationshipContractVersions.LegacySnapshot,
+                requireVersionTwoMemoryFields: false);
             if (!systemVersions.Any(version => IsSystemVersion(
                     version,
                     "simulation.relationships",
-                    RelationshipContractVersions.Snapshot)))
+                    RelationshipContractVersions.LegacySnapshot)))
             {
                 throw new SaveCompatibilityException(
                     "Save schema 5 is missing required 'simulation.relationships@1' system-version data.");
@@ -198,15 +229,19 @@ public sealed class SaveSchemaRegistry
         ValidateCharacterSnapshotShape(
             characters,
             $"Save schema {schemaVersion}",
-            CharacterContractVersions.LegacySnapshot,
-            requireVersionTwoFields: false);
+            schemaVersion == 6
+                ? CharacterContractVersions.Snapshot
+                : CharacterContractVersions.LegacySnapshot,
+            requireVersionTwoFields: schemaVersion == 6);
         if (!systemVersions.Any(version => IsSystemVersion(
                 version,
                 "simulation.characters",
-                CharacterContractVersions.LegacySnapshot)))
+                schemaVersion == 6
+                    ? CharacterContractVersions.Snapshot
+                    : CharacterContractVersions.LegacySnapshot)))
         {
             throw new SaveCompatibilityException(
-                $"Save schema {schemaVersion} is missing required 'simulation.characters@1' system-version data.");
+                $"Save schema {schemaVersion} is missing required character system-version data.");
         }
     }
 
@@ -366,10 +401,11 @@ public sealed class SaveSchemaRegistry
 
         if (source["snapshot"] is not JsonObject snapshot
             || snapshot["characters"] is not JsonObject characters
-            || snapshot["relationships"] is not JsonObject relationships)
+            || snapshot["relationships"] is not JsonObject relationships
+            || snapshot["careers"] is not JsonObject careers)
         {
             throw new SaveCompatibilityException(
-                "Current save schema is missing required character or relationship snapshot data.");
+                "Current save schema is missing required character, relationship, or career snapshot data.");
         }
 
         string[] requiredSnapshotArrays =
@@ -392,7 +428,12 @@ public sealed class SaveSchemaRegistry
             "Current save schema",
             CharacterContractVersions.Snapshot,
             requireVersionTwoFields: true);
-        ValidateRelationshipSnapshotShape(relationships, "Current save schema");
+        ValidateRelationshipSnapshotShape(
+            relationships,
+            "Current save schema",
+            RelationshipContractVersions.Snapshot,
+            requireVersionTwoMemoryFields: true);
+        ValidateCareerSnapshotShape(careers, "Current save schema");
 
         if (snapshot["systemVersions"] is not JsonArray systemVersions
             || !systemVersions.Any(IsCurrentCharacterSystemVersion))
@@ -404,7 +445,13 @@ public sealed class SaveSchemaRegistry
         if (!systemVersions.Any(IsCurrentRelationshipSystemVersion))
         {
             throw new SaveCompatibilityException(
-                "Current save schema is missing required 'simulation.relationships@1' system-version data.");
+                $"Current save schema is missing required 'simulation.relationships@{RelationshipContractVersions.Snapshot}' system-version data.");
+        }
+
+        if (!systemVersions.Any(IsCurrentCareerSystemVersion))
+        {
+            throw new SaveCompatibilityException(
+                $"Current save schema is missing required 'simulation.character_careers@{CareerContractVersions.Snapshot}' system-version data.");
         }
     }
 
@@ -669,11 +716,15 @@ public sealed class SaveSchemaRegistry
         }
     }
 
-    private static void ValidateRelationshipSnapshotShape(JsonObject relationships, string context)
+    private static void ValidateRelationshipSnapshotShape(
+        JsonObject relationships,
+        string context,
+        int expectedVersion,
+        bool requireVersionTwoMemoryFields)
     {
         if (relationships["contractVersion"] is not JsonValue contractVersion
             || !contractVersion.TryGetValue(out int version)
-            || version != RelationshipContractVersions.Snapshot
+            || version != expectedVersion
             || relationships["subjects"] is not JsonArray subjects
             || subjects.Any(node => node is not JsonObject))
         {
@@ -704,7 +755,32 @@ public sealed class SaveSchemaRegistry
                 {
                     if (memoryNode is not JsonObject memory
                         || memory["witnessIds"] is not JsonArray
-                        || memory["appliedImpact"] is not JsonObject)
+                        || memory["appliedImpact"] is not JsonObject
+                        || memory["contractVersion"]?.GetValue<int>()
+                            != (requireVersionTwoMemoryFields
+                                ? RelationshipContractVersions.Memory
+                                : RelationshipContractVersions.LegacyMemory))
+                    {
+                        throw MalformedRelationshipData(context);
+                    }
+
+                    string[] currentFields =
+                    [
+                        "sourceEventId",
+                        "sourceKind",
+                        "identityScheme",
+                        "consequenceIndex",
+                    ];
+                    if (requireVersionTwoMemoryFields)
+                    {
+                        if (currentFields.Any(field => !memory.ContainsKey(field))
+                            || memory.ContainsKey("sourceRelationshipActionEventId"))
+                        {
+                            throw MalformedRelationshipData(context);
+                        }
+                    }
+                    else if (!memory.ContainsKey("sourceRelationshipActionEventId")
+                        || currentFields.Any(memory.ContainsKey))
                     {
                         throw MalformedRelationshipData(context);
                     }
@@ -721,6 +797,86 @@ public sealed class SaveSchemaRegistry
                 }
             }
         }
+    }
+
+    private static void ValidateCareerSnapshotShape(JsonObject careers, string context)
+    {
+        string[] requiredArrays =
+        [
+            "proposals",
+            "retinues",
+            "retinueMemberships",
+            "patronageBonds",
+            "recommendations",
+            "employmentTenures",
+            "history",
+        ];
+        if (careers["contractVersion"]?.GetValue<int>() != CareerContractVersions.Snapshot
+            || requiredArrays.Any(property => careers[property] is not JsonArray))
+        {
+            throw new SaveCompatibilityException(
+                $"{context} contains missing, null, or unsupported career snapshot fields.");
+        }
+
+        foreach (string property in requiredArrays)
+        {
+            foreach (JsonNode? node in careers[property]!.AsArray())
+            {
+                if (node is not JsonObject entry
+                    || entry["contractVersion"]?.GetValue<int>() != CareerContractVersions.State)
+                {
+                    throw new SaveCompatibilityException(
+                        $"{context} contains malformed career data at '{property}'.");
+                }
+            }
+        }
+    }
+
+    internal static void UpgradeLegacyRelationshipSnapshot(JsonObject relationships)
+    {
+        relationships["contractVersion"] = RelationshipContractVersions.Snapshot;
+        if (relationships["subjects"] is not JsonArray subjects)
+        {
+            throw new SaveCompatibilityException(
+                "Legacy relationship snapshot is missing subject histories.");
+        }
+
+        foreach (JsonObject subject in subjects.OfType<JsonObject>())
+        {
+            if (subject["detailedRelationships"] is not JsonArray detailed)
+            {
+                throw new SaveCompatibilityException(
+                    "Legacy relationship snapshot contains malformed detailed histories.");
+            }
+
+            foreach (JsonObject relationship in detailed.OfType<JsonObject>())
+            {
+                if (relationship["memories"] is not JsonArray memories)
+                {
+                    throw new SaveCompatibilityException(
+                        "Legacy relationship snapshot contains malformed memories.");
+                }
+
+                foreach (JsonObject memory in memories.OfType<JsonObject>())
+                {
+                    UpgradeLegacyRelationshipMemory(memory);
+                }
+            }
+        }
+    }
+
+    internal static void UpgradeLegacyRelationshipMemory(JsonObject memory)
+    {
+        JsonNode source = memory["sourceRelationshipActionEventId"]?.DeepClone()
+            ?? throw new SaveCompatibilityException(
+                "Legacy relationship memory is missing its source event.");
+        memory["contractVersion"] = RelationshipContractVersions.Memory;
+        memory["sourceEventId"] = source;
+        memory["sourceKind"] = (int)RelationshipMemorySourceKind.RelationshipAction;
+        memory["identityScheme"] =
+            (int)RelationshipMemoryIdentityScheme.LegacyRelationshipActionV1;
+        memory["consequenceIndex"] = 0;
+        memory.Remove("sourceRelationshipActionEventId");
     }
 
     private static JsonObject RequireCharacterObject(
@@ -822,6 +978,13 @@ public sealed class SaveSchemaRegistry
     private static bool IsCurrentRelationshipSystemVersion(JsonNode? node) =>
         node is JsonObject systemVersion
         && IsSystemVersion(systemVersion, "simulation.relationships", RelationshipContractVersions.Snapshot);
+
+    private static bool IsCurrentCareerSystemVersion(JsonNode? node) =>
+        node is JsonObject systemVersion
+        && IsSystemVersion(
+            systemVersion,
+            "simulation.character_careers",
+            CareerContractVersions.Snapshot);
 
     private static bool IsSystemVersion(JsonObject systemVersion, string systemId, int expectedVersion) =>
         IsSystemId(systemVersion, systemId)
@@ -948,15 +1111,16 @@ public sealed class SaveMigrationV4ToV5 : ISaveMigration
         }
 
         snapshot["relationships"] = JsonSerializer.SerializeToNode(
-            RelationshipWorldSnapshot.Empty,
+            new RelationshipWorldSnapshot(RelationshipContractVersions.LegacySnapshot, []),
             SimulationJson.CreateOptions());
         systemVersions.Add(new JsonObject
         {
             ["systemId"] = "simulation.relationships",
             ["version"] = 1,
         });
-        WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(SimulationJson.CreateOptions())
-            ?? throw new SaveCompatibilityException("Migrated relationship snapshot is empty.");
+        WorldSnapshot migratedSnapshot = SaveSchemaRegistry.DeserializeHistoricalSnapshotForChecksum(
+            snapshot,
+            ToSchemaVersion);
         source["checksum"] = SimulationChecksum.ComputeForSaveSchema(migratedSnapshot, ToSchemaVersion).Value;
         source["schemaVersion"] = ToSchemaVersion;
         return source;
@@ -1032,14 +1196,125 @@ public sealed class SaveMigrationV5ToV6 : ISaveMigration
                 "Schema 5 is missing required 'simulation.characters@1' system-version data.");
         characterVersion["version"] = CharacterContractVersions.Snapshot;
 
-        WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(SimulationJson.CreateOptions())
-            ?? throw new SaveCompatibilityException("Migrated schema 6 snapshot is empty.");
-        source["checksum"] = SimulationChecksum.Compute(migratedSnapshot).Value;
+        WorldSnapshot migratedSnapshot = SaveSchemaRegistry.DeserializeHistoricalSnapshotForChecksum(
+            snapshot,
+            ToSchemaVersion);
+        source["checksum"] = SimulationChecksum.ComputeForSaveSchema(
+            migratedSnapshot,
+            ToSchemaVersion).Value;
         source["schemaVersion"] = ToSchemaVersion;
         return source;
     }
 
     private static bool IsCharacterSystemVersion(JsonObject node, int version) =>
         node["systemId"]?.GetValue<string>() == "simulation.characters"
+        && node["version"]?.GetValue<int>() == version;
+}
+
+public sealed class SaveMigrationV6ToV7 : ISaveMigration
+{
+    public int FromSchemaVersion => 6;
+
+    public int ToSchemaVersion => 7;
+
+    public JsonObject Migrate(JsonObject source)
+    {
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(source, FromSchemaVersion);
+        if (source["snapshot"] is not JsonObject snapshot
+            || snapshot["relationships"] is not JsonObject relationships
+            || snapshot["systemVersions"] is not JsonArray systemVersions
+            || snapshot["pendingCommands"] is not JsonArray pendingCommands
+            || source["diagnosticCommands"] is not JsonArray diagnosticCommands
+            || source["diagnosticEvents"] is not JsonArray diagnosticEvents)
+        {
+            throw new SaveCompatibilityException(
+                "Schema 6 save is missing relationship, command, event, or system-version data.");
+        }
+
+        if (snapshot.ContainsKey("careers")
+            || systemVersions.Any(node =>
+                node?["systemId"]?.GetValue<string>() == "simulation.character_careers"))
+        {
+            throw new SaveCompatibilityException(
+                "Schema 6 unexpectedly contains schema 7 character-career data.");
+        }
+
+        RejectFutureCharacterCommands(pendingCommands, "pending commands");
+        RejectFutureCharacterCommands(diagnosticCommands, "diagnostic commands");
+        MigrateDiagnosticEvents(diagnosticEvents);
+
+        SaveSchemaRegistry.UpgradeLegacyRelationshipSnapshot(relationships);
+        JsonObject relationshipVersion = systemVersions
+            .OfType<JsonObject>()
+            .SingleOrDefault(node => IsSystemVersion(
+                node,
+                "simulation.relationships",
+                RelationshipContractVersions.LegacySnapshot))
+            ?? throw new SaveCompatibilityException(
+                "Schema 6 is missing required 'simulation.relationships@1' system-version data.");
+        relationshipVersion["version"] = RelationshipContractVersions.Snapshot;
+
+        snapshot["careers"] = JsonSerializer.SerializeToNode(
+            CareerWorldSnapshot.Empty,
+            SimulationJson.CreateOptions());
+        systemVersions.Add(new JsonObject
+        {
+            ["systemId"] = "simulation.character_careers",
+            ["version"] = CareerContractVersions.Snapshot,
+        });
+
+        WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(SimulationJson.CreateOptions())
+            ?? throw new SaveCompatibilityException("Migrated schema 7 snapshot is empty.");
+        source["checksum"] = SimulationChecksum.Compute(migratedSnapshot).Value;
+        source["schemaVersion"] = ToSchemaVersion;
+        return source;
+    }
+
+    private static void RejectFutureCharacterCommands(JsonArray commands, string description)
+    {
+        foreach (JsonObject command in commands.OfType<JsonObject>())
+        {
+            string? discriminator = command["payload"]?["$type"]?.GetValue<string>();
+            if (StringComparer.Ordinal.Equals(discriminator, "character_action.v1"))
+            {
+                throw new SaveCompatibilityException(
+                    $"Schema 6 unexpectedly contains schema 7 character-action {description}.");
+            }
+        }
+    }
+
+    private static void MigrateDiagnosticEvents(JsonArray events)
+    {
+        foreach (JsonObject campaignEvent in events.OfType<JsonObject>())
+        {
+            if (campaignEvent["payload"] is not JsonObject payload)
+            {
+                throw new SaveCompatibilityException(
+                    "Schema 6 diagnostic event contains a malformed payload.");
+            }
+
+            string? discriminator = payload["$type"]?.GetValue<string>();
+            if (StringComparer.Ordinal.Equals(discriminator, "relationship_action_resolved.v1"))
+            {
+                if (payload["memory"] is not JsonObject memory)
+                {
+                    throw new SaveCompatibilityException(
+                        "Schema 6 relationship diagnostic event is missing its memory.");
+                }
+
+                SaveSchemaRegistry.UpgradeLegacyRelationshipMemory(memory);
+                payload["$type"] = "relationship_action_resolved.v2";
+            }
+            else if (StringComparer.Ordinal.Equals(discriminator, "relationship_action_resolved.v2")
+                || StringComparer.Ordinal.Equals(discriminator, "character_action_resolved.v1"))
+            {
+                throw new SaveCompatibilityException(
+                    "Schema 6 unexpectedly contains a schema 7 diagnostic event payload.");
+            }
+        }
+    }
+
+    private static bool IsSystemVersion(JsonObject node, string systemId, int version) =>
+        node["systemId"]?.GetValue<string>() == systemId
         && node["version"]?.GetValue<int>() == version;
 }

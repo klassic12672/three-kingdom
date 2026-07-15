@@ -124,7 +124,10 @@ public sealed class RelationshipSummaryQuery : IRelationshipSummaryQuery
         memory.Publicity,
         memory.DecayIntervalTurns,
         memory.AppliedImpact with { },
-        memory.SourceRelationshipActionEventId);
+        memory.SourceEventId,
+        memory.SourceKind,
+        memory.IdentityScheme,
+        memory.ConsequenceIndex);
 
     private static bool IsVisible(ConsequentialMemory memory, EntityId observerCharacterId) =>
         memory.Publicity switch

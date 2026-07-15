@@ -188,6 +188,45 @@ public sealed class CampaignSimulation
                 }
 
                 break;
+            case CharacterActionCommandPayload characterAction:
+                CommandValidationResult careerValidation = World.Careers.ValidateAction(
+                    command.IssuingActor,
+                    characterAction,
+                    command.IssuedDate,
+                    World.Calendar.TurnIndex);
+                AddIssues(careerValidation, issues);
+                if (careerValidation.IsValid
+                    && command.CommandId.IsValid
+                    && command.IssuedDate.IsValid)
+                {
+                    try
+                    {
+                        EntityId eventId = CareerIds.DeriveCharacterActionEventId(
+                            command.IssuedDate,
+                            command.CommandId);
+                        CharacterActionResolvedEventPayload planned = World.Careers.PlanAction(
+                            command.IssuingActor,
+                            characterAction,
+                            command.IssuedDate,
+                            World.Calendar.TurnIndex,
+                            command.CommandId,
+                            eventId,
+                            characterAction.RelationshipMemoryConsequences);
+                        _ = World.Relationships.PrepareCharacterActionConsequences(
+                            planned,
+                            command.IssuedDate,
+                            World.Calendar.TurnIndex,
+                            eventId);
+                    }
+                    catch (Exception exception) when (exception is SimulationValidationException
+                        or ArgumentException
+                        or OverflowException)
+                    {
+                        issues.Add(new("invalid_character_action", exception.Message));
+                    }
+                }
+
+                break;
             default:
                 issues.Add(new("unregistered_payload", $"Command payload '{command.Payload?.GetType().Name ?? "null"}' is not registered."));
                 break;
@@ -322,6 +361,40 @@ public sealed class CampaignSimulation
                         resolvedRelationship.Memory.MemoryId,
                     ];
                     break;
+                case CharacterActionCommandPayload characterAction:
+                    try
+                    {
+                        EntityId characterEventId = GetEventId(command);
+                        CharacterActionResolvedEventPayload resolvedCharacterAction =
+                            World.Careers.PlanAction(
+                                command.IssuingActor,
+                                characterAction,
+                                date,
+                                World.Calendar.TurnIndex,
+                                command.CommandId,
+                                characterEventId,
+                                characterAction.RelationshipMemoryConsequences);
+                        _ = World.Relationships.PrepareCharacterActionConsequences(
+                            resolvedCharacterAction,
+                            date,
+                            World.Calendar.TurnIndex,
+                            characterEventId);
+                        payload = resolvedCharacterAction;
+                        affected = WorldState.GetCharacterActionAffectedIds(
+                            resolvedCharacterAction,
+                            characterEventId);
+                    }
+                    catch (Exception exception) when (exception is SimulationValidationException
+                        or ArgumentException
+                        or OverflowException)
+                    {
+                        payload = new CommandCancelledEventPayload(
+                            "command_invalidated",
+                            exception.Message);
+                        affected = [];
+                    }
+
+                    break;
                 default:
                     throw new SimulationValidationException($"Unregistered command payload '{command.Payload.GetType().Name}'.");
             }
@@ -357,6 +430,7 @@ public sealed class CampaignSimulation
     }
 
     private bool IsActorAvailable(CampaignCommand command) => command.Payload is RelationshipActionCommandPayload
+        or CharacterActionCommandPayload
         ? World.Characters.TryGetCharacterProfile(command.IssuingActor, out _)
         : World.TryGetEntity(command.IssuingActor, out _);
 
@@ -365,6 +439,11 @@ public sealed class CampaignSimulation
         if (command.Payload is RelationshipActionCommandPayload)
         {
             return RelationshipWorldState.DeriveEventId(command.IssuedDate, command.CommandId);
+        }
+
+        if (command.Payload is CharacterActionCommandPayload)
+        {
+            return CareerIds.DeriveCharacterActionEventId(command.IssuedDate, command.CommandId);
         }
 
         string eventPath = command.CommandId.Value.Replace(':', '/');

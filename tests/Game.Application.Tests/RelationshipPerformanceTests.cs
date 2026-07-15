@@ -219,7 +219,7 @@ public sealed class RelationshipPerformanceTests(ITestOutputHelper output)
         EntityId eventId = new(
             $"event:relationship_action/0191-07-15/{commandId.Value.Replace(':', '/')}");
         return new ConsequentialMemory(
-            RelationshipContractVersions.State,
+            RelationshipContractVersions.Memory,
             RelationshipIds.DeriveMemoryId(Date, commandId),
             subject,
             target,
@@ -231,7 +231,10 @@ public sealed class RelationshipPerformanceTests(ITestOutputHelper output)
             MemoryPublicity.Private,
             0,
             new RelationshipImpact(1, 0, 0, 0, 0, 0, 0, 0, 0),
-            eventId);
+            eventId,
+            RelationshipMemorySourceKind.RelationshipAction,
+            RelationshipMemoryIdentityScheme.LegacyRelationshipActionV1,
+            0);
     }
 
     private static EntityId Character(int index) => new($"character:performance/{index:D4}");

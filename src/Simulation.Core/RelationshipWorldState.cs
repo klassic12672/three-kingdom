@@ -12,7 +12,7 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
     private readonly IAuthoritativeCharacterWorldQuery characters;
     private readonly SortedDictionary<EntityId, SubjectRelationshipHistory> subjects = [];
     private readonly HashSet<EntityId> retainedMemoryIds = [];
-    private readonly HashSet<EntityId> retainedSourceEventIds = [];
+    private readonly HashSet<MemorySourceIdentity> retainedSourceIdentities = [];
 
     public RelationshipWorldState(
         RelationshipWorldSnapshot snapshot,
@@ -33,14 +33,14 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
 
         ValidateSnapshotShape(snapshot);
         HashSet<EntityId> memoryIds = [];
-        HashSet<EntityId> sourceEventIds = [];
+        HashSet<MemorySourceIdentity> sourceIdentities = [];
         foreach (SubjectRelationshipHistory source in snapshot.Subjects)
         {
             SubjectRelationshipHistory canonical = ValidateAndCloneSubject(
                 source,
                 calendar,
                 memoryIds,
-                sourceEventIds);
+                sourceIdentities);
             if (!subjects.TryAdd(canonical.SubjectCharacterId, canonical))
             {
                 throw new SimulationValidationException(
@@ -49,7 +49,7 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
         }
 
         retainedMemoryIds.UnionWith(memoryIds);
-        retainedSourceEventIds.UnionWith(sourceEventIds);
+        retainedSourceIdentities.UnionWith(sourceIdentities);
     }
 
     public IReadOnlyList<SubjectRelationshipHistory> Subjects =>
@@ -89,7 +89,8 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
         RelationshipActionCommandPayload payload,
         CampaignDate resolutionDate,
         long authoritativeTurnIndex,
-        bool validateResultBounds)
+        bool validateResultBounds,
+        bool requireNonZeroImpact = true)
     {
         List<ValidationIssue> issues = [];
         if (!subjectCharacterId.IsValid)
@@ -149,7 +150,7 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
             issues.Add(new("self_relationship", "Relationship subject and target must be different characters."));
         }
 
-        if (payload.Impact is not null && !payload.Impact.HasAnyChange)
+        if (requireNonZeroImpact && payload.Impact is not null && !payload.Impact.HasAnyChange)
         {
             issues.Add(new("empty_impact", "A relationship action requires at least one non-zero impact."));
         }
@@ -259,7 +260,7 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
             subjectCharacterId,
             payload.TargetCharacterId);
         ConsequentialMemory memory = new(
-            RelationshipContractVersions.State,
+            RelationshipContractVersions.Memory,
             RelationshipIds.DeriveMemoryId(resolutionDate, commandId),
             subjectCharacterId,
             payload.TargetCharacterId,
@@ -271,7 +272,10 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
             payload.Publicity,
             payload.DecayIntervalTurns,
             payload.Impact with { },
-            eventId);
+            eventId,
+            RelationshipMemorySourceKind.RelationshipAction,
+            RelationshipMemoryIdentityScheme.LegacyRelationshipActionV1,
+            0);
         return new RelationshipActionResolvedEventPayload(
             relationshipId,
             subjectCharacterId,
@@ -294,8 +298,9 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
 
         ValidateResolvedEvent(campaignEvent, payload, authoritativeTurnIndex);
         ConsequentialMemory memory = payload.Memory;
+        MemorySourceIdentity sourceIdentity = GetSourceIdentity(memory);
         if (retainedMemoryIds.Contains(memory.MemoryId)
-            || retainedSourceEventIds.Contains(memory.SourceRelationshipActionEventId))
+            || retainedSourceIdentities.Contains(sourceIdentity))
         {
             throw new SimulationValidationException(
                 $"Relationship memory '{memory.MemoryId}' or its source event already exists.");
@@ -323,14 +328,14 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
                 .SelectMany(relationship => relationship.Memories))
             {
                 retainedMemoryIds.Remove(previous.MemoryId);
-                retainedSourceEventIds.Remove(previous.SourceRelationshipActionEventId);
+                retainedSourceIdentities.Remove(GetSourceIdentity(previous));
             }
 
             foreach (ConsequentialMemory retained in updated.DetailedRelationships
                 .SelectMany(relationship => relationship.Memories))
             {
                 retainedMemoryIds.Add(retained.MemoryId);
-                retainedSourceEventIds.Add(retained.SourceRelationshipActionEventId);
+                retainedSourceIdentities.Add(GetSourceIdentity(retained));
             }
 
             subjects[payload.SubjectCharacterId] = updated;
@@ -339,6 +344,147 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
         {
             throw new SimulationValidationException(
                 $"Relationship history for '{payload.SubjectCharacterId}' exceeded its supported counters: {exception.Message}");
+        }
+    }
+
+    internal RelationshipWorldUpdatePlan PrepareCharacterActionConsequences(
+        CharacterActionResolvedEventPayload payload,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId eventId)
+    {
+        if (payload is null || payload.RelationshipMemoryConsequences is null)
+        {
+            throw new SimulationValidationException(
+                "Character action relationship consequences cannot be null.");
+        }
+
+        ValidateId(eventId, "Character action event ID");
+        if (!resolutionDate.IsValid || authoritativeTurnIndex < 0)
+        {
+            throw new SimulationValidationException(
+                "Character action relationship consequence date or turn is invalid.");
+        }
+
+        RelationshipWorldState candidate = new(
+            CaptureSnapshot(),
+            characters,
+            new CampaignCalendar(resolutionDate, authoritativeTurnIndex));
+        for (int index = 0; index < payload.RelationshipMemoryConsequences.Count; index++)
+        {
+            RelationshipMemoryConsequenceSpecification specification =
+                payload.RelationshipMemoryConsequences[index]
+                ?? throw new SimulationValidationException(
+                    "Character action relationship consequences cannot contain null entries.");
+            if (specification.ContractVersion != CareerContractVersions.RelationshipConsequence
+                || specification.ConsequenceId
+                    != CareerIds.DeriveRelationshipConsequenceId(eventId, index))
+            {
+                throw new SimulationValidationException(
+                    $"Character action relationship consequence {index} has an unsupported contract or deterministic identity.");
+            }
+
+            ConsequentialMemory memory = new(
+                RelationshipContractVersions.Memory,
+                RelationshipIds.DeriveMemoryId(
+                    eventId,
+                    specification.SubjectCharacterId,
+                    specification.TargetCharacterId,
+                    index),
+                specification.SubjectCharacterId,
+                specification.TargetCharacterId,
+                specification.WitnessIds?.ToArray()
+                    ?? throw new SimulationValidationException(
+                        "Character action relationship consequence witnesses cannot be null."),
+                resolutionDate,
+                authoritativeTurnIndex,
+                specification.MeaningId,
+                specification.InitialSeverity,
+                specification.Publicity,
+                specification.DecayIntervalTurns,
+                specification.Impact is null
+                    ? throw new SimulationValidationException(
+                        "Character action relationship consequence impact cannot be null.")
+                    : specification.Impact with { },
+                eventId,
+                RelationshipMemorySourceKind.CharacterAction,
+                RelationshipMemoryIdentityScheme.SourceEventV2,
+                index);
+            candidate.ApplyGenericMemory(memory, resolutionDate, authoritativeTurnIndex);
+        }
+
+        return new RelationshipWorldUpdatePlan(candidate);
+    }
+
+    internal void ApplyPrepared(RelationshipWorldUpdatePlan plan)
+    {
+        if (plan?.Candidate is null)
+        {
+            throw new SimulationValidationException("Prepared relationship update cannot be null.");
+        }
+
+        ReplaceFrom(plan.Candidate);
+    }
+
+    private void ApplyGenericMemory(
+        ConsequentialMemory memory,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex)
+    {
+        ValidateCurrentMemory(memory, validateResultBounds: true);
+        MemorySourceIdentity sourceIdentity = GetSourceIdentity(memory);
+        if (retainedMemoryIds.Contains(memory.MemoryId)
+            || retainedSourceIdentities.Contains(sourceIdentity))
+        {
+            throw new SimulationValidationException(
+                $"Relationship memory '{memory.MemoryId}' or its source consequence already exists.");
+        }
+
+        EntityId relationshipId = RelationshipIds.DeriveRelationshipId(
+            memory.SubjectCharacterId,
+            memory.TargetCharacterId);
+        RelationshipActionResolvedEventPayload wrapper = new(
+            relationshipId,
+            memory.SubjectCharacterId,
+            memory.TargetCharacterId,
+            memory);
+        SubjectRelationshipHistory current = subjects.TryGetValue(
+            memory.SubjectCharacterId,
+            out SubjectRelationshipHistory? stored)
+            ? Clone(stored)
+            : new SubjectRelationshipHistory(
+                RelationshipContractVersions.State,
+                memory.SubjectCharacterId,
+                [],
+                [],
+                DistantRelationshipHistoryAggregate.Empty);
+        try
+        {
+            SubjectRelationshipHistory updated = ApplyToSubject(
+                current,
+                wrapper,
+                resolutionDate,
+                authoritativeTurnIndex);
+            foreach (ConsequentialMemory previous in current.DetailedRelationships
+                .SelectMany(relationship => relationship.Memories))
+            {
+                retainedMemoryIds.Remove(previous.MemoryId);
+                retainedSourceIdentities.Remove(GetSourceIdentity(previous));
+            }
+
+            foreach (ConsequentialMemory retained in updated.DetailedRelationships
+                .SelectMany(relationship => relationship.Memories))
+            {
+                retainedMemoryIds.Add(retained.MemoryId);
+                retainedSourceIdentities.Add(GetSourceIdentity(retained));
+            }
+
+            subjects[memory.SubjectCharacterId] = updated;
+        }
+        catch (OverflowException exception)
+        {
+            throw new SimulationValidationException(
+                $"Relationship history for '{memory.SubjectCharacterId}' exceeded its supported counters: {exception.Message}");
         }
     }
 
@@ -512,7 +658,10 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
             payload.TargetCharacterId);
         if (payload.RelationshipId != expectedRelationshipId
             || memory.MemoryId != RelationshipIds.DeriveMemoryId(campaignEvent.ResolutionDate, commandId)
-            || memory.SourceRelationshipActionEventId != campaignEvent.EventId
+            || memory.SourceEventId != campaignEvent.EventId
+            || memory.SourceKind != RelationshipMemorySourceKind.RelationshipAction
+            || memory.IdentityScheme != RelationshipMemoryIdentityScheme.LegacyRelationshipActionV1
+            || memory.ConsequenceIndex != 0
             || memory.SubjectCharacterId != payload.SubjectCharacterId
             || memory.TargetCharacterId != payload.TargetCharacterId
             || memory.ResolutionDate != campaignEvent.ResolutionDate
@@ -556,18 +705,14 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
                 string.Join("; ", validation.Issues.Select(issue => issue.Message)));
         }
 
-        if (memory.ContractVersion != RelationshipContractVersions.State)
-        {
-            throw new SimulationValidationException(
-                $"Unsupported relationship memory contract version {memory.ContractVersion}.");
-        }
+        ValidateCurrentMemory(memory, validateResultBounds: true);
     }
 
     private SubjectRelationshipHistory ValidateAndCloneSubject(
         SubjectRelationshipHistory subject,
         CampaignCalendar calendar,
         ISet<EntityId> memoryIds,
-        ISet<EntityId> sourceEventIds)
+        ISet<MemorySourceIdentity> sourceIdentities)
     {
         if (subject is null)
         {
@@ -610,7 +755,7 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
                 relationshipIds,
                 targets,
                 memoryIds,
-                sourceEventIds));
+                sourceIdentities));
         }
 
         List<ArchivedDirectionalRelationshipSummary> archived = [];
@@ -651,7 +796,7 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
         ISet<EntityId> relationshipIds,
         ISet<EntityId> targets,
         ISet<EntityId> memoryIds,
-        ISet<EntityId> sourceEventIds)
+        ISet<MemorySourceIdentity> sourceIdentities)
     {
         ValidateRelationshipIdentity(
             subjectCharacterId,
@@ -696,7 +841,7 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
                 memory,
                 calendar,
                 memoryIds,
-                sourceEventIds));
+                sourceIdentities));
         }
 
         if (memories.Count == 0)
@@ -800,14 +945,8 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
         ConsequentialMemory memory,
         CampaignCalendar calendar,
         ISet<EntityId> memoryIds,
-        ISet<EntityId> sourceEventIds)
+        ISet<MemorySourceIdentity> sourceIdentities)
     {
-        if (memory.ContractVersion != RelationshipContractVersions.State)
-        {
-            throw new SimulationValidationException(
-                $"Unsupported relationship memory contract version {memory.ContractVersion}.");
-        }
-
         if (memory.SubjectCharacterId != relationship.SubjectCharacterId
             || memory.TargetCharacterId != relationship.TargetCharacterId
             || memory.RecordedTurnIndex < 0
@@ -820,19 +959,59 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
                 $"Relationship memory '{memory.MemoryId}' has inconsistent subject, target, date, or turn state.");
         }
 
-        if (!memoryIds.Add(memory.MemoryId) || !sourceEventIds.Add(memory.SourceRelationshipActionEventId))
+        MemorySourceIdentity sourceIdentity = GetSourceIdentity(memory);
+        if (!memoryIds.Add(memory.MemoryId) || !sourceIdentities.Add(sourceIdentity))
         {
             throw new SimulationValidationException(
                 $"Relationship memory '{memory.MemoryId}' collides with another retained memory or source event.");
         }
 
+        ValidateCurrentMemory(memory, validateResultBounds: false);
+
+        return Clone(memory);
+    }
+
+    private void ValidateCurrentMemory(ConsequentialMemory memory, bool validateResultBounds)
+    {
+        if (memory is null || memory.ContractVersion != RelationshipContractVersions.Memory)
+        {
+            throw new SimulationValidationException(
+                $"Unsupported relationship memory contract version {memory?.ContractVersion}.");
+        }
+
+        ValidateId(memory.MemoryId, "Relationship memory ID");
         ValidateId(memory.MeaningId, $"Relationship memory '{memory.MemoryId}' meaning ID");
-        ValidateId(memory.SourceRelationshipActionEventId, $"Relationship memory '{memory.MemoryId}' source event ID");
-        if (!TryGetCausalCommandId(
-                memory.SourceRelationshipActionEventId,
-                memory.ResolutionDate,
-                out EntityId commandId)
-            || memory.MemoryId != RelationshipIds.DeriveMemoryId(memory.ResolutionDate, commandId))
+        ValidateId(memory.SourceEventId, $"Relationship memory '{memory.MemoryId}' source event ID");
+        if (!Enum.IsDefined(memory.SourceKind)
+            || !Enum.IsDefined(memory.IdentityScheme)
+            || memory.ConsequenceIndex < 0)
+        {
+            throw new SimulationValidationException(
+                $"Relationship memory '{memory.MemoryId}' has invalid source metadata.");
+        }
+
+        bool validIdentity = memory.IdentityScheme switch
+        {
+            RelationshipMemoryIdentityScheme.LegacyRelationshipActionV1 =>
+                memory.SourceKind == RelationshipMemorySourceKind.RelationshipAction
+                && memory.ConsequenceIndex == 0
+                && TryGetCausalCommandId(
+                    memory.SourceEventId,
+                    memory.ResolutionDate,
+                    out EntityId commandId)
+                && memory.MemoryId == RelationshipIds.DeriveMemoryId(
+                    memory.ResolutionDate,
+                    commandId),
+            RelationshipMemoryIdentityScheme.SourceEventV2 =>
+                memory.SourceKind == RelationshipMemorySourceKind.CharacterAction
+                && memory.MemoryId == RelationshipIds.DeriveMemoryId(
+                    memory.SourceEventId,
+                    memory.SubjectCharacterId,
+                    memory.TargetCharacterId,
+                    memory.ConsequenceIndex),
+            _ => false,
+        };
+        if (!validIdentity)
         {
             throw new SimulationValidationException(
                 $"Relationship memory '{memory.MemoryId}' has invalid deterministic identity or source causality.");
@@ -851,15 +1030,15 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
             action,
             memory.ResolutionDate,
             memory.RecordedTurnIndex,
-            validateResultBounds: false);
+            validateResultBounds,
+            requireNonZeroImpact:
+                memory.SourceKind == RelationshipMemorySourceKind.RelationshipAction);
         if (!validation.IsValid)
         {
             throw new SimulationValidationException(
                 $"Relationship memory '{memory.MemoryId}' is invalid: "
                 + string.Join("; ", validation.Issues.Select(issue => issue.Message)));
         }
-
-        return Clone(memory);
     }
 
     private static void ValidateSnapshotShape(RelationshipWorldSnapshot snapshot)
@@ -1411,4 +1590,25 @@ public sealed class RelationshipWorldState : IAuthoritativeRelationshipWorldQuer
 
     private static DistantRelationshipHistoryAggregate Clone(
         DistantRelationshipHistoryAggregate aggregate) => aggregate with { };
+
+    private static MemorySourceIdentity GetSourceIdentity(ConsequentialMemory memory) =>
+        new(memory.SourceEventId, memory.ConsequenceIndex);
+
+    private void ReplaceFrom(RelationshipWorldState candidate)
+    {
+        subjects.Clear();
+        foreach (SubjectRelationshipHistory subject in candidate.subjects.Values)
+        {
+            subjects.Add(subject.SubjectCharacterId, Clone(subject));
+        }
+
+        retainedMemoryIds.Clear();
+        retainedMemoryIds.UnionWith(candidate.retainedMemoryIds);
+        retainedSourceIdentities.Clear();
+        retainedSourceIdentities.UnionWith(candidate.retainedSourceIdentities);
+    }
 }
+
+internal readonly record struct MemorySourceIdentity(EntityId SourceEventId, int ConsequenceIndex);
+
+internal sealed record RelationshipWorldUpdatePlan(RelationshipWorldState Candidate);

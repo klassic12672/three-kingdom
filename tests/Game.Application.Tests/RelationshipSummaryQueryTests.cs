@@ -51,11 +51,21 @@ public sealed class RelationshipSummaryQueryTests
         RelationshipSummaryQuery query = new(simulation.World);
 
         RelationshipSummary subject = AssertSummary(query, Subject, Subject);
+        Assert.Equal(RelationshipQueryContractVersions.Summary, subject.ContractVersion);
         Assert.Equal(2, subject.DetailedRelationships.Count);
         VisibleDirectionalRelationshipSummary subjectTarget = subject.DetailedRelationships
             .Single(item => item.TargetCharacterId == Target);
         Assert.NotNull(subjectTarget.ExactDimensions);
         Assert.Equal(4, subjectTarget.ActiveMemories.Count);
+        Assert.All(subjectTarget.ActiveMemories, memory =>
+        {
+            Assert.Equal(RelationshipMemorySourceKind.RelationshipAction, memory.SourceKind);
+            Assert.Equal(
+                RelationshipMemoryIdentityScheme.LegacyRelationshipActionV1,
+                memory.IdentityScheme);
+            Assert.Equal(0, memory.ConsequenceIndex);
+            Assert.True(memory.SourceEventId.IsValid);
+        });
         Assert.NotNull(subjectTarget.FoldedMemories);
         Assert.NotNull(subject.DistantHistory);
 
