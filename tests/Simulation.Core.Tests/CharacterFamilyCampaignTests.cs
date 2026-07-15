@@ -352,6 +352,7 @@ public sealed class CharacterFamilyCampaignTests
                 typeof(EndPrimaryGuardianshipAction),
                 typeof(EstablishLegalAdoptiveParentAction),
                 typeof(EstablishPrimaryGuardianshipAction),
+                typeof(RegisterActivePregnancyAction),
                 typeof(ReplacePrimaryGuardianshipAction),
             ],
             typeof(ICharacterFamilyAction).Assembly.GetTypes()
@@ -361,6 +362,7 @@ public sealed class CharacterFamilyCampaignTests
                 .ToArray());
         Assert.Equal(
             [
+                typeof(ActivePregnancyRegisteredOutcome),
                 typeof(LegalAdoptiveParentEstablishedOutcome),
                 typeof(PrimaryGuardianshipEndedOutcome),
                 typeof(PrimaryGuardianshipEstablishedOutcome),

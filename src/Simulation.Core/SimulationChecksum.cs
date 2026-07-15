@@ -18,7 +18,7 @@ public readonly record struct SimulationChecksum(string Value)
 
     internal static SimulationChecksum ComputeForSaveSchema(WorldSnapshot snapshot, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 16)
+        if (schemaVersion is < 1 or > 17)
         {
             throw new ArgumentOutOfRangeException(nameof(schemaVersion));
         }
@@ -40,7 +40,13 @@ public readonly record struct SimulationChecksum(string Value)
         // Schema 15 is the exact E1 world shape and differs from schema 16 only
         // in the registered character-family guardianship-lifecycle vocabulary.
         // Schema 16 is the exact E2 world shape and differs from schema 17 only
-        // in the registered coming-of-age command/event vocabulary.
+        // in the registered coming-of-age command/event vocabulary. Schema 17
+        // is the exact E3 world shape and predates character pregnancies.
+        if (schemaVersion < 18)
+        {
+            canonical.Remove("characterPregnancies");
+        }
+
         if (schemaVersion < 15)
         {
             canonical.Remove("characterGuardianships");
@@ -255,6 +261,12 @@ public readonly record struct SimulationChecksum(string Value)
             {
                 versions.RemoveAt(index);
             }
+            else if (schemaVersion < 18 && StringComparer.Ordinal.Equals(
+                systemId,
+                CharacterPregnancySystem.SystemId))
+            {
+                versions.RemoveAt(index);
+            }
             else if (schemaVersion < 12 && StringComparer.Ordinal.Equals(
                 systemId,
                 CharacterMarriageSystem.SystemId))
@@ -286,6 +298,7 @@ public readonly record struct SimulationChecksum(string Value)
         CharacterEstateHoldings = snapshot.CharacterEstateHoldings.Canonicalize(),
         CharacterMarriages = snapshot.CharacterMarriages.Canonicalize(),
         CharacterGuardianships = snapshot.CharacterGuardianships.Canonicalize(),
+        CharacterPregnancies = snapshot.CharacterPregnancies.Canonicalize(),
     };
 
     private static RelationshipWorldSnapshot CanonicalizeRelationships(RelationshipWorldSnapshot snapshot) =>

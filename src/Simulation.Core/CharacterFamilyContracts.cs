@@ -30,6 +30,9 @@ public static class CharacterFamilySystem
 [JsonDerivedType(
     typeof(ReplacePrimaryGuardianshipAction),
     "replace_primary_guardianship.v1")]
+[JsonDerivedType(
+    typeof(RegisterActivePregnancyAction),
+    "register_active_pregnancy.v1")]
 public interface ICharacterFamilyAction;
 
 public sealed record EstablishLegalAdoptiveParentAction : ICharacterFamilyAction
@@ -85,6 +88,9 @@ public sealed record CharacterParentageChange(
 [JsonDerivedType(
     typeof(PrimaryGuardianshipReplacedOutcome),
     "primary_guardianship_replaced.v1")]
+[JsonDerivedType(
+    typeof(ActivePregnancyRegisteredOutcome),
+    "active_pregnancy_registered.v1")]
 public interface ICharacterFamilyActionOutcome;
 
 public sealed record LegalAdoptiveParentEstablishedOutcome(CharacterParentageChange Change)

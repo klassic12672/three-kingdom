@@ -36,6 +36,7 @@ public sealed class SaveSchemaRegistry
             new SaveMigrationV14ToV15(),
             new SaveMigrationV15ToV16(),
             new SaveMigrationV16ToV17(),
+            new SaveMigrationV17ToV18(),
         ]).ToArray();
         if (registered.Any(item => item.ToSchemaVersion != item.FromSchemaVersion + 1))
         {
@@ -105,7 +106,7 @@ public sealed class SaveSchemaRegistry
 
     internal static void ValidateHistoricalSourceChecksum(JsonObject source, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 16)
+        if (schemaVersion is < 1 or > 17)
         {
             throw new SaveCompatibilityException($"Save schema {schemaVersion} has no historical checksum contract.");
         }
@@ -170,6 +171,15 @@ public sealed class SaveSchemaRegistry
             schemaVersion,
             "snapshot.systemVersions");
 
+        if (snapshot.ContainsKey("characterPregnancies")
+            || systemVersions.Any(version => IsSystemId(
+                version,
+                CharacterPregnancySystem.SystemId)))
+        {
+            throw new SaveCompatibilityException(
+                $"Schema {schemaVersion} unexpectedly contains schema 18 character-pregnancy data.");
+        }
+
         if (schemaVersion < 15
             && (snapshot.ContainsKey("characterGuardianships")
                 || systemVersions.Any(version => IsSystemId(
@@ -215,7 +225,7 @@ public sealed class SaveSchemaRegistry
                 $"Schema {schemaVersion} unexpectedly contains schema 10 character-marriage data.");
         }
 
-        if (schemaVersion is >= 10 and <= 16)
+        if (schemaVersion is >= 10 and <= 17)
         {
             ValidateCharacterMarriageSnapshotShape(
                 RequireHistoricalObject(
@@ -302,11 +312,17 @@ public sealed class SaveSchemaRegistry
                 RejectE2Discriminators(diagnosticCommands, "diagnostic commands");
                 RejectE2Discriminators(diagnosticEvents, "diagnostic events");
             }
-            else
+            else if (schemaVersion == 16)
             {
                 RejectE3Discriminators(pendingCommands, "snapshot pending commands");
                 RejectE3Discriminators(diagnosticCommands, "diagnostic commands");
                 RejectE3Discriminators(diagnosticEvents, "diagnostic events");
+            }
+            else
+            {
+                RejectE4Discriminators(pendingCommands, "snapshot pending commands");
+                RejectE4Discriminators(diagnosticCommands, "diagnostic commands");
+                RejectE4Discriminators(diagnosticEvents, "diagnostic events");
             }
         }
 
@@ -633,10 +649,11 @@ public sealed class SaveSchemaRegistry
             || snapshot["characterResources"] is not JsonObject characterResources
             || snapshot["characterEstateHoldings"] is not JsonObject characterEstateHoldings
             || snapshot["characterMarriages"] is not JsonObject characterMarriages
-            || snapshot["characterGuardianships"] is not JsonObject characterGuardianships)
+            || snapshot["characterGuardianships"] is not JsonObject characterGuardianships
+            || snapshot["characterPregnancies"] is not JsonObject characterPregnancies)
         {
             throw new SaveCompatibilityException(
-                "Current save schema is missing required character, relationship, career, character-resource, character-estate-holding, character-marriage, or character-guardianship snapshot data.");
+                "Current save schema is missing required character, relationship, career, character-resource, character-estate-holding, character-marriage, character-guardianship, or character-pregnancy snapshot data.");
         }
 
         string[] requiredSnapshotArrays =
@@ -677,6 +694,9 @@ public sealed class SaveSchemaRegistry
             allowVersionTwoRoutes: true);
         ValidateCharacterGuardianshipSnapshotShape(
             characterGuardianships,
+            "Current save schema");
+        ValidateCharacterPregnancySnapshotShape(
+            characterPregnancies,
             "Current save schema");
 
         if (snapshot["systemVersions"] is not JsonArray systemVersions
@@ -720,6 +740,47 @@ public sealed class SaveSchemaRegistry
         {
             throw new SaveCompatibilityException(
                 $"Current save schema is missing required '{CharacterGuardianshipSystem.SystemId}@{CharacterGuardianshipSystem.Version}' system-version data.");
+        }
+
+        if (!systemVersions.Any(IsCurrentCharacterPregnancySystemVersion))
+        {
+            throw new SaveCompatibilityException(
+                $"Current save schema is missing required '{CharacterPregnancySystem.SystemId}@{CharacterPregnancySystem.Version}' system-version data.");
+        }
+    }
+
+    private static void ValidateCharacterPregnancySnapshotShape(
+        JsonObject characterPregnancies,
+        string context)
+    {
+        if (!HasVersion(
+                characterPregnancies,
+                CharacterPregnancyContractVersions.Snapshot)
+            || characterPregnancies["activePregnancies"] is not JsonArray activePregnancies)
+        {
+            throw new SaveCompatibilityException(
+                $"{context} contains missing, null, or unsupported character-pregnancy snapshot data.");
+        }
+
+        foreach (JsonNode? node in activePregnancies)
+        {
+            if (node is not JsonObject pregnancy
+                || !HasVersion(
+                    pregnancy,
+                    CharacterPregnancyContractVersions.State)
+                || !HasObject(pregnancy, "pregnancyId")
+                || !HasObject(pregnancy, "gestationalParentCharacterId")
+                || !HasObject(pregnancy, "otherBiologicalParentCharacterId")
+                || !HasObject(pregnancy, "sourceUnionId")
+                || !HasObject(pregnancy, "startDate")
+                || !HasObject(pregnancy, "expectedBirthDate")
+                || !HasLong(pregnancy, "startTurnIndex")
+                || !HasObject(pregnancy, "sourceCommandId")
+                || !HasObject(pregnancy, "sourceEventId"))
+            {
+                throw new SaveCompatibilityException(
+                    $"{context} contains missing, null, or malformed character-pregnancy record data.");
+            }
         }
     }
 
@@ -1674,6 +1735,13 @@ public sealed class SaveSchemaRegistry
             CharacterGuardianshipSystem.SystemId,
             CharacterGuardianshipSystem.Version);
 
+    private static bool IsCurrentCharacterPregnancySystemVersion(JsonNode? node) =>
+        node is JsonObject systemVersion
+        && IsSystemVersion(
+            systemVersion,
+            CharacterPregnancySystem.SystemId,
+            CharacterPregnancySystem.Version);
+
     private static bool IsSystemVersion(JsonObject systemVersion, string systemId, int expectedVersion) =>
         IsSystemId(systemVersion, systemId)
         && systemVersion["version"] is JsonValue versionValue
@@ -1756,6 +1824,15 @@ public sealed class SaveSchemaRegistry
         {
             throw new SaveCompatibilityException(
                 $"Save schema 16 unexpectedly contains schema 17 character coming-of-age data in {description}.");
+        }
+    }
+
+    private static void RejectE4Discriminators(JsonNode node, string description)
+    {
+        if (ContainsE4Discriminator(node) || ContainsE4Property(node))
+        {
+            throw new SaveCompatibilityException(
+                $"Save schema 17 unexpectedly contains schema 18 character-pregnancy data in {description}.");
         }
     }
 
@@ -1986,6 +2063,45 @@ public sealed class SaveSchemaRegistry
         }
 
         return node is JsonArray array && array.Any(ContainsE3Property);
+    }
+
+    private static bool ContainsE4Discriminator(JsonNode? node)
+    {
+        if (node is JsonObject value)
+        {
+            if (value["$type"] is JsonValue discriminator
+                && discriminator.TryGetValue(out string? type)
+                && type is "register_active_pregnancy.v1"
+                    or "active_pregnancy_registered.v1")
+            {
+                return true;
+            }
+
+            return value.Any(property => ContainsE4Discriminator(property.Value));
+        }
+
+        return node is JsonArray array && array.Any(ContainsE4Discriminator);
+    }
+
+    private static bool ContainsE4Property(JsonNode? node)
+    {
+        if (node is JsonObject value)
+        {
+            if (value.ContainsKey("pregnancy")
+                || value.ContainsKey("pregnancyId")
+                || value.ContainsKey("gestationalParentCharacterId")
+                || value.ContainsKey("otherBiologicalParentCharacterId")
+                || value.ContainsKey("sourceUnionId")
+                || value.ContainsKey("expectedCurrentPregnancyId")
+                || value.ContainsKey("expectedBirthDate"))
+            {
+                return true;
+            }
+
+            return value.Any(property => ContainsE4Property(property.Value));
+        }
+
+        return node is JsonArray array && array.Any(ContainsE4Property);
     }
 
     private static bool ContainsPostD2RelationshipSourceKind(JsonNode? node)
@@ -2700,7 +2816,9 @@ public sealed class SaveMigrationV14ToV15 : ISaveMigration
         WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(
             SimulationJson.CreateOptions())
             ?? throw new SaveCompatibilityException("Migrated schema 15 snapshot is empty.");
-        source["checksum"] = SimulationChecksum.Compute(migratedSnapshot).Value;
+        source["checksum"] = SimulationChecksum.ComputeForSaveSchema(
+            migratedSnapshot,
+            ToSchemaVersion).Value;
         source["schemaVersion"] = ToSchemaVersion;
         return source;
     }
@@ -2724,7 +2842,9 @@ public sealed class SaveMigrationV15ToV16 : ISaveMigration
         WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(
             SimulationJson.CreateOptions())
             ?? throw new SaveCompatibilityException("Migrated schema 16 snapshot is empty.");
-        source["checksum"] = SimulationChecksum.Compute(migratedSnapshot).Value;
+        source["checksum"] = SimulationChecksum.ComputeForSaveSchema(
+            migratedSnapshot,
+            ToSchemaVersion).Value;
         source["schemaVersion"] = ToSchemaVersion;
         return source;
     }
@@ -2748,6 +2868,51 @@ public sealed class SaveMigrationV16ToV17 : ISaveMigration
         WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(
             SimulationJson.CreateOptions())
             ?? throw new SaveCompatibilityException("Migrated schema 17 snapshot is empty.");
+        source["checksum"] = SimulationChecksum.ComputeForSaveSchema(
+            migratedSnapshot,
+            ToSchemaVersion).Value;
+        source["schemaVersion"] = ToSchemaVersion;
+        return source;
+    }
+}
+
+public sealed class SaveMigrationV17ToV18 : ISaveMigration
+{
+    public int FromSchemaVersion => 17;
+
+    public int ToSchemaVersion => 18;
+
+    public JsonObject Migrate(JsonObject source)
+    {
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(source, FromSchemaVersion);
+        if (source["snapshot"] is not JsonObject snapshot
+            || snapshot["systemVersions"] is not JsonArray systemVersions)
+        {
+            throw new SaveCompatibilityException(
+                "Schema 17 save is missing snapshot or system-version data.");
+        }
+
+        if (snapshot.ContainsKey("characterPregnancies")
+            || systemVersions.Any(node =>
+                node?["systemId"]?.GetValue<string>()
+                    == CharacterPregnancySystem.SystemId))
+        {
+            throw new SaveCompatibilityException(
+                "Schema 17 unexpectedly contains schema 18 character-pregnancy data.");
+        }
+
+        snapshot["characterPregnancies"] = JsonSerializer.SerializeToNode(
+            CharacterPregnancyWorldSnapshot.Empty,
+            SimulationJson.CreateOptions());
+        systemVersions.Add(new JsonObject
+        {
+            ["systemId"] = CharacterPregnancySystem.SystemId,
+            ["version"] = CharacterPregnancySystem.Version,
+        });
+
+        WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(
+            SimulationJson.CreateOptions())
+            ?? throw new SaveCompatibilityException("Migrated schema 18 snapshot is empty.");
         source["checksum"] = SimulationChecksum.Compute(migratedSnapshot).Value;
         source["schemaVersion"] = ToSchemaVersion;
         return source;

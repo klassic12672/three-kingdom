@@ -44,9 +44,9 @@ public sealed class TierAndSoakTests
 
         Assert.True(result.Turns > 1_000);
         Assert.Equal(200, result.FinalDate.Year);
-        // SP-04E1 adds the default-empty character-guardianship snapshot and system identity,
+        // SP-04E4 adds the default-empty character-pregnancy snapshot and system identity,
         // so the canonical golden changes without altering the soak inputs or simulated outcomes.
-        Assert.Equal("95d559c0ebcf51f854ad563a12c00a4ab49a68c38c69fa6508c523e9a7b83e1d", result.Checksum.Value);
+        Assert.Equal("ff5de686f960dc216e853642476c0334f598543c7aa62d5e07530977297bb218", result.Checksum.Value);
     }
 
     [Theory]
