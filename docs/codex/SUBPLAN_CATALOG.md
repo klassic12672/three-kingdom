@@ -8,7 +8,7 @@ This is a routing aid, not a status authority. Always read [the roadmap](../ROAD
 | SP-01 | Complete (M1) | simulation-engineer, verification-reviewer | maintain golden checksum and save compatibility |
 | SP-02 | Complete (M1) | content-engineer, verification-reviewer | maintain registry/load-order checksum and zero diagnostics |
 | SP-03 | Complete (M2) | simulation-engineer, godot-presentation-engineer | preserve exact-SHA hosted health; keep detailed map refinement deferred pre–Early Access |
-| SP-04 | SP-01 and SP-02 complete; SP-04A has passing exact-SHA hosted macOS arm64/Windows x64 evidence at [`eaa3aaf`](../evidence/SP-04A-EXACT-SHA-eaa3aaf.md); SP-04B-L is locally verified | project-architect, simulation-engineer, verification-reviewer | preserve SP-04A/SP-04B-L; collect exact-SHA hosted SP-04B-H evidence only under separate authorization |
+| SP-04 | SP-01 and SP-02 complete; SP-04A has passing exact-SHA hosted evidence at [`eaa3aaf`](../evidence/SP-04A-EXACT-SHA-eaa3aaf.md); SP-04B-L is locally verified with passing exact-SHA hosted evidence at [`ff7420f`](../evidence/SP-04B-EXACT-SHA-ff7420f.md) | project-architect, simulation-engineer, verification-reviewer | preserve SP-04A/SP-04B-L and their exact-SHA evidence; continue only with a separately approved later SP-04 package |
 | SP-05 | SP-03, SP-04 | project-architect, simulation-engineer | faction/subfaction membership and authority slice before court/diplomacy breadth |
 | SP-06 | SP-03, SP-04, SP-05 | simulation-engineer, content-engineer | one locality population/store/production loop with conservation tests |
 | SP-07 | SP-03 through SP-06 | simulation-engineer, content-engineer | one persistent army recruitment/supply/battle-round-trip slice |

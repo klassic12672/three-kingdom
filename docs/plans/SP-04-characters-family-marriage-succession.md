@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — SP-04A exact-SHA hosted verified; SP-04B-L locally verified; hosted SP-04B-H and later packages pending |
+| Status | Active — SP-04A and SP-04B exact-SHA hosted verified; later packages pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -107,7 +107,7 @@ Memory publicity is observer-filtered in `Game.Application`: the subject receive
 
 `RelationshipWorldSnapshot` is an independent version-1 subsystem added to `WorldSnapshot` as default-empty state and registered as `simulation.relationships@1`. Save schema 5 requires the complete relationship snapshot. The authenticated 4→5 migration rejects unexpected schema-4 relationship data, injects the empty subsystem, preserves geography/character state, and recomputes the schema-5 checksum. The complete 1→2→3→4→5 chain remains forward-only. The literal schema-4 fixture contains nonempty character history reconstructed from the exact schema-4 contract at `eaa3aaf`; schema-1/2 field compatibility remains unverified as disclosed in the SP-04A record.
 
-SP-04B local verification passed; exact-SHA hosted macOS/Windows evidence is not yet recorded. SP-04 and M2 remain Active; SP-05 remains blocked.
+SP-04B-L local verification passed, and accepted revision `ff7420fbefb5dcb7d42dcff82746d61c39d02b7a` subsequently passed [exact-SHA hosted macOS arm64/Windows x64 verification](../evidence/SP-04B-EXACT-SHA-ff7420f.md). SP-04 and M2 remain Active; SP-05 remains blocked.
 
 ### SP-04B-L verification matrix
 
@@ -127,7 +127,7 @@ SP-04B local verification passed; exact-SHA hosted macOS/Windows evidence is not
 | B12 | 1,000-character/16,000-link/64,000-memory fixture plus 1,000 actions, one query, checksum, save, and load meet local budgets | Raw Apple Silicon macOS measurements | Local macOS pass |
 | B13 | Focused suites and repository validation/test/diff/LFS gates pass | Local commands listed below | Local pass |
 | B14 | Historical SP-04A evidence, limitations, and disqualified geography result remain unchanged | Documentation and diff audit | Local pass |
-| B15 | Same accepted revision passes hosted macOS arm64 and Windows x64 | Exact-SHA hosted verification in SP-04B-H | Not recorded |
+| B15 | Same accepted revision passes hosted macOS arm64 and Windows x64 | Exact-SHA hosted verification in SP-04B-H | Hosted macOS arm64/Windows x64 pass at `ff7420fbefb5dcb7d42dcff82746d61c39d02b7a` |
 | B16 | Marriage, household expansion, birth/death/succession, battle, content, UI, platform, and release behavior | Later packages | Deferred |
 
 Local performance was measured on 2026-07-15 using macOS 26.5.1 build 25F80 on arm64 and .NET SDK 10.0.301 with:
@@ -139,6 +139,8 @@ dotnet test tests/Game.Application.Tests/Game.Application.Tests.csproj -c Releas
 The repeatable fictional fixture contained 1,000 characters, 16,000 detailed directional relationships, four initial memories per relationship (64,000 initial memories), and 1,000 relationship actions resolved in one turn. Raw timings were 134.266 ms for turn processing, 0.790 ms for one subject summary, 406.157 ms for snapshot/checksum, 2,501.901 ms for save, and 1,116.485 ms for load. Its post-action checksum was `253e77b8f6b88e95185ff806871ad9f16065c504e75c7329308545dd20fe35a2`. The test asserts fixture shape and correctness but does not add hosted wall-clock assertions.
 
 Focused local results were 54 relationship-filtered Simulation.Core tests, 57 save-filtered Simulation.Core tests, 6 Game.Application tests, and 1 architecture-filtered repository test. `./scripts/validate.sh` retained 1,295 records, 2,820 translations, and registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` passed 158 Simulation.Core, 66 Game.Content, 6 Game.Application, and 18 repository tests. The authoritative ten-year/1,000-entity soak checksum is now `8430e2054d15fdb9a6e0c54a88b20de3b34dbca7ba80030b30676041773e7155` because newly captured worlds include the authoritative relationship subsystem. `git diff --check` and `git lfs fsck` also passed locally.
+
+Exact-SHA hosted verification at `ff7420fbefb5dcb7d42dcff82746d61c39d02b7a` passed the same complete 158/66/6/18 suites on macOS arm64 and Windows x64, plus validation, build, import, native export, automated smoke, manifests, artifact upload, archive integrity, and executable-architecture inspection. The soak checksum is established by its exact-source golden assertion plus both complete hosted Simulation.Core suite passes; it was not printed by CI. The local wall-clock measurements above remain local Apple Silicon evidence and are not relabeled as hosted performance. See the [SP-04B-H evidence report](../evidence/SP-04B-EXACT-SHA-ff7420f.md).
 
 ## Edge cases and failure handling
 

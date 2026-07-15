@@ -1,6 +1,6 @@
 # Character, Family, and Household Foundation
 
-SP-04A establishes the first deterministic character-world slice and has accepted exact-SHA hosted macOS arm64/Windows x64 evidence at `eaa3aaf3a0687a231d2a3441e5be4954e905e9ea`. SP-04 remains Active and is not complete.
+SP-04A establishes the first deterministic character-world slice and has accepted exact-SHA hosted macOS arm64/Windows x64 evidence at `eaa3aaf3a0687a231d2a3441e5be4954e905e9ea`. SP-04B-L adds the bounded relationship/memory kernel and has passing [exact-SHA hosted macOS arm64/Windows x64 evidence](evidence/SP-04B-EXACT-SHA-ff7420f.md) at `ff7420fbefb5dcb7d42dcff82746d61c39d02b7a`. SP-04 remains Active and is not complete.
 
 ## Package boundary
 
@@ -103,4 +103,4 @@ History is bounded to 64 detailed links and 128 archived summaries per subject, 
 
 `RelationshipWorldSnapshot` version 1 is a separate default-empty `WorldSnapshot` subsystem registered as `simulation.relationships@1`. Save schema 5 includes it in canonical checksums. Schema 4 is authenticated before the explicit 4→5 migration injects empty relationship state and recomputes the checksum; geography, character data, source files, and autosave candidates remain unchanged.
 
-SP-04B local verification passed; exact-SHA hosted macOS/Windows evidence is not yet recorded. The package-specific matrix, focused commands, raw local performance measurements, checksums, and limitations are recorded in the [SP-04 plan](plans/SP-04-characters-family-marriage-succession.md). Marriage, romance, household expansion, birth, death, inheritance, succession, content, UI, battle integration, and platform behavior remain deferred.
+SP-04B-L local verification and exact-SHA hosted macOS arm64/Windows x64 verification passed. The hosted evidence establishes the unchanged suites, deterministic assertions, import/export/smoke path, and artifact manifests on both hosted release-target architectures; it does not convert the recorded Apple Silicon wall-clock measurements into hosted performance evidence. The package-specific matrix, focused commands, raw local performance measurements, checksums, and limitations are recorded in the [SP-04 plan](plans/SP-04-characters-family-marriage-succession.md). Marriage, romance, household expansion, birth, death, inheritance, succession, content, UI, battle integration, and platform behavior remain deferred.
