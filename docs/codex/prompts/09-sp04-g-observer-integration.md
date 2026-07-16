@@ -1,10 +1,10 @@
-# Prompt Package: SP-04G Observer Queries and Cross-System Integration
+# Prompt Package: SP-04G Observer Queries and Required Integration
 
-Use only after SP-04F11 has accepted exact-SHA hosted evidence. This package creates the knowledge-filtered application boundary and connects character events to relationship, campaign, and future battle/political consumers without implementing blocked subsystems.
+Use after the consolidated SP-04F9 package is accepted. This package implements the knowledge-filtered application surface and only the integration explicitly required by SP-04.
 
 ## Authorization boundary
 
-The user has authorized local implementation, commits, and ordinary non-force pushes to the approved `origin/main` for remaining SP-04 work. Verify remote, branch, tree, and divergence before each commit or push.
+The user has authorized local SP-04 implementation, commits, and ordinary non-force pushes to the approved `origin/main`. Verify remote, branch, tree, and divergence before each commit or push.
 
 No force push, rebase, branch, tag, pull request, release, workflow dispatch/rerun, signing, Steam, deployment, publishing, credential, or remote-setting action is authorized.
 
@@ -13,134 +13,107 @@ No force push, rebase, branch, tag, pull request, release, workflow dispatch/rer
 ~~~text
 /goal
 
-Complete SP-04G — observer-filtered CharacterProfile, HouseholdView, and SuccessionView plus character-event relationship, campaign, political-handoff, and battle-handoff integration — as one larger independently verifiable package through exact-SHA hosted evidence and documentation closeout.
+Complete SP-04G — observer-filtered character/relationship/household/succession queries and the minimum required character-event integration — with exact-SHA hosted closeout.
 
-Keep the stable read-model boundary and the event-integration boundary together so presentation receives one coherent, knowledge-safe application surface. Do not subdivide by individual query or event source merely for convenience.
+Ponytail routing
+
+- Invoke `ponytail:ponytail` in full mode before designing query DTOs or integration contracts.
+- Invoke `ponytail:ponytail-review` after integration if available.
+- Reuse `RelationshipSummaryQuery`, authoritative character queries, existing
+  commands/events, and current BattleSetup/BattleResult contracts before adding
+  anything new.
+- Do not create placeholder political, faction, court, diplomacy, or battle
+  subsystems for future consumers.
 
 Dependency gate
 
-- SP-04F11 must be accepted with exact-SHA hosted evidence.
-- All authoritative SP-04 simulation state through player continuity must be stable.
-- SP-05, SP-07, and SP-08 remain blocked. G may define or consume narrow neutral handoff contracts, but it may not implement their faction, army, or tactical systems.
+- The consolidated F9 succession-completion package must be accepted.
+- SP-05, SP-07, and SP-08 remain blocked.
 
-Read:
-
-1. AGENTS.md
-2. docs/MASTER_PLAN.md
-3. docs/ROADMAP.md
-4. docs/plans/README.md
-5. docs/plans/SP-04-characters-family-marriage-succession.md
-6. relevant portions of SP-05, SP-07, SP-08, and SP-11 for ownership boundaries
-7. applicable ADRs
-8. docs/CHARACTERS.md
-9. docs/SIMULATION.md
-10. docs/DEVELOPMENT.md
-11. docs/codex/AGENT_ROSTER.md
-12. docs/codex/prompts/04-subplan-implementation.md
-13. docs/codex/prompts/05-verification-closeout.md
-14. Current Game.Application relationship query, authoritative character queries, geography knowledge filtering, character commands/events, and tests
+Read AGENTS.md, source-of-truth plans, applicable ADRs, CHARACTERS, SIMULATION,
+the relevant boundaries of SP-05/SP-07/SP-08/SP-11, the agent roster, and the
+current application queries and character-event code/tests.
 
 Use:
 
-- project-architect, read-only, for observer/knowledge ownership, cross-plan contract tracing, and ADR detection;
-- simulation-engineer for deterministic core and application integration within assigned paths;
+- project-architect, read-only, for knowledge and cross-plan ownership;
+- simulation-engineer for assigned core/application work;
 - verification-reviewer, read-only, after integration.
 
-The main agent owns application/public contracts, integration seams, shared files, documentation, Git, hosted evidence, and all completion claims.
+Before editing
 
-Before editing:
-
-1. Verify accepted F11 evidence and repository synchronization.
-2. Inventory every field in authoritative character, household, relationship, marriage, career, resource, estate, guardianship, pregnancy, succession, regency, inheritance, and player-continuity state.
-3. Define an explicit observer/knowledge context. Unknown data must be omitted, summarized, ranged, or marked unknown; never guessed.
-4. Trace ownership of BattleSetup/BattleResult and political/faction consumers. Stop for an ADR or user decision if closing SP-04 would require implementing another blocked plan.
-5. Publish a field-by-field visibility matrix and event-integration matrix before implementation.
+1. Define a whitelist of fields needed by the SP-04 UI and acceptance tests.
+   Do not mirror every authoritative field automatically.
+2. Reuse the existing observer/publicity model from relationship and geography
+   queries. Add a broader knowledge abstraction only if current rules cannot
+   express a required visibility case.
+3. Identify relationship consequences that SP-04 explicitly requires and are
+   currently missing. Do not add a consequence merely because an event exists.
+4. For battle integration, prefer a small mapper/adapter and one round-trip test
+   over new persisted handoff state.
 
 Required outcome
 
-Implement a versioned Game.Application query and integration layer that:
+1. Implement immutable, observer-filtered `CharacterProfile`, `RelationshipSummary`,
+   `HouseholdView`, and `SuccessionView` application models.
+2. Expose only the controlled character's known details and public/witnessed
+   facts; hide private memories, exact hidden dimensions, private wealth/estate,
+   and unobserved succession planning.
+3. Return canonical bounded defensive results and localization keys/arguments
+   only where presentation needs them.
+4. Preserve legal marriage and emotional romance as distinct.
+5. Add only missing required relationship/memory consequences, including the
+   coercion invariant: no positive romance or attraction.
+6. Map character state into the existing battle boundary and accept the required
+   wound/death/capture/rescue/shared-memory result through existing registered
+   mutation patterns. Do not build tactical behavior.
+7. If current BattleSetup/BattleResult contracts cannot carry the SP-04 fields,
+   make the smallest additive change owned by the proper layer.
+8. Do not persist neutral “future consumer” facts for faction, court, office,
+   title, reputation, or diplomacy systems. Their owning plans consume existing
+   character events later.
+9. Preserve behavior across save/load, tier transition, player transfer, replay,
+   and later-day continuation.
 
-1. Reserves and implements the public `CharacterProfile`, `HouseholdView`, and `SuccessionView` names as immutable observer-filtered models distinct from authoritative simulation reads.
-2. Integrates or version-advances `RelationshipSummary` consistently rather than creating a second conflicting relationship query.
-3. Uses an explicit observer character and available knowledge/publicity evidence; nonexistent observers and malformed contexts fail deliberately.
-4. Prevents leakage of private memories, exact hidden relationship dimensions, secret or nonpublic household facts, hidden custody/health facts, private wealth/estate details, unobserved claims/support, and unavailable succession planning.
-5. Exposes the controlled character's own known details and public/witnessed facts according to explicit rules.
-6. Returns canonical, bounded, defensive results with stable localization keys/arguments where player-facing labels are required.
-7. Produces distinct relationship/memory consequences for accepted marriage, romance, coercion, birth, adoption, guardianship, death, inheritance, succession, regency, capture, rescue, and shared-event inputs where SP-04 owns the consequence.
-8. Preserves political marriage and voluntary romance as mechanically distinct, allowing legal union state and emotional relationship state to diverge.
-9. Ensures coercive household actions never produce positive romance or attraction progression.
-10. Defines narrow versioned character contributions for future BattleSetup and character effects accepted from future BattleResult, including commander descriptors plus wounds, death, capture, rescue, and shared memories, without building tactical simulation.
-11. Defines neutral versioned political/campaign handoff facts for reputation, loyalty/allegiance, office/title, court, faction, and diplomacy consumers without mutating blocked subsystem state.
-12. Applies accepted external character-result inputs only through registered deterministic commands/events with exact revalidation, causality, affected IDs, replay, and idempotence.
-13. Preserves state and knowledge behavior across save/load, tier transitions, player transfer, and later-day continuation.
-14. Adds bounded query and integration performance fixtures representative of 1,000 characters.
+Non-goals
 
-Package boundary and non-goals
+- No Godot screens, historical content, full political integration, armies,
+  tactical simulation, AI, or generic knowledge framework.
+- No universal loyalty score or duplicated relationship query stack.
+- No package-specific ten-year soak or 1,000-character fixture unless the full
+  suite lacks relevant coverage. Final integrated performance belongs to X2.
 
-- Do not build Godot character screens; X1 owns presentation.
-- Do not author historical/custom content; X1 owns that vertical slice.
-- Do not implement factions, courts, diplomacy, offices, titles, armies, tactical combat, AI, or full SP-11 UI.
-- Do not expose omniscient authoritative state through application contracts.
-- Do not create a universal loyalty score or collapse the nine relationship dimensions.
-- Battle and political handoffs must be narrow contracts and tests, not placeholder outward dependencies from Simulation.Core.
-- Never introduce explicit sexual content.
+Required tests
 
-Required acceptance matrix
+- Field whitelist and hidden-information negatives.
+- Self/public/witnessed/private visibility.
+- Defensive bounded query results.
+- Marriage/romance divergence and coercion regression.
+- Only the required lifecycle relationship consequences.
+- Minimal battle adapter/result round-trip.
+- Save/load, tier transition, player transfer, replay, and architecture boundaries.
 
-Cover at least:
+Verification and closeout
 
-- dependency, ownership, and ADR safety;
-- versioned observer/knowledge context and all four public query models;
-- field-by-field visibility and hidden-information negatives;
-- own/public/witnessed/private knowledge behavior;
-- canonical, bounded, defensive, localized results;
-- marriage-versus-romance divergence;
-- coercion no-positive-romance invariant;
-- relationship/memory consequences for the required character lifecycle events;
-- neutral political/campaign handoff contracts;
-- future battle contribution/result round-trip contracts and registered mutation;
-- stale/duplicate/replay/input-order behavior;
-- save/load, tier transition, player transfer, and continuation preservation;
-- 1,000-character query/integration performance evidence;
-- focused/full gates, independent review, and exact-SHA hosted evidence.
+1. Run focused tests, then:
 
-Verification
+   ./scripts/validate.sh
+   ./scripts/test.sh Release
+   git diff --check
+   git lfs fsck
 
-Run focused tests while iterating, then:
-
-./scripts/validate.sh
-./scripts/test.sh Release
-git diff --check
-git lfs fsck
-
-Additionally run:
-
-- all Game.Application query tests;
-- hidden-information/property matrices and defensive-copy tests;
-- relationship/memory consequence and coercion regressions;
-- character battle contribution/result round-trip tests;
-- tier-transition, save/load, replay, player-transfer, and later-day continuation tests;
-- architecture tests proving Simulation.Core has no Godot, Steam, application, faction, or tactical outward dependency;
-- ten-year deterministic soak;
-- local Apple Silicon query/integration performance fixtures;
-- focused formatter checks.
-
-Closeout
-
-1. Obtain independent verification review and correct validated in-scope findings.
-2. Update plan/roadmap/index and subsystem/application documentation only to demonstrated status.
-3. Commit the intentional G implementation, re-fetch, and ordinarily push main.
-4. Observe automatic CI without dispatch or rerun.
-5. Require exact-SHA hosted macOS arm64/Windows x64 validation, complete tests, import, native export, smoke, manifests, and artifacts.
-6. Authenticate run/job/SHA/artifact identities and inspect artifacts.
-7. Add exact-SHA evidence, mark G accepted only, commit evidence/status docs, and ordinarily push main.
+2. Obtain independent review and update documentation honestly.
+3. Commit, re-fetch, and ordinarily push `main`.
+4. Observe automatic exact-SHA CI only.
+5. Record exact SHA, jobs, manifests, artifact names, sizes, and API digests.
+   Download full artifacts only for an identity inconsistency or packaging change.
+6. Add evidence, mark G accepted, commit the status update, and ordinarily push.
 
 Definition of done
 
-- Presentation and later consumers have one stable, knowledge-filtered SP-04 application surface.
-- Required character lifecycle, relationship, political-handoff, and battle-handoff integration is deterministic and tested without implementing blocked plans.
-- Exact-SHA hosted evidence passes on both release-target architectures and is committed.
-- The tree is clean and synchronized.
-- Historical/custom content, SP-04 presentation, final integrated performance, and full SP-04 acceptance remain open.
-- The next package is SP-04X1; do not begin it here.
+- One small knowledge-filtered application surface supports SP-04 presentation.
+- Required relationship and battle-boundary integration works without speculative
+  downstream systems.
+- Exact-SHA hosted evidence passes and the tree is clean.
+- Next package: SP-04X1. Do not begin it here.
 ~~~
