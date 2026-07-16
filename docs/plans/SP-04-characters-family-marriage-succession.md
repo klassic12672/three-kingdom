@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — SP-04F4 locally verified; through SP-04F3 accepted |
+| Status | Active — through SP-04F4 accepted |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -939,7 +939,7 @@ Local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot
 
 Accepted revision `72e5bd34f41f068c2e07a580e02522f8222eca30` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04F3-EXACT-SHA-72e5bd3.md). F315 therefore passes at that revision. Full SP-04 acceptance, automatic/legal succession, inheritance, player continuity, and the overall performance gate remain open.
 
-## Locally verified package: SP-04F4 explicit personal heir designation
+## Accepted package: SP-04F4 explicit personal heir designation
 
 SP-04F4 is the smallest dependency-safe succession-policy package after accepted F3. It records one character's explicit personal heir-designation intent before later packages interpret legal rules, adoption, claims, household interests, political support, or succession outcomes. The character-issued Commands-phase `character_succession_action.v1` envelope registers `designate_heir.v1` and `revoke_heir_designation.v1`. A designation may establish, replace, or revoke the exact expected current record. The designator is always the issuing character and must be born, living, capable, and free at resolution. No adulthood rule is invented: a living capable free minor may record intent, while later law determines its effect.
 
@@ -971,11 +971,13 @@ F4 adds no automatic successor selection, legal eligibility or precedence, claim
 | F412 | Schema 24 rejects every isolated F4 discriminator/property/system/snapshot injection including null | Historical raw-shape matrix | Local pass |
 | F413 | Current schema rejects missing/null/partial state, history, action, outcome, system registration, and cross-pair data | Current raw-shape matrix | Local pass |
 | F414 | A 1,000-character/200-designation workload records raw local measurements without a brittle threshold | Local Apple Silicon measurement | Local pass; no threshold |
-| F415 | Focused/full Core suites, repository gates, independent reviews, and exact-SHA hosted macOS/Windows evidence pass | Local and hosted closeout | Local pass; hosted pending |
+| F415 | Focused/full Core suites, repository gates, independent reviews, and exact-SHA hosted macOS/Windows evidence pass | Local and hosted closeout | Hosted pass at `ebde538` |
 
 The representative local Release fixture contains 1,000 characters and 200 simultaneous designations. A raw Apple Silicon run measured 361.779 ms workflow, 1.166 ms query, and 155.844 ms snapshot/checksum; snapshot JSON was 923,190 bytes, gzip was 38,360 bytes, and checksum was `d81c447431a4652d9c2d33570582d9cfcaa7da2e21f62895bcfd10cc67a7758b`. The test asserts fixture shape and correctness only. This component workload neither passes nor waives the full SP-04 three-second campaign-turn budget.
 
-Final local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. The exact `CharacterSuccession` Release filter passes 95/95 cases. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 1,005 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. Focused formatter verification, `git diff --check`, and `git lfs fsck` pass. Independent architecture, verification, and schema/content reviews approve the final production, compatibility, test, and documentation boundaries. Exact-SHA hosted macOS/Windows evidence remains pending. Full SP-04 acceptance, legal succession, claims, inheritance, player continuity, and the overall performance gate remain open.
+Final local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. The exact `CharacterSuccession` Release filter passes 95/95 cases. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 1,005 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. Focused formatter verification, `git diff --check`, and `git lfs fsck` pass. Independent architecture, verification, and schema/content reviews approve the final production, compatibility, test, and documentation boundaries.
+
+Accepted revision `ebde5387ac2d7398105f11043d9cdaeb2c2ae187` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04F4-EXACT-SHA-ebde538.md). F415 therefore passes at that revision. Full SP-04 acceptance, legal succession, claims, inheritance, player continuity, and the overall performance gate remain open.
 
 ## Edge cases and failure handling
 
