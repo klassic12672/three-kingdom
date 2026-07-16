@@ -62,6 +62,7 @@ public sealed class SaveSchemaRegistry
             new SaveMigrationV23ToV24(),
             new SaveMigrationV24ToV25(),
             new SaveMigrationV25ToV26(),
+            new SaveMigrationV26ToV27(),
         ]).ToArray();
         if (registered.Any(item => item.ToSchemaVersion != item.FromSchemaVersion + 1))
         {
@@ -131,7 +132,7 @@ public sealed class SaveSchemaRegistry
 
     internal static void ValidateHistoricalSourceChecksum(JsonObject source, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 25)
+        if (schemaVersion is < 1 or > 26)
         {
             throw new SaveCompatibilityException($"Save schema {schemaVersion} has no historical checksum contract.");
         }
@@ -162,6 +163,10 @@ public sealed class SaveSchemaRegistry
         {
             UpgradeSchema25SuccessionSnapshotForCurrentDto(compatible);
         }
+        else if (schemaVersion == 26)
+        {
+            UpgradeSchema26SuccessionSnapshotForCurrentDto(compatible);
+        }
 
         if (schemaVersion is >= 5 and < 7
             && compatible["relationships"] is JsonObject relationships)
@@ -183,6 +188,8 @@ public sealed class SaveSchemaRegistry
         successions["contractVersion"] = CharacterSuccessionContractVersions.Snapshot;
         successions["claims"] = new JsonArray();
         successions["claimHistory"] = new JsonArray();
+        successions["supports"] = new JsonArray();
+        successions["supportHistory"] = new JsonArray();
 
         JsonArray systemVersions = compatible["systemVersions"] as JsonArray
             ?? throw new SaveCompatibilityException(
@@ -197,6 +204,34 @@ public sealed class SaveSchemaRegistry
         {
             throw new SaveCompatibilityException(
                 "Save schema 25 must contain exactly one character-succession system version.");
+        }
+
+        successionVersions[0]["version"] = CharacterSuccessionSystem.Version;
+    }
+
+    private static void UpgradeSchema26SuccessionSnapshotForCurrentDto(
+        JsonObject compatible)
+    {
+        JsonObject successions = compatible["characterSuccessions"] as JsonObject
+            ?? throw new SaveCompatibilityException(
+                "Save schema 26 is missing its character-succession snapshot.");
+        successions["contractVersion"] = CharacterSuccessionContractVersions.Snapshot;
+        successions["supports"] = new JsonArray();
+        successions["supportHistory"] = new JsonArray();
+
+        JsonArray systemVersions = compatible["systemVersions"] as JsonArray
+            ?? throw new SaveCompatibilityException(
+                "Save schema 26 is missing system-version data.");
+        JsonObject[] successionVersions = systemVersions
+            .OfType<JsonObject>()
+            .Where(version => IsSystemId(
+                version,
+                CharacterSuccessionSystem.SystemId))
+            .ToArray();
+        if (successionVersions.Length != 1)
+        {
+            throw new SaveCompatibilityException(
+                "Save schema 26 must contain exactly one character-succession system version.");
         }
 
         successionVersions[0]["version"] = CharacterSuccessionSystem.Version;
@@ -250,7 +285,8 @@ public sealed class SaveSchemaRegistry
                 characterSuccessions,
                 "Save schema 25",
                 expectedSnapshotVersion: 1,
-                requireClaims: false);
+                requireClaims: false,
+                requireSupports: false);
             if (characterSuccessions.ContainsKey("claims")
                 || characterSuccessions.ContainsKey("claimHistory"))
             {
@@ -271,6 +307,41 @@ public sealed class SaveSchemaRegistry
             {
                 throw new SaveCompatibilityException(
                     $"Save schema 25 requires exactly one '{CharacterSuccessionSystem.SystemId}@1' system-version registration.");
+            }
+        }
+        else if (schemaVersion == 26)
+        {
+            JsonObject characterSuccessions = RequireHistoricalObject(
+                snapshot,
+                "characterSuccessions",
+                schemaVersion,
+                "snapshot.characterSuccessions");
+            ValidateCharacterSuccessionSnapshotShape(
+                characterSuccessions,
+                "Save schema 26",
+                expectedSnapshotVersion: 2,
+                requireClaims: true,
+                requireSupports: false);
+            if (characterSuccessions.ContainsKey("supports")
+                || characterSuccessions.ContainsKey("supportHistory"))
+            {
+                throw new SaveCompatibilityException(
+                    "Save schema 26 unexpectedly contains schema 27 succession-support snapshot data.");
+            }
+
+            JsonObject[] successionSystemVersions = systemVersions
+                .Where(version => IsSystemId(
+                    version,
+                    CharacterSuccessionSystem.SystemId))
+                .ToArray();
+            if (successionSystemVersions.Length != 1
+                || !IsSystemVersion(
+                    successionSystemVersions[0],
+                    CharacterSuccessionSystem.SystemId,
+                    2))
+            {
+                throw new SaveCompatibilityException(
+                    $"Save schema 26 requires exactly one '{CharacterSuccessionSystem.SystemId}@2' system-version registration.");
             }
         }
 
@@ -354,7 +425,7 @@ public sealed class SaveSchemaRegistry
                 $"Schema {schemaVersion} unexpectedly contains schema 10 character-marriage data.");
         }
 
-        if (schemaVersion is >= 10 and <= 25)
+        if (schemaVersion is >= 10 and <= 26)
         {
             ValidateCharacterMarriageSnapshotShape(
                 RequireHistoricalObject(
@@ -486,11 +557,17 @@ public sealed class SaveSchemaRegistry
                 ValidateSchema24CharacterDeathDiagnostics(source);
                 RejectF4Discriminators(source, "save payload");
             }
-            else
+            else if (schemaVersion == 25)
             {
                 ValidateSchema24CharacterDeathDiagnostics(source);
                 ValidateCurrentCharacterSuccessionDiagnostics(source);
                 RejectF7Discriminators(source, "save payload");
+            }
+            else
+            {
+                ValidateSchema24CharacterDeathDiagnostics(source);
+                ValidateCurrentCharacterSuccessionDiagnostics(source);
+                RejectF8Discriminators(source, "save payload");
             }
         }
 
@@ -1299,6 +1376,17 @@ public sealed class SaveSchemaRegistry
                 "Current save schema contains succession-claim diagnostics that are not bound to their outer event.");
         }
 
+        if (value["payload"] is JsonObject supportDiagnosticPayload
+            && supportDiagnosticPayload["$type"]?.GetValue<string>()
+                == "character_succession_support_action_resolved.v1"
+            && !IsExactCharacterSuccessionSupportEventDiagnostic(
+                value,
+                supportDiagnosticPayload))
+        {
+            throw new SaveCompatibilityException(
+                "Current save schema contains succession-support diagnostics that are not bound to their outer event.");
+        }
+
         string? discriminator = value["$type"]?.GetValue<string>();
         if (discriminator == "character_succession_action.v1"
             && value["action"] is not JsonObject)
@@ -1420,6 +1508,76 @@ public sealed class SaveSchemaRegistry
         {
             throw new SaveCompatibilityException(
                 "Current save schema contains incomplete succession-claim-withdrawn outcome diagnostics.");
+        }
+
+        if (discriminator == "character_succession_support_action.v1"
+            && value["action"] is not JsonObject)
+        {
+            throw new SaveCompatibilityException(
+                "Current save schema contains incomplete succession-support command diagnostics.");
+        }
+
+        if (discriminator == "declare_succession_support.v1"
+            && (!HasObject(value, "subjectId")
+                || !HasObject(value, "supportedCandidateId")
+                || !HasNullableObject(value, "expectedCurrentSupportId")))
+        {
+            throw new SaveCompatibilityException(
+                "Current save schema contains incomplete declare-succession-support action diagnostics.");
+        }
+
+        if (discriminator == "withdraw_succession_support.v1"
+            && (!HasObject(value, "subjectId")
+                || !HasObject(value, "expectedCurrentSupportId")))
+        {
+            throw new SaveCompatibilityException(
+                "Current save schema contains incomplete withdraw-succession-support action diagnostics.");
+        }
+
+        if (discriminator == "character_succession_support_action_resolved.v1"
+            && (!HasObject(value, "actingCharacterId")
+                || value["action"] is not JsonObject supportAction
+                || value["outcome"] is not JsonObject supportOutcome
+                || !IsExactCharacterSuccessionSupportDiagnosticPair(
+                    value["actingCharacterId"]!,
+                    supportAction,
+                    supportOutcome)))
+        {
+            throw new SaveCompatibilityException(
+                "Current save schema contains incomplete or mismatched succession-support action diagnostics.");
+        }
+
+        if (discriminator == "succession_support_declared.v1"
+            && (value["currentSupport"] is not JsonObject declared
+                || !IsActiveSuccessionSupport(declared)))
+        {
+            throw new SaveCompatibilityException(
+                "Current save schema contains incomplete succession-support-declared outcome diagnostics.");
+        }
+
+        if (discriminator == "succession_support_replaced.v1"
+            && (value["previousSupport"] is not JsonObject replaced
+                || !IsTerminalSuccessionSupport(
+                    replaced,
+                    SuccessionSupportStatus.Replaced)
+                || value["currentSupport"] is not JsonObject supportReplacement
+                || !IsActiveSuccessionSupport(supportReplacement)
+                || !HasExactSuccessionSupportReplacementCausality(
+                    replaced,
+                    supportReplacement)))
+        {
+            throw new SaveCompatibilityException(
+                "Current save schema contains incomplete succession-support-replaced outcome diagnostics.");
+        }
+
+        if (discriminator == "succession_support_withdrawn.v1"
+            && (value["previousSupport"] is not JsonObject supportWithdrawn
+                || !IsTerminalSuccessionSupport(
+                    supportWithdrawn,
+                    SuccessionSupportStatus.Withdrawn)))
+        {
+            throw new SaveCompatibilityException(
+                "Current save schema contains incomplete succession-support-withdrawn outcome diagnostics.");
         }
 
         foreach ((_, JsonNode? child) in value)
@@ -1550,6 +1708,101 @@ public sealed class SaveSchemaRegistry
                 withdrawn["claimId"]);
     }
 
+    private static bool IsExactCharacterSuccessionSupportDiagnosticPair(
+        JsonNode actingCharacterId,
+        JsonObject action,
+        JsonObject outcome)
+    {
+        string? actionType = action["$type"]?.GetValue<string>();
+        string? outcomeType = outcome["$type"]?.GetValue<string>();
+        if (action["subjectId"] is not JsonObject subjectId)
+        {
+            return false;
+        }
+
+        if (actionType == "declare_succession_support.v1"
+            && action["supportedCandidateId"] is JsonObject supportedCandidateId
+            && action.ContainsKey("expectedCurrentSupportId"))
+        {
+            if (outcomeType == "succession_support_declared.v1"
+                && action["expectedCurrentSupportId"] is null
+                && outcome["currentSupport"] is JsonObject declared)
+            {
+                return IsActiveSuccessionSupport(declared)
+                    && AreDistinct(
+                        actingCharacterId,
+                        subjectId,
+                        supportedCandidateId)
+                    && JsonNode.DeepEquals(
+                        actingCharacterId,
+                        declared["supporterId"])
+                    && JsonNode.DeepEquals(subjectId, declared["subjectId"])
+                    && JsonNode.DeepEquals(
+                        supportedCandidateId,
+                        declared["supportedCandidateId"]);
+            }
+
+            if (outcomeType == "succession_support_replaced.v1"
+                && action["expectedCurrentSupportId"] is JsonObject expectedCurrent
+                && outcome["previousSupport"] is JsonObject previous
+                && outcome["currentSupport"] is JsonObject replacement)
+            {
+                return IsTerminalSuccessionSupport(
+                        previous,
+                        SuccessionSupportStatus.Replaced)
+                    && IsActiveSuccessionSupport(replacement)
+                    && AreDistinct(
+                        actingCharacterId,
+                        subjectId,
+                        supportedCandidateId)
+                    && !JsonNode.DeepEquals(
+                        previous["supportedCandidateId"],
+                        replacement["supportedCandidateId"])
+                    && JsonNode.DeepEquals(
+                        actingCharacterId,
+                        previous["supporterId"])
+                    && JsonNode.DeepEquals(
+                        actingCharacterId,
+                        replacement["supporterId"])
+                    && JsonNode.DeepEquals(subjectId, previous["subjectId"])
+                    && JsonNode.DeepEquals(subjectId, replacement["subjectId"])
+                    && JsonNode.DeepEquals(
+                        supportedCandidateId,
+                        replacement["supportedCandidateId"])
+                    && JsonNode.DeepEquals(
+                        expectedCurrent,
+                        previous["supportId"])
+                    && HasExactSuccessionSupportReplacementCausality(
+                        previous,
+                        replacement);
+            }
+        }
+
+        return actionType == "withdraw_succession_support.v1"
+            && action["expectedCurrentSupportId"] is JsonObject expectedCurrentSupportId
+            && outcomeType == "succession_support_withdrawn.v1"
+            && outcome["previousSupport"] is JsonObject withdrawn
+            && IsTerminalSuccessionSupport(
+                withdrawn,
+                SuccessionSupportStatus.Withdrawn)
+            && !JsonNode.DeepEquals(actingCharacterId, subjectId)
+            && JsonNode.DeepEquals(
+                actingCharacterId,
+                withdrawn["supporterId"])
+            && JsonNode.DeepEquals(subjectId, withdrawn["subjectId"])
+            && JsonNode.DeepEquals(
+                expectedCurrentSupportId,
+                withdrawn["supportId"]);
+    }
+
+    private static bool AreDistinct(
+        JsonNode first,
+        JsonNode second,
+        JsonNode third) =>
+        !JsonNode.DeepEquals(first, second)
+        && !JsonNode.DeepEquals(first, third)
+        && !JsonNode.DeepEquals(second, third);
+
     private static bool IsCurrentSuccessionClaim(JsonObject claim) =>
         HasVersion(claim, CharacterSuccessionContractVersions.ClaimState)
         && HasObject(claim, "claimId")
@@ -1592,6 +1845,32 @@ public sealed class SaveSchemaRegistry
         && !JsonNode.DeepEquals(
             claim["sourceEventId"],
             claim["withdrawalEventId"]);
+
+    private static bool IsActiveSuccessionSupport(JsonObject support) =>
+        IsCurrentSuccessionSupport(support)
+        && HasExactSuccessionSupportCausality(support)
+        && HasEnumValue(support, "status", SuccessionSupportStatus.Active)
+        && support["resolutionDate"] is null
+        && support["resolutionTurnIndex"] is null
+        && support["resolutionCommandId"] is null
+        && support["resolutionEventId"] is null;
+
+    private static bool IsTerminalSuccessionSupport(
+        JsonObject support,
+        SuccessionSupportStatus expectedStatus) =>
+        IsCurrentSuccessionSupport(support)
+        && HasExactSuccessionSupportCausality(support)
+        && HasEnumValue(support, "status", expectedStatus)
+        && support["resolutionDate"] is JsonObject
+        && support["resolutionTurnIndex"] is JsonValue
+        && support["resolutionCommandId"] is JsonObject
+        && support["resolutionEventId"] is JsonObject
+        && !JsonNode.DeepEquals(
+            support["sourceCommandId"],
+            support["resolutionCommandId"])
+        && !JsonNode.DeepEquals(
+            support["sourceEventId"],
+            support["resolutionEventId"]);
 
     private static bool IsExactCharacterSuccessionClaimEventDiagnostic(
         JsonObject campaignEvent,
@@ -1637,6 +1916,104 @@ public sealed class SaveSchemaRegistry
             or NotSupportedException
             or ArgumentException
             or InvalidOperationException
+            or SimulationValidationException
+            or OverflowException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsExactCharacterSuccessionSupportEventDiagnostic(
+        JsonObject campaignEvent,
+        JsonObject payload)
+    {
+        if (campaignEvent["eventId"] is not JsonObject eventIdNode
+            || campaignEvent["causalId"] is not JsonObject causalIdNode
+            || campaignEvent["resolutionDate"] is not JsonObject resolutionDateNode
+            || payload["outcome"] is not JsonObject outcome)
+        {
+            return false;
+        }
+
+        try
+        {
+            EntityId eventId = eventIdNode.Deserialize<EntityId>(CanonicalJson.Options);
+            EntityId causalId = causalIdNode.Deserialize<EntityId>(CanonicalJson.Options);
+            CampaignDate resolutionDate = resolutionDateNode.Deserialize<CampaignDate>(
+                CanonicalJson.Options);
+            if (eventId != CharacterSuccessionIds.DeriveSupportActionEventId(
+                    resolutionDate,
+                    causalId))
+            {
+                return false;
+            }
+
+            CampaignEvent typedEvent = campaignEvent.Deserialize<CampaignEvent>(
+                SimulationJson.CreateOptions())
+                ?? throw new JsonException(
+                    "Succession-support diagnostic event is empty.");
+            if (typedEvent.Phase != ResolutionPhase.Commands
+                || typedEvent.Payload
+                    is not CharacterSuccessionSupportActionResolvedEventPayload
+                        typedPayload
+                || typedEvent.AffectedIds is null
+                || !typedEvent.AffectedIds.SequenceEqual(
+                    WorldState.GetCharacterSuccessionSupportActionAffectedIds(
+                        typedPayload)))
+            {
+                return false;
+            }
+
+            string? outcomeType = outcome["$type"]?.GetValue<string>();
+            if (outcomeType == "succession_support_declared.v1"
+                && outcome["currentSupport"] is JsonObject declared)
+            {
+                return JsonNode.DeepEquals(declared["sourceCommandId"], causalIdNode)
+                    && JsonNode.DeepEquals(declared["sourceEventId"], eventIdNode)
+                    && JsonNode.DeepEquals(declared["declaredDate"], resolutionDateNode);
+            }
+
+            if (outcomeType == "succession_support_replaced.v1"
+                && outcome["previousSupport"] is JsonObject replaced
+                && outcome["currentSupport"] is JsonObject replacement)
+            {
+                return JsonNode.DeepEquals(
+                        replaced["resolutionCommandId"],
+                        causalIdNode)
+                    && JsonNode.DeepEquals(
+                        replaced["resolutionEventId"],
+                        eventIdNode)
+                    && JsonNode.DeepEquals(
+                        replaced["resolutionDate"],
+                        resolutionDateNode)
+                    && JsonNode.DeepEquals(
+                        replacement["sourceCommandId"],
+                        causalIdNode)
+                    && JsonNode.DeepEquals(
+                        replacement["sourceEventId"],
+                        eventIdNode)
+                    && JsonNode.DeepEquals(
+                        replacement["declaredDate"],
+                        resolutionDateNode);
+            }
+
+            return outcomeType == "succession_support_withdrawn.v1"
+                && outcome["previousSupport"] is JsonObject withdrawn
+                && JsonNode.DeepEquals(
+                    withdrawn["resolutionCommandId"],
+                    causalIdNode)
+                && JsonNode.DeepEquals(
+                    withdrawn["resolutionEventId"],
+                    eventIdNode)
+                && JsonNode.DeepEquals(
+                    withdrawn["resolutionDate"],
+                    resolutionDateNode);
+        }
+        catch (Exception exception) when (exception is JsonException
+            or NotSupportedException
+            or ArgumentException
+            or InvalidOperationException
+            or SimulationValidationException
             or OverflowException)
         {
             return false;
@@ -1700,6 +2077,89 @@ public sealed class SaveSchemaRegistry
         }
     }
 
+    private static bool HasExactSuccessionSupportCausality(JsonObject support)
+    {
+        try
+        {
+            EntityId supportId = support["supportId"]!.Deserialize<EntityId>(
+                CanonicalJson.Options);
+            EntityId subjectId = support["subjectId"]!.Deserialize<EntityId>(
+                CanonicalJson.Options);
+            EntityId supporterId = support["supporterId"]!.Deserialize<EntityId>(
+                CanonicalJson.Options);
+            EntityId supportedCandidateId = support["supportedCandidateId"]!
+                .Deserialize<EntityId>(CanonicalJson.Options);
+            CampaignDate declaredDate = support["declaredDate"]!
+                .Deserialize<CampaignDate>(CanonicalJson.Options);
+            long declaredTurnIndex = support["declaredTurnIndex"]!.GetValue<long>();
+            EntityId sourceCommandId = support["sourceCommandId"]!
+                .Deserialize<EntityId>(CanonicalJson.Options);
+            EntityId sourceEventId = support["sourceEventId"]!
+                .Deserialize<EntityId>(CanonicalJson.Options);
+            if (declaredTurnIndex < 0
+                || subjectId == supporterId
+                || subjectId == supportedCandidateId
+                || supporterId == supportedCandidateId
+                || sourceEventId
+                    != CharacterSuccessionIds.DeriveSupportActionEventId(
+                        declaredDate,
+                        sourceCommandId)
+                || supportId != CharacterSuccessionIds.DeriveSupportId(
+                    sourceEventId,
+                    subjectId,
+                    supporterId,
+                    supportedCandidateId))
+            {
+                return false;
+            }
+
+            if (HasEnumValue(support, "status", SuccessionSupportStatus.Active))
+            {
+                return true;
+            }
+
+            CampaignDate resolutionDate = support["resolutionDate"]!
+                .Deserialize<CampaignDate>(CanonicalJson.Options);
+            long resolutionTurnIndex = support["resolutionTurnIndex"]!.GetValue<long>();
+            EntityId resolutionCommandId = support["resolutionCommandId"]!
+                .Deserialize<EntityId>(CanonicalJson.Options);
+            EntityId resolutionEventId = support["resolutionEventId"]!
+                .Deserialize<EntityId>(CanonicalJson.Options);
+            return resolutionDate.CompareTo(declaredDate) >= 0
+                && resolutionTurnIndex >= declaredTurnIndex
+                && resolutionEventId
+                    == CharacterSuccessionIds.DeriveSupportActionEventId(
+                        resolutionDate,
+                        resolutionCommandId);
+        }
+        catch (Exception exception) when (exception is JsonException
+            or NotSupportedException
+            or ArgumentException
+            or InvalidOperationException
+            or OverflowException)
+        {
+            return false;
+        }
+    }
+
+    private static bool HasExactSuccessionSupportReplacementCausality(
+        JsonObject previous,
+        JsonObject replacement) =>
+        JsonNode.DeepEquals(previous["subjectId"], replacement["subjectId"])
+        && JsonNode.DeepEquals(previous["supporterId"], replacement["supporterId"])
+        && JsonNode.DeepEquals(
+            previous["resolutionDate"],
+            replacement["declaredDate"])
+        && JsonNode.DeepEquals(
+            previous["resolutionTurnIndex"],
+            replacement["declaredTurnIndex"])
+        && JsonNode.DeepEquals(
+            previous["resolutionCommandId"],
+            replacement["sourceCommandId"])
+        && JsonNode.DeepEquals(
+            previous["resolutionEventId"],
+            replacement["sourceEventId"]);
+
     private static bool IsTerminalHeirDesignation(
         JsonObject designation,
         HeirDesignationStatus expectedStatus) =>
@@ -1757,7 +2217,8 @@ public sealed class SaveSchemaRegistry
         JsonObject characterSuccessions,
         string context,
         int expectedSnapshotVersion = CharacterSuccessionContractVersions.Snapshot,
-        bool requireClaims = true)
+        bool requireClaims = true,
+        bool requireSupports = true)
     {
         if (!HasVersion(
                 characterSuccessions,
@@ -1766,7 +2227,10 @@ public sealed class SaveSchemaRegistry
             || characterSuccessions["history"] is not JsonArray history
             || (requireClaims
                 && (characterSuccessions["claims"] is not JsonArray
-                    || characterSuccessions["claimHistory"] is not JsonArray)))
+                    || characterSuccessions["claimHistory"] is not JsonArray))
+            || (requireSupports
+                && (characterSuccessions["supports"] is not JsonArray
+                    || characterSuccessions["supportHistory"] is not JsonArray)))
         {
             throw new SaveCompatibilityException(
                 $"{context} contains missing, null, or unsupported character-succession snapshot data.");
@@ -1838,7 +2302,42 @@ public sealed class SaveSchemaRegistry
                 || !HasObject(aggregate, "latestDate"))
             {
                 throw new SaveCompatibilityException(
-                    $"{context} contains missing, null, or malformed succession-claim history data.");
+                $"{context} contains missing, null, or malformed succession-claim history data.");
+            }
+        }
+
+        if (!requireSupports)
+        {
+            return;
+        }
+
+        JsonArray supports = characterSuccessions["supports"]!.AsArray();
+        foreach (JsonNode? node in supports)
+        {
+            if (node is not JsonObject support
+                || !IsCurrentSuccessionSupport(support)
+                || !HasExactSuccessionSupportTerminalShape(support))
+            {
+                throw new SaveCompatibilityException(
+                    $"{context} contains missing, null, or malformed succession-support record data.");
+            }
+        }
+
+        JsonArray supportHistory = characterSuccessions["supportHistory"]!.AsArray();
+        foreach (JsonNode? node in supportHistory)
+        {
+            if (node is not JsonObject aggregate
+                || !HasVersion(
+                    aggregate,
+                    CharacterSuccessionContractVersions.SupportHistory)
+                || !HasObject(aggregate, "subjectId")
+                || !HasLong(aggregate, "foldedReplacedCount")
+                || !HasLong(aggregate, "foldedWithdrawnCount")
+                || !HasObject(aggregate, "earliestDate")
+                || !HasObject(aggregate, "latestDate"))
+            {
+                throw new SaveCompatibilityException(
+                    $"{context} contains missing, null, or malformed succession-support history data.");
             }
         }
     }
@@ -1860,6 +2359,52 @@ public sealed class SaveSchemaRegistry
             && claim["withdrawalEventId"] is null;
         return isActive ? hasNoWithdrawalEvidence : isWithdrawn && hasWithdrawalEvidence;
     }
+
+    private static bool HasExactSuccessionSupportTerminalShape(JsonObject support)
+    {
+        bool isActive = HasEnumValue(
+            support,
+            "status",
+            SuccessionSupportStatus.Active);
+        bool isTerminal = HasEnumValue(
+                support,
+                "status",
+                SuccessionSupportStatus.Replaced)
+            || HasEnumValue(
+                support,
+                "status",
+                SuccessionSupportStatus.Withdrawn);
+        bool hasResolutionEvidence = support["resolutionDate"] is JsonObject
+            && support["resolutionTurnIndex"] is JsonValue
+            && support["resolutionCommandId"] is JsonObject
+            && support["resolutionEventId"] is JsonObject;
+        bool hasNoResolutionEvidence = support["resolutionDate"] is null
+            && support["resolutionTurnIndex"] is null
+            && support["resolutionCommandId"] is null
+            && support["resolutionEventId"] is null;
+        return isActive ? hasNoResolutionEvidence : isTerminal && hasResolutionEvidence;
+    }
+
+    private static bool IsCurrentSuccessionSupport(JsonObject support) =>
+        HasVersion(support, CharacterSuccessionContractVersions.SupportState)
+        && HasObject(support, "supportId")
+        && HasObject(support, "subjectId")
+        && HasObject(support, "supporterId")
+        && HasObject(support, "supportedCandidateId")
+        && !JsonNode.DeepEquals(support["subjectId"], support["supporterId"])
+        && !JsonNode.DeepEquals(support["subjectId"], support["supportedCandidateId"])
+        && !JsonNode.DeepEquals(
+            support["supporterId"],
+            support["supportedCandidateId"])
+        && HasObject(support, "declaredDate")
+        && HasLong(support, "declaredTurnIndex")
+        && HasObject(support, "sourceCommandId")
+        && HasObject(support, "sourceEventId")
+        && HasDefinedEnum<SuccessionSupportStatus>(support, "status")
+        && HasNullableObject(support, "resolutionDate")
+        && HasNullableLong(support, "resolutionTurnIndex")
+        && HasNullableObject(support, "resolutionCommandId")
+        && HasNullableObject(support, "resolutionEventId");
 
     private static bool IsCurrentHeirDesignation(JsonObject designation) =>
         HasVersion(designation, CharacterSuccessionContractVersions.State)
@@ -3109,6 +3654,47 @@ public sealed class SaveSchemaRegistry
             throw new SaveCompatibilityException(
                 $"Save schema 25 unexpectedly contains schema 26 succession-claim data in {description}.");
         }
+    }
+
+    private static void RejectF8Discriminators(JsonNode node, string description)
+    {
+        if (ContainsF8PropertyOrDiscriminator(node))
+        {
+            throw new SaveCompatibilityException(
+                $"Save schema 26 unexpectedly contains schema 27 succession-support data in {description}.");
+        }
+    }
+
+    private static bool ContainsF8PropertyOrDiscriminator(JsonNode? node)
+    {
+        if (node is JsonObject value)
+        {
+            string? discriminator = value["$type"]?.GetValue<string>();
+            if (discriminator is "character_succession_support_action.v1"
+                    or "character_succession_support_action_resolved.v1"
+                    or "declare_succession_support.v1"
+                    or "withdraw_succession_support.v1"
+                    or "succession_support_declared.v1"
+                    or "succession_support_replaced.v1"
+                    or "succession_support_withdrawn.v1"
+                || value.ContainsKey("supports")
+                || value.ContainsKey("supportHistory")
+                || value.ContainsKey("supportId")
+                || value.ContainsKey("supporterId")
+                || value.ContainsKey("supportedCandidateId")
+                || value.ContainsKey("expectedCurrentSupportId")
+                || value.ContainsKey("currentSupport")
+                || value.ContainsKey("previousSupport")
+                || value.ContainsKey("declaredDate")
+                || value.ContainsKey("declaredTurnIndex"))
+            {
+                return true;
+            }
+
+            return value.Any(property => ContainsF8PropertyOrDiscriminator(property.Value));
+        }
+
+        return node is JsonArray array && array.Any(ContainsF8PropertyOrDiscriminator);
     }
 
     private static bool ContainsF7PropertyOrDiscriminator(JsonNode? node)
@@ -4863,15 +5449,65 @@ public sealed class SaveMigrationV25ToV26 : ISaveMigration
                 "Schema 25 save contains incompatible character-succession version data.");
         }
 
-        successions["contractVersion"] = CharacterSuccessionContractVersions.Snapshot;
+        successions["contractVersion"] = 2;
         successions["claims"] = new JsonArray();
         successions["claimHistory"] = new JsonArray();
+        successionVersions[0]["version"] = 2;
+
+        WorldSnapshot migratedSnapshot =
+            SaveSchemaRegistry.DeserializeHistoricalSnapshotForChecksum(
+                snapshot,
+                ToSchemaVersion);
+        source["checksum"] = SimulationChecksum.ComputeForSaveSchema(
+            migratedSnapshot,
+            ToSchemaVersion).Value;
+        source["schemaVersion"] = ToSchemaVersion;
+        return source;
+    }
+}
+
+public sealed class SaveMigrationV26ToV27 : ISaveMigration
+{
+    public int FromSchemaVersion => 26;
+
+    public int ToSchemaVersion => 27;
+
+    public JsonObject Migrate(JsonObject source)
+    {
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(source, FromSchemaVersion);
+        JsonObject snapshot = source["snapshot"] as JsonObject
+            ?? throw new SaveCompatibilityException(
+                "Schema 26 save is missing its authoritative snapshot.");
+        JsonObject successions = snapshot["characterSuccessions"] as JsonObject
+            ?? throw new SaveCompatibilityException(
+                "Schema 26 save is missing its character-succession snapshot.");
+        JsonArray systemVersions = snapshot["systemVersions"] as JsonArray
+            ?? throw new SaveCompatibilityException(
+                "Schema 26 save is missing system-version data.");
+        JsonObject[] successionVersions = systemVersions
+            .OfType<JsonObject>()
+            .Where(version => version["systemId"]?.GetValue<string>()
+                == CharacterSuccessionSystem.SystemId)
+            .ToArray();
+        if (successions["contractVersion"]?.GetValue<int>() != 2
+            || successions.ContainsKey("supports")
+            || successions.ContainsKey("supportHistory")
+            || successionVersions.Length != 1
+            || successionVersions[0]["version"]?.GetValue<int>() != 2)
+        {
+            throw new SaveCompatibilityException(
+                "Schema 26 save contains incompatible character-succession version data.");
+        }
+
+        successions["contractVersion"] = CharacterSuccessionContractVersions.Snapshot;
+        successions["supports"] = new JsonArray();
+        successions["supportHistory"] = new JsonArray();
         successionVersions[0]["version"] = CharacterSuccessionSystem.Version;
 
         WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(
             SimulationJson.CreateOptions())
             ?? throw new SaveCompatibilityException(
-                "Migrated schema 26 snapshot is empty.");
+                "Migrated schema 27 snapshot is empty.");
         source["checksum"] = SimulationChecksum.Compute(migratedSnapshot).Value;
         source["schemaVersion"] = ToSchemaVersion;
         return source;

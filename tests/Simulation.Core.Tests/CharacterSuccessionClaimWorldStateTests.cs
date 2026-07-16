@@ -41,13 +41,13 @@ public sealed class CharacterSuccessionClaimWorldStateTests
             }),
         };
 
-        Assert.Equal(2, CharacterSuccessionContractVersions.Snapshot);
+        Assert.Equal(3, CharacterSuccessionContractVersions.Snapshot);
         Assert.Equal(1, CharacterSuccessionContractVersions.ClaimState);
         Assert.Equal(1, CharacterSuccessionContractVersions.ClaimHistory);
         Assert.Equal(1, CharacterSuccessionContractVersions.ClaimAction);
         Assert.Equal(1, CharacterSuccessionContractVersions.ClaimOutcome);
-        Assert.Equal(4, CharacterSuccessionContractVersions.AuthoritativeQuery);
-        Assert.Equal(2, CharacterSuccessionSystem.Version);
+        Assert.Equal(5, CharacterSuccessionContractVersions.AuthoritativeQuery);
+        Assert.Equal(3, CharacterSuccessionSystem.Version);
         Assert.Equal(claimId, claim.ClaimId);
         Assert.NotEqual(
             CharacterSuccessionIds.DeriveActionEventId(Date, commandId),

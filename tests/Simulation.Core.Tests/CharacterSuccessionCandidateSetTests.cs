@@ -36,10 +36,10 @@ public sealed class CharacterSuccessionCandidateSetTests(ITestOutputHelper outpu
         Assert.All(contracts, contract => Assert.False(
             typeof(ICampaignEventPayload).IsAssignableFrom(contract)));
         Assert.Equal(1, CharacterSuccessionContractVersions.CandidateSet);
-        Assert.Equal(4, CharacterSuccessionContractVersions.AuthoritativeQuery);
-        Assert.Equal(2, CharacterSuccessionContractVersions.Snapshot);
-        Assert.Equal(2, CharacterSuccessionSystem.Version);
-        Assert.Equal(26, SaveEnvelope.CurrentSchemaVersion);
+        Assert.Equal(5, CharacterSuccessionContractVersions.AuthoritativeQuery);
+        Assert.Equal(3, CharacterSuccessionContractVersions.Snapshot);
+        Assert.Equal(3, CharacterSuccessionSystem.Version);
+        Assert.Equal(27, SaveEnvelope.CurrentSchemaVersion);
     }
 
     [Fact]
@@ -471,10 +471,10 @@ public sealed class CharacterSuccessionCandidateSetTests(ITestOutputHelper outpu
         Assert.All(invalid.Issues, item => Assert.Equal(
             CharacterSuccessionContractVersions.CandidateSet,
             item.ContractVersion));
-        Assert.Equal(26, SaveEnvelope.CurrentSchemaVersion);
-        Assert.Equal(2, CharacterSuccessionSystem.Version);
+        Assert.Equal(27, SaveEnvelope.CurrentSchemaVersion);
+        Assert.Equal(3, CharacterSuccessionSystem.Version);
         Assert.Equal(
-            new SystemVersion(CharacterSuccessionSystem.SystemId, 2),
+            new SystemVersion(CharacterSuccessionSystem.SystemId, 3),
             world.CaptureSnapshot().SystemVersions.Single(item =>
                 item.SystemId == CharacterSuccessionSystem.SystemId));
     }

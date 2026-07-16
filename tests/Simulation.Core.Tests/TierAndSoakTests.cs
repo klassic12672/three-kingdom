@@ -44,9 +44,9 @@ public sealed class TierAndSoakTests
 
         Assert.True(result.Turns > 1_000);
         Assert.Equal(200, result.FinalDate.Year);
-        // SP-04F7 advances the default-empty character-succession snapshot/system
-        // contract to v2, changing only this synthetic workload's canonical representation.
-        Assert.Equal("938a0d74626ad92f7db136be3db844c457a3e2ca6a1ae3e038eef95d2f0e63b0", result.Checksum.Value);
+        // SP-04F8 advances the default-empty character-succession snapshot/system
+        // contract to v3, changing only this synthetic workload's canonical representation.
+        Assert.Equal("59010615a11abb51b4c1fe68c90627ac1d722891f1f0e0fe96e812a5a20df2e3", result.Checksum.Value);
     }
 
     [Theory]

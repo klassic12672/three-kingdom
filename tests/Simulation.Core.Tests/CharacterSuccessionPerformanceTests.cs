@@ -222,4 +222,117 @@ public sealed class CharacterSuccessionPerformanceTests
             + $"json_bytes={json.Length}; gzip_bytes={compressed.Length}; "
             + $"checksum={checksum.Value}");
     }
+
+    [Fact]
+    public void F815_ThousandCharacterFiveHundredSupportFixtureRecordsRawLocalPerformance()
+    {
+        const int characterCount = 1_000;
+        const int supportCount = 500;
+        const int subjectCount = 8;
+        CampaignDate date = new(200, 5, 10);
+        EntityId[] ids = Enumerable.Range(0, characterCount)
+            .Select(index => new EntityId($"character:perf/f8-{index:D4}"))
+            .ToArray();
+        CharacterDefinition[] definitions = ids.Select(id =>
+        {
+            EntityId nameKey = new($"loc:{id.Value.Replace(':', '/')}");
+            return new CharacterDefinition(
+                CharacterContractVersions.Definition,
+                id,
+                nameKey,
+                new CampaignDate(170, 1, 1),
+                [],
+                [],
+                [],
+                [],
+                [],
+                new StructuredCharacterName(nameKey, null),
+                CharacterContentOrigin.LegacyUnknown(id),
+                null,
+                null,
+                []);
+        }).ToArray();
+        CharacterWorldSnapshot characters = new(
+            CharacterContractVersions.Snapshot,
+            [],
+            definitions,
+            [],
+            [],
+            ids.Select(id => new CharacterState(
+                CharacterContractVersions.State,
+                id,
+                [],
+                [],
+                CharacterConditionState.Default,
+                [])).ToArray(),
+            [],
+            []);
+        CampaignSimulation simulation = new(WorldState.Create(
+            date,
+            20260716,
+            [],
+            GeographicWorldSnapshot.Empty,
+            characters));
+        for (int index = 0; index < supportCount; index++)
+        {
+            EntityId subjectId = ids[supportCount + index % subjectCount];
+            EntityId candidateId = ids[
+                supportCount + subjectCount
+                + index % (characterCount - supportCount - subjectCount)];
+            CampaignCommand command = CampaignCommand.Create(
+                new EntityId($"command:perf/f8-support-{index:D4}"),
+                ids[index],
+                date,
+                new CharacterSuccessionSupportActionCommandPayload(
+                    new DeclareSuccessionSupportAction(
+                        subjectId,
+                        candidateId,
+                        null)));
+            Assert.True(simulation.Submit(command).IsValid);
+        }
+
+        Stopwatch workflow = Stopwatch.StartNew();
+        IReadOnlyList<CampaignEvent> events = simulation.ResolveTurn();
+        workflow.Stop();
+        Stopwatch query = Stopwatch.StartNew();
+        int activeCount = Enumerable.Range(0, supportCount).Count(index =>
+            simulation.World.CharacterSuccessions.TryGetCurrentSupport(
+                ids[supportCount + index % subjectCount],
+                ids[index],
+                out SuccessionSupportState? support)
+            && support.Status == SuccessionSupportStatus.Active);
+        query.Stop();
+        Stopwatch snapshotChecksum = Stopwatch.StartNew();
+        WorldSnapshot snapshot = simulation.World.CaptureSnapshot();
+        SimulationChecksum checksum = SimulationChecksum.Compute(snapshot);
+        byte[] json = JsonSerializer.SerializeToUtf8Bytes(
+            snapshot,
+            SimulationJson.CreateOptions());
+        using MemoryStream compressed = new();
+        using (GZipStream gzip = new(
+                   compressed,
+                   CompressionLevel.SmallestSize,
+                   leaveOpen: true))
+        {
+            gzip.Write(json);
+        }
+
+        snapshotChecksum.Stop();
+
+        Assert.Equal(supportCount, events.Count);
+        Assert.All(events, item => Assert.IsType<SuccessionSupportDeclaredOutcome>(
+            Assert.IsType<CharacterSuccessionSupportActionResolvedEventPayload>(
+                item.Payload).Outcome));
+        Assert.Equal(supportCount, activeCount);
+        Assert.Equal(characterCount, snapshot.Characters.CharacterStates.Count);
+        Assert.Equal(supportCount, snapshot.CharacterSuccessions.Supports.Count);
+        Assert.Empty(snapshot.CharacterSuccessions.SupportHistory);
+        output.WriteLine(
+            $"f8_succession_support_raw characters={characterCount}; supports={supportCount}; "
+            + $"workflow_ms={workflow.Elapsed.TotalMilliseconds:F3}; "
+            + $"query_ms={query.Elapsed.TotalMilliseconds:F3}; "
+            + $"snapshot_checksum_ms={snapshotChecksum.Elapsed.TotalMilliseconds:F3}; "
+            + $"json_bytes={json.Length}; gzip_bytes={compressed.Length}; "
+            + $"checksum={checksum.Value}");
+    }
 }

@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — through SP-04F7 accepted |
+| Status | Active — through SP-04F7 accepted; SP-04F8 locally verified, hosted pending |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -1086,6 +1086,48 @@ The representative local Release fixture contains 1,000 characters and 500 indep
 Current local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. The exact `CharacterSuccession` Release filter passes 167/167 cases. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 1,077 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. Focused formatter verification, `git diff --check`, and `git lfs fsck` pass. Independent architecture, compatibility, simulation-engineer, and verification reviews approve F701–F715 with no remaining local blocker. Accepted revision `62e03b6e7d4a3965de4c97ed9b92e03b6d40fbe4` subsequently passed [hosted macOS arm64 and Windows x64 validation, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04F7-EXACT-SHA-62e03b6.md). F716 therefore passes and F7 is accepted.
 
 Precedence, deterministic resolution, spouse/collateral and missing-heir law, inheritance, regency, retinue/office/household effects, disputed support, player continuity, the full SP-04 three-second budget, and full SP-04 acceptance remain open.
+
+## Locally verified package: SP-04F8 neutral explicit succession support
+
+SP-04F8 is the smallest dependency-safe persistent package after accepted F7. It records one character's explicit support for one candidate in relation to one succession subject, without interpreting that statement as eligibility, claim recognition, strength, rank, precedence, selection, or effect. A separate character-issued Commands-phase `character_succession_support_action.v1` envelope registers `declare_succession_support.v1` and `withdraw_succession_support.v1`. The supporter must be a distinct, born, living, capable, free character. The distinct subject must exist and be born but may have any current life, incapacity, or custody condition. The distinct supported candidate must exist, be born, and be living at declaration or replacement, but may be a minor, incapacitated, detained, captive, or hostage.
+
+One active support record is allowed per ordered subject/supporter pair. Initial declaration requires no current record. Replacement requires the exact current support ID and a different candidate. Withdrawal also requires the exact current support ID. Re-declaration after withdrawal creates a new stable identity. `SuccessionSupportState` v1 records only subject, supporter, supported candidate, declaration evidence, `Active`/`Replaced`/`Withdrawn` status, and exact all-or-none resolution evidence. Later participant death, incapacity, or custody changes do not silently expire or rewrite retained support evidence.
+
+The snapshot/system advance to v3 and the authoritative query advances to v5. At most 64 active supports are retained per subject and per supporter. The newest 32 terminal supports per subject remain detailed; older replaced and withdrawn records fold in deterministic resolution turn/date/support-ID order into separate checked totals. Queries return the exact current subject/supporter record, active subject records, active records for one subject/candidate pair, recent subject records, and folded subject history as canonical defensive copies. Stable support event and record IDs use separate namespaced length-framed schemes and cannot reuse retained designation, claim, or support command/event roles except for the exact support-replacement predecessor/successor edge.
+
+Save schema 27 adds checksum-bearing `supports` and `supportHistory` arrays and advances `characterSuccessions` plus `simulation.character_succession` to version 3. The authenticated 26→27 migration accepts only exact F7 succession snapshot/system v2, preserves designation, claim, pending-command, diagnostic, and unrelated state, adds empty support collections, advances only the succession versions, and recomputes the destination checksum. Schema 26 rejects every F8 discriminator, support collection, unique property, snapshot v3, and succession system @3, including explicit null. Its checksum path upgrades only a deep clone for current DTO use and applies an exact inverse v3→v2 downgrade for historical authentication.
+
+The frozen exact-F7 schema-26 fixture was generated through public F7 succession and save workflows in a temporary detached worktree at accepted implementation revision `62e03b6e7d4a3965de4c97ed9b92e03b6d40fbe4`, then authenticated and stamped by that same revision with the exact source SHA in `gameVersion`. It is 23,266 bytes, has file SHA-256 `7292ba5554ced7bb98515ed7a99768121309966510e1225ab29f2c2f95920c7b`, stores checksum `ac324073ec1dbfe151894083064f14e1fc64864a34f4dc7db6710ce4d8951f8d`, retains four designation records, active and withdrawn claim evidence, one pending F7 withdrawal, and four resolved diagnostics.
+
+F8 adds no support weight, endorsement category, secrecy, coercion, eligibility, claim basis or recognition, precedence, successor selection, missing-heir policy, inherited support, automatic death/incapacity resolution, inheritance, regency, household/estate/wealth/office/title/faction/retinue effect, player continuity, content, localization, observer-filtered application query, UI, AI, or battle integration. No locked decision changes and no ADR is required.
+
+### SP-04F8 verification matrix
+
+| ID | Observable package criterion | Required evidence | Current classification |
+|---|---|---|---|
+| F801 | Accepted F7 dependency and the neutral factual-support boundary are dependency-safe and require no ADR | Source-of-truth and architecture review | Local pass |
+| F802 | Versioned support/action/outcome/query contracts and separate namespaced stable IDs are exact | Contract, JSON, reflection, and ID tests | Local pass |
+| F803 | Declare/replace/withdraw use registered Commands-phase command/events and one atomic exact-pair mutation | World-state and campaign workflow tests | Local pass |
+| F804 | Supporter agency and subject/candidate life, incapacity, custody, and minority permissions match the explicit boundary | Participant-condition matrix | Local pass |
+| F805 | Subject, supporter, and candidate are distinct, support is independent from designation/claim/eligibility, and no automatic effect is created | Participant and independence tests | Local pass |
+| F806 | Initial declaration, exact replacement, exact withdrawal, same-candidate rejection, and post-withdrawal re-declaration preserve exact lifecycle evidence | Lifecycle and identity tests | Local pass |
+| F807 | Duplicate/stale actions, priority/event ordering, replay, and submission order resolve deterministically | Race, tamper, and replay tests | Local pass |
+| F808 | Later participant death, incapacity, and custody changes do not silently rewrite retained evidence | Participant lifecycle-preservation tests | Local pass |
+| F809 | 64/64 active limits, 32 recent terminal records, deterministic dual-total folding, and checked overflow are atomic | Capacity, retention, and overflow tests | Local pass |
+| F810 | Pair-, subject-, and candidate-bounded queries plus snapshots are canonical, bounded, defensive, and input-order invariant | Query/copy/reorder tests | Local pass |
+| F811 | Checksums, pending/resolved saves, exact replanning, affected IDs, tamper rejection, and later-day continuation are exact | Campaign/save/tamper tests | Local pass |
+| F812 | The frozen exact-F7 schema-26 fixture authenticates, downgrades to its stored checksum, migrates minimally, and continues | Fixture identity and migration tests | Local pass |
+| F813 | Schema 26 rejects all F8 discriminators, support collections, unique properties, snapshot v3, and system @3 including explicit null | Historical raw-shape matrix | Local pass |
+| F814 | Schema 27 requires complete support/history shapes, exact action/outcome/event causality, exact affected IDs, and one succession @3 registration | Current raw-shape and restore tests | Local pass |
+| F815 | A representative 1,000-character/500-support workload records raw local measurements without a brittle threshold | Local Apple Silicon measurement | Local pass; no threshold |
+| F816 | Focused/full suites, validation, formatter, diff/LFS gates, and independent reviews pass | Local repository closeout | Local pass |
+| F817 | The exact implementation SHA passes hosted macOS arm64 and Windows x64 | Clean-checkout hosted CI and artifact evidence | Pending implementation SHA |
+
+The representative local Release fixture contains 1,000 characters and 500 independent active support records. A raw Apple Silicon run measured 2,424.992 ms for workflow, 1.291 ms for queries, and 452.011 ms for snapshot/checksum/JSON/gzip; snapshot JSON was 1,120,754 bytes, gzip was 68,678 bytes, and checksum was `e49973b2cf62609c1b4a87727aea4b42f9c740b92acb0887493b854d518505ea`. The test asserts shape and correctness without a wall-clock threshold. This component observation neither passes nor waives the full SP-04 three-second campaign-turn budget.
+
+Current local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. The exact `CharacterSuccession` Release filter passes 216/216 cases. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 1,126 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. Focused formatter verification, `git diff --check`, and `git lfs fsck` pass. The exact ten-year deterministic soak passes 1,044 turns to `0200-01-03` with checksum `59010615a11abb51b4c1fe68c90627ac1d722891f1f0e0fe96e812a5a20df2e3`. Independent architecture, compatibility, simulation-engineer, and final integrated verification reviews approve F801–F816 with no remaining local blocker. Exact-SHA hosted evidence remains pending.
+
+Precedence, deterministic resolution, spouse/collateral and missing-heir law, inheritance, regency, retinue/office/household effects, player continuity, the full SP-04 three-second budget, and full SP-04 acceptance remain open.
 
 ## Edge cases and failure handling
 

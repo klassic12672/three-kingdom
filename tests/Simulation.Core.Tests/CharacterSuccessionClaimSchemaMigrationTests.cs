@@ -45,14 +45,14 @@ public sealed class CharacterSuccessionClaimSchemaMigrationTests
 
         Assert.True(JsonNode.DeepEquals(original, source));
         Assert.Equal(sourceBytes, File.ReadAllBytes(path));
-        Assert.Equal(26, migrated["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(27, migrated["schemaVersion"]!.GetValue<int>());
         JsonObject beforeSnapshot = original["snapshot"]!.AsObject();
         JsonObject afterSnapshot = migrated["snapshot"]!.AsObject();
         AssertUnchangedSnapshotProperties(beforeSnapshot, afterSnapshot);
         JsonObject beforeSuccession = beforeSnapshot["characterSuccessions"]!.AsObject();
         JsonObject afterSuccession = afterSnapshot["characterSuccessions"]!.AsObject();
         Assert.Equal(1, beforeSuccession["contractVersion"]!.GetValue<int>());
-        Assert.Equal(2, afterSuccession["contractVersion"]!.GetValue<int>());
+        Assert.Equal(3, afterSuccession["contractVersion"]!.GetValue<int>());
         Assert.True(JsonNode.DeepEquals(
             beforeSuccession["designations"],
             afterSuccession["designations"]));
@@ -61,6 +61,8 @@ public sealed class CharacterSuccessionClaimSchemaMigrationTests
             afterSuccession["history"]));
         Assert.Empty(afterSuccession["claims"]!.AsArray());
         Assert.Empty(afterSuccession["claimHistory"]!.AsArray());
+        Assert.Empty(afterSuccession["supports"]!.AsArray());
+        Assert.Empty(afterSuccession["supportHistory"]!.AsArray());
         Assert.True(JsonNode.DeepEquals(
             original["diagnosticCommands"],
             migrated["diagnosticCommands"]));
@@ -68,7 +70,7 @@ public sealed class CharacterSuccessionClaimSchemaMigrationTests
             original["diagnosticEvents"],
             migrated["diagnosticEvents"]));
         Assert.Equal(1, SuccessionSystemVersion(beforeSnapshot));
-        Assert.Equal(2, SuccessionSystemVersion(afterSnapshot));
+        Assert.Equal(3, SuccessionSystemVersion(afterSnapshot));
 
         SaveEnvelope envelope = migrated.Deserialize<SaveEnvelope>(
             CanonicalJson.Options)!;

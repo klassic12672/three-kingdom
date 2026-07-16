@@ -475,6 +475,51 @@ public sealed class CampaignSimulation
                 }
 
                 break;
+            case CharacterSuccessionSupportActionCommandPayload successionSupportAction:
+                if (command.Phase != ResolutionPhase.Commands)
+                {
+                    issues.Add(new(
+                        "character_succession_support_phase",
+                        "Character-succession support actions must resolve in the Commands phase."));
+                }
+
+                CommandValidationResult successionSupportValidation =
+                    World.CharacterSuccessions.ValidateSupportAction(
+                        command.IssuingActor,
+                        successionSupportAction,
+                        command.IssuedDate,
+                        World.Calendar.TurnIndex);
+                AddIssues(successionSupportValidation, issues);
+                if (successionSupportValidation.IsValid
+                    && command.CommandId.IsValid
+                    && command.IssuedDate.IsValid)
+                {
+                    try
+                    {
+                        EntityId eventId =
+                            CharacterSuccessionIds.DeriveSupportActionEventId(
+                                command.IssuedDate,
+                                command.CommandId);
+                        _ = World.CharacterSuccessions.PlanSupportAction(
+                            command.IssuingActor,
+                            successionSupportAction,
+                            command.IssuedDate,
+                            World.Calendar.TurnIndex,
+                            command.CommandId,
+                            eventId);
+                    }
+                    catch (Exception exception) when (exception
+                        is SimulationValidationException
+                        or ArgumentException
+                        or OverflowException)
+                    {
+                        issues.Add(new(
+                            "invalid_character_succession_support_action",
+                            exception.Message));
+                    }
+                }
+
+                break;
             case HouseholdDecisionCommandPayload householdDecision:
                 if (command.Phase != ResolutionPhase.Commands)
                 {
@@ -898,6 +943,36 @@ public sealed class CampaignSimulation
                     }
 
                     break;
+                case CharacterSuccessionSupportActionCommandPayload successionSupportAction:
+                    try
+                    {
+                        EntityId successionSupportEventId = GetEventId(command);
+                        CharacterSuccessionSupportActionResolvedEventPayload
+                            resolvedSupportAction =
+                                World.CharacterSuccessions.PlanSupportAction(
+                                    command.IssuingActor,
+                                    successionSupportAction,
+                                    date,
+                                    World.Calendar.TurnIndex,
+                                    command.CommandId,
+                                    successionSupportEventId);
+                        payload = resolvedSupportAction;
+                        affected =
+                            WorldState.GetCharacterSuccessionSupportActionAffectedIds(
+                                resolvedSupportAction);
+                    }
+                    catch (Exception exception) when (exception
+                        is SimulationValidationException
+                        or ArgumentException
+                        or OverflowException)
+                    {
+                        payload = new CommandCancelledEventPayload(
+                            "command_invalidated",
+                            exception.Message);
+                        affected = [];
+                    }
+
+                    break;
                 default:
                     throw new SimulationValidationException($"Unregistered command payload '{command.Payload.GetType().Name}'.");
             }
@@ -956,6 +1031,7 @@ public sealed class CampaignSimulation
             or HouseholdDecisionCommandPayload
             or CharacterSuccessionActionCommandPayload
             or CharacterSuccessionClaimActionCommandPayload
+            or CharacterSuccessionSupportActionCommandPayload
             ? World.Characters.TryGetCharacterProfile(command.IssuingActor, out _)
             : World.TryGetEntity(command.IssuingActor, out _);
     }
@@ -1024,6 +1100,13 @@ public sealed class CampaignSimulation
         if (command.Payload is CharacterSuccessionClaimActionCommandPayload)
         {
             return CharacterSuccessionIds.DeriveClaimActionEventId(
+                command.IssuedDate,
+                command.CommandId);
+        }
+
+        if (command.Payload is CharacterSuccessionSupportActionCommandPayload)
+        {
+            return CharacterSuccessionIds.DeriveSupportActionEventId(
                 command.IssuedDate,
                 command.CommandId);
         }

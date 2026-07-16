@@ -32,7 +32,7 @@ public sealed class CharacterSuccessionSchemaMigrationTests
 
         JsonObject migrated = new SaveSchemaRegistry().MigrateToCurrent(source);
 
-        Assert.Equal(26, migrated["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(27, migrated["schemaVersion"]!.GetValue<int>());
         Assert.True(JsonNode.DeepEquals(original, source));
         Assert.Equal(sourceBytes, File.ReadAllBytes(path));
         JsonObject migratedSnapshot = migrated["snapshot"]!.AsObject();

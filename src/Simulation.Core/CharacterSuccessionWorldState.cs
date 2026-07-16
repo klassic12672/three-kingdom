@@ -14,6 +14,11 @@ public sealed class CharacterSuccessionWorldState
     private readonly Dictionary<(EntityId Subject, EntityId Claimant), EntityId>
         activeClaimByPair = [];
     private readonly SortedDictionary<EntityId, SuccessionClaimHistoryAggregate> claimHistory = [];
+    private readonly SortedDictionary<EntityId, SuccessionSupportState> supports = [];
+    private readonly Dictionary<(EntityId Subject, EntityId Supporter), EntityId>
+        activeSupportByPair = [];
+    private readonly SortedDictionary<EntityId, SuccessionSupportHistoryAggregate>
+        supportHistory = [];
     private CampaignCalendar calendar;
 
     public CharacterSuccessionWorldState(
@@ -37,6 +42,8 @@ public sealed class CharacterSuccessionWorldState
         AddHistory(snapshot.History);
         AddClaims(snapshot.Claims);
         AddClaimHistory(snapshot.ClaimHistory);
+        AddSupports(snapshot.Supports);
+        AddSupportHistory(snapshot.SupportHistory);
         ValidateRetentionBounds();
     }
 
@@ -141,6 +148,82 @@ public sealed class CharacterSuccessionWorldState
         if (claimHistory.TryGetValue(
                 subjectCharacterId,
                 out SuccessionClaimHistoryAggregate? stored))
+        {
+            aggregate = Clone(stored);
+            return true;
+        }
+
+        aggregate = null;
+        return false;
+    }
+
+    public bool TryGetCurrentSupport(
+        EntityId subjectId,
+        EntityId supporterId,
+        [NotNullWhen(true)] out SuccessionSupportState? support)
+    {
+        RequireCharacter(subjectId, "Succession-support query subject");
+        RequireCharacter(supporterId, "Succession-support query supporter");
+        if (activeSupportByPair.TryGetValue(
+                (subjectId, supporterId),
+                out EntityId supportId))
+        {
+            support = Clone(supports[supportId]);
+            return true;
+        }
+
+        support = null;
+        return false;
+    }
+
+    public IReadOnlyList<SuccessionSupportState> GetActiveSupportsForSubject(
+        EntityId subjectId)
+    {
+        RequireCharacter(subjectId, "Succession-support query subject");
+        return supports.Values
+            .Where(item => item.SubjectId == subjectId
+                && item.Status == SuccessionSupportStatus.Active)
+            .OrderBy(item => item.SupportId)
+            .Select(Clone)
+            .ToArray();
+    }
+
+    public IReadOnlyList<SuccessionSupportState> GetActiveSupportsForCandidate(
+        EntityId subjectId,
+        EntityId supportedCandidateId)
+    {
+        RequireCharacter(subjectId, "Succession-support query subject");
+        RequireCharacter(
+            supportedCandidateId,
+            "Succession-support query supported candidate");
+        return supports.Values
+            .Where(item => item.SubjectId == subjectId
+                && item.SupportedCandidateId == supportedCandidateId
+                && item.Status == SuccessionSupportStatus.Active)
+            .OrderBy(item => item.SupportId)
+            .Select(Clone)
+            .ToArray();
+    }
+
+    public IReadOnlyList<SuccessionSupportState> GetRecentSupportRecordsForSubject(
+        EntityId subjectId)
+    {
+        RequireCharacter(subjectId, "Succession-support query subject");
+        return supports.Values
+            .Where(item => item.SubjectId == subjectId)
+            .OrderBy(item => item.SupportId)
+            .Select(Clone)
+            .ToArray();
+    }
+
+    public bool TryGetSupportHistory(
+        EntityId subjectId,
+        [NotNullWhen(true)] out SuccessionSupportHistoryAggregate? aggregate)
+    {
+        RequireCharacter(subjectId, "Succession-support history query subject");
+        if (supportHistory.TryGetValue(
+                subjectId,
+                out SuccessionSupportHistoryAggregate? stored))
         {
             aggregate = Clone(stored);
             return true;
@@ -380,7 +463,9 @@ public sealed class CharacterSuccessionWorldState
         designations.Values.Select(Clone).ToArray(),
         history.Values.Select(Clone).ToArray(),
         claims.Values.Select(Clone).ToArray(),
-        claimHistory.Values.Select(Clone).ToArray());
+        claimHistory.Values.Select(Clone).ToArray(),
+        supports.Values.Select(Clone).ToArray(),
+        supportHistory.Values.Select(Clone).ToArray());
 
     private bool ValidateEligibilityRule(
         SuccessionCandidateEligibilityRule? rule,
@@ -986,6 +1071,164 @@ public sealed class CharacterSuccessionWorldState
         return new CharacterSuccessionWorldUpdatePlan(candidate);
     }
 
+    public CommandValidationResult ValidateSupportAction(
+        EntityId actingCharacterId,
+        CharacterSuccessionSupportActionCommandPayload payload,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex)
+    {
+        List<ValidationIssue> issues = [];
+        ValidateSupportActionEnvelope(
+            actingCharacterId,
+            payload,
+            resolutionDate,
+            authoritativeTurnIndex,
+            issues);
+        return issues.Count == 0 ? CommandValidationResult.Valid : new(false, issues);
+    }
+
+    public CharacterSuccessionSupportActionResolvedEventPayload PlanSupportAction(
+        EntityId actingCharacterId,
+        CharacterSuccessionSupportActionCommandPayload payload,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        List<ValidationIssue> issues = [];
+        ValidateSupportActionEnvelope(
+            actingCharacterId,
+            payload,
+            resolutionDate,
+            authoritativeTurnIndex,
+            issues);
+        ThrowIfInvalid(issues);
+        ValidateId(commandId, "Succession-support command ID");
+        ValidateId(eventId, "Succession-support event ID");
+        if (eventId != CharacterSuccessionIds.DeriveSupportActionEventId(
+                resolutionDate,
+                commandId))
+        {
+            throw new SimulationValidationException(
+                $"Succession-support event ID '{eventId}' does not match command '{commandId}'.");
+        }
+
+        if (HasRetainedLifecycleIdentity(commandId)
+            || HasRetainedLifecycleIdentity(eventId))
+        {
+            throw new SimulationValidationException(
+                $"Succession-support command/event identity '{commandId}'/'{eventId}' is already retained.");
+        }
+
+        ICharacterSuccessionSupportActionOutcome outcome = payload.Action switch
+        {
+            DeclareSuccessionSupportAction declaration
+                when GetStoredCurrentSupport(
+                    declaration.SubjectId,
+                    actingCharacterId) is null =>
+                new SuccessionSupportDeclaredOutcome(CreateActiveSupport(
+                    declaration.SubjectId,
+                    actingCharacterId,
+                    declaration.SupportedCandidateId,
+                    resolutionDate,
+                    authoritativeTurnIndex,
+                    commandId,
+                    eventId)),
+            DeclareSuccessionSupportAction declaration =>
+                new SuccessionSupportReplacedOutcome(
+                    ResolveSupport(
+                        GetStoredCurrentSupport(
+                            declaration.SubjectId,
+                            actingCharacterId)!,
+                        SuccessionSupportStatus.Replaced,
+                        resolutionDate,
+                        authoritativeTurnIndex,
+                        commandId,
+                        eventId),
+                    CreateActiveSupport(
+                        declaration.SubjectId,
+                        actingCharacterId,
+                        declaration.SupportedCandidateId,
+                        resolutionDate,
+                        authoritativeTurnIndex,
+                        commandId,
+                        eventId)),
+            WithdrawSuccessionSupportAction withdrawal =>
+                new SuccessionSupportWithdrawnOutcome(ResolveSupport(
+                    GetStoredCurrentSupport(
+                        withdrawal.SubjectId,
+                        actingCharacterId)!,
+                    SuccessionSupportStatus.Withdrawn,
+                    resolutionDate,
+                    authoritativeTurnIndex,
+                    commandId,
+                    eventId)),
+            _ => throw new SimulationValidationException(
+                "Unsupported succession-support action type."),
+        };
+
+        return new CharacterSuccessionSupportActionResolvedEventPayload(
+            actingCharacterId,
+            Clone(payload.Action),
+            Clone(outcome));
+    }
+
+    public void PrevalidateSupportOutcome(
+        CharacterSuccessionSupportActionResolvedEventPayload payload,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId) => _ = PrepareSupportOutcome(
+            payload,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+
+    internal CharacterSuccessionWorldUpdatePlan PrepareSupportOutcome(
+        CharacterSuccessionSupportActionResolvedEventPayload payload,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (payload is null)
+        {
+            throw new SimulationValidationException(
+                "Succession-support action outcome payload cannot be null.");
+        }
+
+        CharacterSuccessionSupportActionResolvedEventPayload expected =
+            PlanSupportAction(
+                payload.ActingCharacterId,
+                new CharacterSuccessionSupportActionCommandPayload(payload.Action),
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId,
+                eventId);
+        string expectedJson = JsonSerializer.Serialize(
+            expected,
+            SimulationJson.CreateOptions());
+        string actualJson = JsonSerializer.Serialize(
+            payload,
+            SimulationJson.CreateOptions());
+        if (!StringComparer.Ordinal.Equals(expectedJson, actualJson))
+        {
+            throw new SimulationValidationException(
+                "Succession-support action outcome does not match the exact deterministic plan.");
+        }
+
+        CampaignCalendar candidateCalendar = new(
+            resolutionDate.CompareTo(calendar.Date) > 0 ? resolutionDate : calendar.Date,
+            Math.Max(calendar.TurnIndex, authoritativeTurnIndex));
+        CharacterSuccessionWorldState candidate = new(
+            CaptureSnapshot(),
+            characters,
+            candidateCalendar);
+        candidate.CommitSupportOutcome(payload.Outcome);
+        return new CharacterSuccessionWorldUpdatePlan(candidate);
+    }
+
     internal void ApplyPrepared(CharacterSuccessionWorldUpdatePlan plan)
     {
         if (plan?.Candidate is null)
@@ -1040,6 +1283,152 @@ public sealed class CharacterSuccessionWorldState
 
         EnforceClaimRetentionBound(subjectCharacterId);
         ValidateRetentionBounds();
+    }
+
+    private void CommitSupportOutcome(ICharacterSuccessionSupportActionOutcome outcome)
+    {
+        EntityId subjectId;
+        switch (outcome)
+        {
+            case SuccessionSupportDeclaredOutcome declared:
+                AddActiveSupport(declared.CurrentSupport);
+                subjectId = declared.CurrentSupport.SubjectId;
+                break;
+            case SuccessionSupportReplacedOutcome replaced:
+                ReplaceActiveSupport(replaced.PreviousSupport);
+                AddActiveSupport(replaced.CurrentSupport);
+                subjectId = replaced.CurrentSupport.SubjectId;
+                break;
+            case SuccessionSupportWithdrawnOutcome withdrawn:
+                ReplaceActiveSupport(withdrawn.PreviousSupport);
+                subjectId = withdrawn.PreviousSupport.SubjectId;
+                break;
+            default:
+                throw new SimulationValidationException(
+                    "Unsupported succession-support outcome type.");
+        }
+
+        EnforceSupportRetentionBound(subjectId);
+        ValidateRetentionBounds();
+    }
+
+    private void AddActiveSupport(SuccessionSupportState support)
+    {
+        ValidateSupport(support);
+        if (support.Status != SuccessionSupportStatus.Active
+            || !supports.TryAdd(support.SupportId, Clone(support))
+            || !activeSupportByPair.TryAdd(
+                (support.SubjectId, support.SupporterId),
+                support.SupportId))
+        {
+            throw new SimulationValidationException(
+                $"Succession support '{support.SupportId}' cannot become active.");
+        }
+
+        if (supports.Values.Count(item =>
+                item.SubjectId == support.SubjectId
+                && item.Status == SuccessionSupportStatus.Active)
+                > CharacterSuccessionLimits.MaximumActiveSupportsPerSubject
+            || supports.Values.Count(item =>
+                item.SupporterId == support.SupporterId
+                && item.Status == SuccessionSupportStatus.Active)
+                > CharacterSuccessionLimits.MaximumActiveSupportsPerSupporter)
+        {
+            throw new SimulationValidationException(
+                "Succession-support active capacity was exceeded.");
+        }
+    }
+
+    private void ReplaceActiveSupport(SuccessionSupportState terminal)
+    {
+        ValidateSupport(terminal);
+        (EntityId Subject, EntityId Supporter) pair = (
+            terminal.SubjectId,
+            terminal.SupporterId);
+        if (terminal.Status == SuccessionSupportStatus.Active
+            || !activeSupportByPair.TryGetValue(pair, out EntityId activeId)
+            || activeId != terminal.SupportId
+            || !supports.ContainsKey(activeId))
+        {
+            throw new SimulationValidationException(
+                $"Succession support '{terminal.SupportId}' is not the exact active record.");
+        }
+
+        supports[activeId] = Clone(terminal);
+        activeSupportByPair.Remove(pair);
+    }
+
+    private void EnforceSupportRetentionBound(EntityId subjectId)
+    {
+        while (supports.Values.Count(item =>
+                   item.SubjectId == subjectId
+                   && item.Status != SuccessionSupportStatus.Active)
+               > CharacterSuccessionLimits.RecentTerminalSupportsPerSubject)
+        {
+            SuccessionSupportState[] records = supports.Values
+                .Where(item => item.SubjectId == subjectId)
+                .ToArray();
+            SuccessionSupportState evicted = records
+                .Where(item => item.Status != SuccessionSupportStatus.Active
+                    && !records.Any(predecessor => IsExactSupportSuccessor(
+                        predecessor,
+                        item)))
+                .OrderBy(item => item.ResolutionTurnIndex)
+                .ThenBy(item => item.ResolutionDate)
+                .ThenBy(item => item.SupportId)
+                .FirstOrDefault()
+                ?? throw new SimulationValidationException(
+                    $"Succession-support lifecycle for '{subjectId}' has no foldable root record.");
+            FoldSupport(evicted);
+            supports.Remove(evicted.SupportId);
+        }
+    }
+
+    private void FoldSupport(SuccessionSupportState support)
+    {
+        CampaignDate resolutionDate = support.ResolutionDate
+            ?? throw new SimulationValidationException(
+                "Terminal succession support is missing its resolution date.");
+        SuccessionSupportHistoryAggregate aggregate = supportHistory.TryGetValue(
+            support.SubjectId,
+            out SuccessionSupportHistoryAggregate? stored)
+            ? stored
+            : new(
+                CharacterSuccessionContractVersions.SupportHistory,
+                support.SubjectId,
+                0,
+                0,
+                resolutionDate,
+                resolutionDate);
+        try
+        {
+            aggregate = support.Status switch
+            {
+                SuccessionSupportStatus.Replaced => aggregate with
+                {
+                    FoldedReplacedCount = checked(aggregate.FoldedReplacedCount + 1),
+                },
+                SuccessionSupportStatus.Withdrawn => aggregate with
+                {
+                    FoldedWithdrawnCount = checked(aggregate.FoldedWithdrawnCount + 1),
+                },
+                _ => throw new SimulationValidationException(
+                    "Only terminal succession supports can be folded."),
+            };
+            aggregate = aggregate with
+            {
+                EarliestDate = Earlier(aggregate.EarliestDate, resolutionDate),
+                LatestDate = Later(aggregate.LatestDate, resolutionDate),
+            };
+            _ = aggregate.TotalFoldedCount;
+        }
+        catch (OverflowException exception)
+        {
+            throw new SimulationValidationException(
+                $"Succession-support history for '{support.SubjectId}' exceeds Int64 capacity: {exception.Message}");
+        }
+
+        supportHistory[support.SubjectId] = aggregate;
     }
 
     private void AddActiveClaim(SuccessionClaimState claim)
@@ -1515,6 +1904,277 @@ public sealed class CharacterSuccessionWorldState
         }
     }
 
+    private void ValidateSupportActionEnvelope(
+        EntityId actingCharacterId,
+        CharacterSuccessionSupportActionCommandPayload? payload,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        ICollection<ValidationIssue> issues)
+    {
+        if (!resolutionDate.IsValid)
+        {
+            issues.Add(new(
+                "invalid_resolution_date",
+                "Succession-support resolution date is invalid."));
+        }
+        else if (resolutionDate.CompareTo(calendar.Date) < 0)
+        {
+            issues.Add(new(
+                "past_resolution_date",
+                "Succession-support resolution date precedes succession state."));
+        }
+
+        if (authoritativeTurnIndex < calendar.TurnIndex)
+        {
+            issues.Add(new(
+                "past_turn_index",
+                "Succession-support action turn precedes succession state."));
+        }
+
+        AuthoritativeCharacterProfile? supporter = ValidateSupportParticipant(
+            actingCharacterId,
+            resolutionDate,
+            "supporter",
+            issues,
+            requireAgency: true,
+            requireLiving: true);
+        if (payload?.Action is null)
+        {
+            issues.Add(new(
+                "invalid_payload",
+                "Character-succession support action cannot be null."));
+            return;
+        }
+
+        EntityId subjectId = payload.Action switch
+        {
+            DeclareSuccessionSupportAction declaration => declaration.SubjectId,
+            WithdrawSuccessionSupportAction withdrawal => withdrawal.SubjectId,
+            _ => default,
+        };
+        AuthoritativeCharacterProfile? subject = ValidateSupportParticipant(
+            subjectId,
+            resolutionDate,
+            "subject",
+            issues,
+            requireAgency: false,
+            requireLiving: false);
+        SuccessionSupportState? current = actingCharacterId.IsValid
+            && subjectId.IsValid
+                ? GetStoredCurrentSupport(subjectId, actingCharacterId)
+                : null;
+
+        switch (payload.Action)
+        {
+            case DeclareSuccessionSupportAction declaration:
+                AuthoritativeCharacterProfile? candidate = ValidateSupportParticipant(
+                    declaration.SupportedCandidateId,
+                    resolutionDate,
+                    "supported_candidate",
+                    issues,
+                    requireAgency: false,
+                    requireLiving: true);
+                if (supporter is not null
+                    && subject is not null
+                    && actingCharacterId == subjectId)
+                {
+                    issues.Add(new(
+                        "supporter_is_subject",
+                        "A succession-support supporter must differ from the subject."));
+                }
+
+                if (supporter is not null
+                    && candidate is not null
+                    && actingCharacterId == declaration.SupportedCandidateId)
+                {
+                    issues.Add(new(
+                        "supporter_is_candidate",
+                        "A succession-support supporter cannot support themself."));
+                }
+
+                if (subject is not null
+                    && candidate is not null
+                    && subjectId == declaration.SupportedCandidateId)
+                {
+                    issues.Add(new(
+                        "subject_is_candidate",
+                        "A succession-support candidate must differ from the subject."));
+                }
+
+                ValidateExpectedCurrentSupport(
+                    declaration.ExpectedCurrentSupportId,
+                    current,
+                    issues);
+                if (current?.SupportedCandidateId
+                    == declaration.SupportedCandidateId)
+                {
+                    issues.Add(new(
+                        "succession_support_candidate_unchanged",
+                        "The requested candidate is already the current succession support."));
+                }
+
+                if (current is null)
+                {
+                    if (supports.Values.Count(item =>
+                            item.SubjectId == subjectId
+                            && item.Status == SuccessionSupportStatus.Active)
+                        >= CharacterSuccessionLimits.MaximumActiveSupportsPerSubject)
+                    {
+                        issues.Add(new(
+                            "succession_support_subject_capacity",
+                            "The subject has reached the active succession-support capacity."));
+                    }
+
+                    if (supports.Values.Count(item =>
+                            item.SupporterId == actingCharacterId
+                            && item.Status == SuccessionSupportStatus.Active)
+                        >= CharacterSuccessionLimits.MaximumActiveSupportsPerSupporter)
+                    {
+                        issues.Add(new(
+                            "succession_support_supporter_capacity",
+                            "The supporter has reached the active succession-support capacity."));
+                    }
+                }
+                else
+                {
+                    ValidateSupportFoldCapacity(
+                        current,
+                        SuccessionSupportStatus.Replaced,
+                        resolutionDate,
+                        authoritativeTurnIndex,
+                        issues);
+                }
+
+                break;
+            case WithdrawSuccessionSupportAction withdrawal:
+                if (!withdrawal.ExpectedCurrentSupportId.IsValid)
+                {
+                    issues.Add(new(
+                        "invalid_expected_succession_support",
+                        "Succession-support withdrawal requires a valid expected current support ID."));
+                }
+
+                if (current?.SupportId != withdrawal.ExpectedCurrentSupportId)
+                {
+                    issues.Add(new(
+                        "stale_succession_support",
+                        "Expected current succession support does not match authoritative state."));
+                }
+
+                if (current is not null)
+                {
+                    ValidateSupportFoldCapacity(
+                        current,
+                        SuccessionSupportStatus.Withdrawn,
+                        resolutionDate,
+                        authoritativeTurnIndex,
+                        issues);
+                }
+
+                break;
+            default:
+                issues.Add(new(
+                    "unsupported_character_succession_support_action",
+                    "Only declare_succession_support.v1 and withdraw_succession_support.v1 are registered."));
+                break;
+        }
+    }
+
+    private void ValidateSupportFoldCapacity(
+        SuccessionSupportState current,
+        SuccessionSupportStatus terminalStatus,
+        CampaignDate resolutionDate,
+        long resolutionTurnIndex,
+        ICollection<ValidationIssue> issues)
+    {
+        SuccessionSupportState[] existingTerminal = supports.Values
+            .Where(item => item.SubjectId == current.SubjectId
+                && item.Status != SuccessionSupportStatus.Active)
+            .ToArray();
+        if (existingTerminal.Length
+            < CharacterSuccessionLimits.RecentTerminalSupportsPerSubject)
+        {
+            return;
+        }
+
+        SuccessionSupportState pendingTerminal = current with
+        {
+            Status = terminalStatus,
+            ResolutionDate = resolutionDate,
+            ResolutionTurnIndex = resolutionTurnIndex,
+        };
+        SuccessionSupportState[] candidateRecords = supports.Values
+            .Where(item => item.SubjectId == current.SubjectId
+                && item.SupportId != current.SupportId)
+            .Append(pendingTerminal)
+            .ToArray();
+        SuccessionSupportState evicted = candidateRecords
+            .Where(item => item.Status != SuccessionSupportStatus.Active
+                && !candidateRecords.Any(predecessor => IsExactSupportSuccessor(
+                    predecessor,
+                    item)))
+            .OrderBy(item => item.ResolutionTurnIndex)
+            .ThenBy(item => item.ResolutionDate)
+            .ThenBy(item => item.SupportId)
+            .FirstOrDefault()
+            ?? throw new SimulationValidationException(
+                "Succession-support lifecycle has no foldable root record.");
+        SuccessionSupportHistoryAggregate aggregate = supportHistory.TryGetValue(
+            current.SubjectId,
+            out SuccessionSupportHistoryAggregate? stored)
+            ? stored
+            : new(
+                CharacterSuccessionContractVersions.SupportHistory,
+                current.SubjectId,
+                0,
+                0,
+                evicted.ResolutionDate!.Value,
+                evicted.ResolutionDate.Value);
+        try
+        {
+            long replaced = checked(aggregate.FoldedReplacedCount
+                + (evicted.Status == SuccessionSupportStatus.Replaced ? 1 : 0));
+            long withdrawn = checked(aggregate.FoldedWithdrawnCount
+                + (evicted.Status == SuccessionSupportStatus.Withdrawn ? 1 : 0));
+            _ = checked(replaced + withdrawn);
+        }
+        catch (OverflowException)
+        {
+            issues.Add(new(
+                "succession_support_history_overflow",
+                "Succession-support history cannot fold another terminal record without exceeding Int64 capacity."));
+        }
+    }
+
+    private static void ValidateExpectedCurrentSupport(
+        EntityId? expectedCurrentSupportId,
+        SuccessionSupportState? current,
+        ICollection<ValidationIssue> issues)
+    {
+        if (expectedCurrentSupportId is EntityId expected && !expected.IsValid)
+        {
+            issues.Add(new(
+                "invalid_expected_succession_support",
+                "Expected current succession-support ID is invalid."));
+            return;
+        }
+
+        if (expectedCurrentSupportId is null && current is null)
+        {
+            return;
+        }
+
+        if (expectedCurrentSupportId is EntityId exact
+            && current?.SupportId == exact)
+        {
+            return;
+        }
+
+        issues.Add(new(
+            "stale_succession_support",
+            "Expected current succession support does not match authoritative state."));
+    }
+
     private void ValidateFoldCapacity(
         HeirDesignationState current,
         HeirDesignationStatus terminalStatus,
@@ -1713,6 +2373,65 @@ public sealed class CharacterSuccessionWorldState
         return profile;
     }
 
+    private AuthoritativeCharacterProfile? ValidateSupportParticipant(
+        EntityId characterId,
+        CampaignDate resolutionDate,
+        string role,
+        ICollection<ValidationIssue> issues,
+        bool requireAgency,
+        bool requireLiving)
+    {
+        if (!characterId.IsValid)
+        {
+            issues.Add(new(
+                $"invalid_{role}",
+                $"Succession-support {role} ID is invalid."));
+            return null;
+        }
+
+        if (!characters.TryGetCharacterProfile(
+                characterId,
+                out AuthoritativeCharacterProfile? profile))
+        {
+            issues.Add(new(
+                $"unknown_{role}",
+                $"Succession-support {role} '{characterId}' does not exist."));
+            return null;
+        }
+
+        if (resolutionDate.IsValid && profile.BirthDate.CompareTo(resolutionDate) > 0)
+        {
+            issues.Add(new(
+                $"{role}_not_born",
+                $"Succession-support {role} is not born by resolution."));
+        }
+
+        if (requireLiving
+            && profile.Condition.VitalStatus != CharacterVitalStatus.Alive)
+        {
+            issues.Add(new(
+                $"{role}_dead",
+                $"Succession-support {role} is dead."));
+        }
+
+        if (requireAgency && profile.Condition.IsIncapacitated)
+        {
+            issues.Add(new(
+                "supporter_incapacitated",
+                "Succession-support supporter is incapacitated."));
+        }
+
+        if (requireAgency
+            && profile.Condition.CustodyStatus != CharacterCustodyStatus.Free)
+        {
+            issues.Add(new(
+                "supporter_not_free",
+                "Succession-support supporter is not free to act."));
+        }
+
+        return profile;
+    }
+
     private void AddDesignations(IReadOnlyList<HeirDesignationState> source)
     {
         foreach (HeirDesignationState designation in source)
@@ -1854,6 +2573,77 @@ public sealed class CharacterSuccessionWorldState
         }
     }
 
+    private void AddSupports(IReadOnlyList<SuccessionSupportState> source)
+    {
+        foreach (SuccessionSupportState support in source)
+        {
+            ValidateSupport(support);
+            if (!supports.TryAdd(support.SupportId, Clone(support)))
+            {
+                throw new SimulationValidationException(
+                    $"Duplicate succession support '{support.SupportId}'.");
+            }
+
+            if (support.Status == SuccessionSupportStatus.Active
+                && !activeSupportByPair.TryAdd(
+                    (support.SubjectId, support.SupporterId),
+                    support.SupportId))
+            {
+                throw new SimulationValidationException(
+                    $"Supporter '{support.SupporterId}' has multiple active succession supports for '{support.SubjectId}'.");
+            }
+        }
+    }
+
+    private void AddSupportHistory(
+        IReadOnlyList<SuccessionSupportHistoryAggregate> source)
+    {
+        foreach (SuccessionSupportHistoryAggregate aggregate in source)
+        {
+            if (aggregate.ContractVersion
+                    != CharacterSuccessionContractVersions.SupportHistory
+                || aggregate.FoldedReplacedCount < 0
+                || aggregate.FoldedWithdrawnCount < 0
+                || !aggregate.EarliestDate.IsValid
+                || !aggregate.LatestDate.IsValid
+                || aggregate.EarliestDate.CompareTo(aggregate.LatestDate) > 0
+                || aggregate.LatestDate.CompareTo(calendar.Date) > 0)
+            {
+                throw new SimulationValidationException(
+                    "Succession-support history aggregate is malformed.");
+            }
+
+            AuthoritativeCharacterProfile subject = RequireCharacter(
+                aggregate.SubjectId,
+                "Succession-support history subject");
+            if (subject.BirthDate.CompareTo(aggregate.EarliestDate) > 0)
+            {
+                throw new SimulationValidationException(
+                    "Succession-support history predates its subject's birth.");
+            }
+
+            try
+            {
+                if (aggregate.TotalFoldedCount <= 0)
+                {
+                    throw new SimulationValidationException(
+                        "Succession-support history aggregate must retain at least one folded record.");
+                }
+            }
+            catch (OverflowException exception)
+            {
+                throw new SimulationValidationException(
+                    $"Succession-support history aggregate exceeds Int64 capacity: {exception.Message}");
+            }
+
+            if (!supportHistory.TryAdd(aggregate.SubjectId, Clone(aggregate)))
+            {
+                throw new SimulationValidationException(
+                    $"Duplicate succession-support history for '{aggregate.SubjectId}'.");
+            }
+        }
+    }
+
     private void ValidateClaim(SuccessionClaimState claim)
     {
         if (claim.ContractVersion != CharacterSuccessionContractVersions.ClaimState
@@ -1932,6 +2722,92 @@ public sealed class CharacterSuccessionWorldState
         {
             throw new SimulationValidationException(
                 $"Withdrawn succession claim '{claim.ClaimId}' has incomplete or invalid withdrawal evidence.");
+        }
+    }
+
+    private void ValidateSupport(SuccessionSupportState support)
+    {
+        if (support.ContractVersion != CharacterSuccessionContractVersions.SupportState
+            || !support.SupportId.IsValid
+            || !support.DeclaredDate.IsValid
+            || support.DeclaredTurnIndex < 0
+            || !support.SourceCommandId.IsValid
+            || !support.SourceEventId.IsValid
+            || !Enum.IsDefined(support.Status))
+        {
+            throw new SimulationValidationException(
+                "Succession-support record contains an invalid version, ID, date, turn, or status.");
+        }
+
+        AuthoritativeCharacterProfile subject = RequireCharacter(
+            support.SubjectId,
+            "Succession-support subject");
+        AuthoritativeCharacterProfile supporter = RequireCharacter(
+            support.SupporterId,
+            "Succession-support supporter");
+        AuthoritativeCharacterProfile candidate = RequireCharacter(
+            support.SupportedCandidateId,
+            "Succession-support supported candidate");
+        if (support.SubjectId == support.SupporterId
+            || support.SubjectId == support.SupportedCandidateId
+            || support.SupporterId == support.SupportedCandidateId
+            || subject.BirthDate.CompareTo(support.DeclaredDate) > 0
+            || supporter.BirthDate.CompareTo(support.DeclaredDate) > 0
+            || candidate.BirthDate.CompareTo(support.DeclaredDate) > 0
+            || support.DeclaredDate.CompareTo(calendar.Date) > 0
+            || support.DeclaredTurnIndex > calendar.TurnIndex)
+        {
+            throw new SimulationValidationException(
+                $"Succession support '{support.SupportId}' has invalid participants or declaration time.");
+        }
+
+        EntityId expectedEventId = CharacterSuccessionIds.DeriveSupportActionEventId(
+            support.DeclaredDate,
+            support.SourceCommandId);
+        if (support.SourceEventId != expectedEventId
+            || support.SupportId != CharacterSuccessionIds.DeriveSupportId(
+                support.SourceEventId,
+                support.SubjectId,
+                support.SupporterId,
+                support.SupportedCandidateId))
+        {
+            throw new SimulationValidationException(
+                $"Succession support '{support.SupportId}' has invalid stable identity evidence.");
+        }
+
+        if (support.Status == SuccessionSupportStatus.Active)
+        {
+            if (support.ResolutionDate is not null
+                || support.ResolutionTurnIndex is not null
+                || support.ResolutionCommandId is not null
+                || support.ResolutionEventId is not null)
+            {
+                throw new SimulationValidationException(
+                    $"Active succession support '{support.SupportId}' contains resolution evidence.");
+            }
+
+            return;
+        }
+
+        if (support.ResolutionDate is not CampaignDate resolutionDate
+            || support.ResolutionTurnIndex is not long resolutionTurnIndex
+            || support.ResolutionCommandId is not EntityId resolutionCommandId
+            || support.ResolutionEventId is not EntityId resolutionEventId
+            || !resolutionDate.IsValid
+            || resolutionTurnIndex < support.DeclaredTurnIndex
+            || resolutionDate.CompareTo(support.DeclaredDate) < 0
+            || resolutionDate.CompareTo(calendar.Date) > 0
+            || resolutionTurnIndex > calendar.TurnIndex
+            || !resolutionCommandId.IsValid
+            || !resolutionEventId.IsValid
+            || resolutionCommandId == support.SourceCommandId
+            || resolutionEventId == support.SourceEventId
+            || resolutionEventId != CharacterSuccessionIds.DeriveSupportActionEventId(
+                resolutionDate,
+                resolutionCommandId))
+        {
+            throw new SimulationValidationException(
+                $"Terminal succession support '{support.SupportId}' has incomplete or invalid resolution evidence.");
         }
     }
 
@@ -2056,13 +2932,105 @@ public sealed class CharacterSuccessionWorldState
             .Where(item => item.HasValue)
             .Select(item => item!.Value)
             .ToArray();
+        SuccessionSupportState[] allSupports = supports.Values.ToArray();
+        SuccessionSupportState[] allTerminalSupports = allSupports
+            .Where(item => item.Status != SuccessionSupportStatus.Active)
+            .ToArray();
+        if (allSupports.Select(item => item.SourceEventId).Distinct().Count()
+                != allSupports.Length
+            || allSupports.Select(item => item.SourceCommandId).Distinct().Count()
+                != allSupports.Length
+            || allTerminalSupports.Select(item => item.ResolutionEventId!.Value)
+                .Distinct().Count() != allTerminalSupports.Length
+            || allTerminalSupports.Select(item => item.ResolutionCommandId!.Value)
+                .Distinct().Count() != allTerminalSupports.Length)
+        {
+            throw new SimulationValidationException(
+                "Succession-support state has duplicate global lifecycle event roles.");
+        }
+
+        var supportIdentityRoles = allSupports.SelectMany(item => new[]
+        {
+            new
+            {
+                Identity = item.SourceCommandId,
+                Support = item,
+                IsSource = true,
+                IsCommand = true,
+            },
+            new
+            {
+                Identity = item.SourceEventId,
+                Support = item,
+                IsSource = true,
+                IsCommand = false,
+            },
+            item.ResolutionCommandId is EntityId resolutionCommandId
+                ? new
+                {
+                    Identity = resolutionCommandId,
+                    Support = item,
+                    IsSource = false,
+                    IsCommand = true,
+                }
+                : null,
+            item.ResolutionEventId is EntityId resolutionEventId
+                ? new
+                {
+                    Identity = resolutionEventId,
+                    Support = item,
+                    IsSource = false,
+                    IsCommand = false,
+                }
+                : null,
+        }).Where(item => item is not null).Select(item => item!);
+        foreach (var identityGroup in supportIdentityRoles.GroupBy(
+                     item => item.Identity))
+        {
+            var roles = identityGroup.ToArray();
+            if (roles.Length == 1)
+            {
+                continue;
+            }
+
+            var source = roles.SingleOrDefault(item => item.IsSource);
+            var resolution = roles.SingleOrDefault(item => !item.IsSource);
+            if (roles.Length != 2
+                || source is null
+                || resolution is null
+                || source.IsCommand != resolution.IsCommand
+                || !IsExactSupportSuccessor(
+                    resolution.Support,
+                    source.Support))
+            {
+                throw new SimulationValidationException(
+                    $"Succession-support lifecycle identity '{identityGroup.Key}' has an invalid shared role.");
+            }
+        }
+
+        EntityId[] supportLifecycleIdentities = allSupports
+            .SelectMany(item => new EntityId?[]
+            {
+                item.SourceCommandId,
+                item.SourceEventId,
+                item.ResolutionCommandId,
+                item.ResolutionEventId,
+            })
+            .Where(item => item.HasValue)
+            .Select(item => item!.Value)
+            .Distinct()
+            .ToArray();
         if (claimLifecycleIdentities.Distinct().Count()
                 != claimLifecycleIdentities.Length
             || claimLifecycleIdentities.Intersect(
-                designationLifecycleIdentities).Any())
+                designationLifecycleIdentities).Any()
+            || supportLifecycleIdentities.Intersect(
+                designationLifecycleIdentities).Any()
+            || supportLifecycleIdentities.Intersect(
+                claimLifecycleIdentities).Any())
         {
             throw new SimulationValidationException(
-                "Succession-claim state has duplicate or cross-workflow lifecycle identities.");
+                "Character-succession state has duplicate or cross-workflow lifecycle identities.");
         }
 
         foreach (HeirDesignationState terminal in allTerminalRecords)
@@ -2193,6 +3161,119 @@ public sealed class CharacterSuccessionWorldState
                     $"Succession-claim history for '{subject}' is inconsistent with retained withdrawn records.");
             }
         }
+
+        foreach (SuccessionSupportState terminal in allTerminalSupports)
+        {
+            SuccessionSupportState[] linkedSources = allSupports.Where(candidate =>
+                    candidate.SupportId != terminal.SupportId
+                    && (candidate.SourceEventId == terminal.ResolutionEventId
+                        || candidate.SourceCommandId == terminal.ResolutionCommandId))
+                .ToArray();
+            if (terminal.Status == SuccessionSupportStatus.Replaced
+                ? linkedSources.Length != 1
+                    || !IsExactSupportSuccessor(terminal, linkedSources[0])
+                : linkedSources.Length != 0)
+            {
+                throw new SimulationValidationException(
+                    $"Terminal succession support '{terminal.SupportId}' has an invalid global resolution-to-source event role.");
+            }
+        }
+
+        foreach (IGrouping<EntityId, SuccessionSupportState> group in supports.Values
+                     .GroupBy(item => item.SubjectId))
+        {
+            if (group.Count(item => item.Status == SuccessionSupportStatus.Active)
+                    > CharacterSuccessionLimits.MaximumActiveSupportsPerSubject
+                || group.Count(item => item.Status != SuccessionSupportStatus.Active)
+                    > CharacterSuccessionLimits.RecentTerminalSupportsPerSubject)
+            {
+                throw new SimulationValidationException(
+                    $"Subject '{group.Key}' exceeds succession-support bounds.");
+            }
+
+            foreach (IGrouping<EntityId, SuccessionSupportState> pair in group
+                         .GroupBy(item => item.SupporterId))
+            {
+                if (pair.Count(item => item.Status == SuccessionSupportStatus.Active) > 1)
+                {
+                    throw new SimulationValidationException(
+                        $"Supporter '{pair.Key}' has multiple active succession supports for '{group.Key}'.");
+                }
+
+                SuccessionSupportState[] records = pair.ToArray();
+                Dictionary<EntityId, EntityId> successorByPredecessor = [];
+                HashSet<EntityId> claimedSuccessors = [];
+                foreach (SuccessionSupportState replaced in records.Where(
+                             item => item.Status == SuccessionSupportStatus.Replaced))
+                {
+                    SuccessionSupportState[] exactSuccessors = records
+                        .Where(candidate => IsExactSupportSuccessor(
+                            replaced,
+                            candidate))
+                        .ToArray();
+                    if (exactSuccessors.Length != 1
+                        || !claimedSuccessors.Add(exactSuccessors[0].SupportId))
+                    {
+                        throw new SimulationValidationException(
+                            $"Replaced succession support '{replaced.SupportId}' must have one unshared same-event successor record.");
+                    }
+
+                    successorByPredecessor.Add(
+                        replaced.SupportId,
+                        exactSuccessors[0].SupportId);
+                }
+
+                foreach (EntityId start in successorByPredecessor.Keys)
+                {
+                    HashSet<EntityId> path = [];
+                    EntityId current = start;
+                    while (successorByPredecessor.TryGetValue(
+                               current,
+                               out EntityId successor))
+                    {
+                        if (!path.Add(current))
+                        {
+                            throw new SimulationValidationException(
+                                $"Succession-support pair '{group.Key}'/'{pair.Key}' has a cyclic lifecycle.");
+                        }
+
+                        current = successor;
+                    }
+                }
+            }
+        }
+
+        foreach (IGrouping<EntityId, SuccessionSupportState> group in supports.Values
+                     .Where(item => item.Status == SuccessionSupportStatus.Active)
+                     .GroupBy(item => item.SupporterId))
+        {
+            if (group.Count()
+                > CharacterSuccessionLimits.MaximumActiveSupportsPerSupporter)
+            {
+                throw new SimulationValidationException(
+                    $"Supporter '{group.Key}' exceeds active succession-support capacity.");
+            }
+        }
+
+        foreach ((EntityId subject, SuccessionSupportHistoryAggregate aggregate)
+                 in supportHistory)
+        {
+            SuccessionSupportState[] retainedTerminal = supports.Values
+                .Where(item => item.SubjectId == subject
+                    && item.Status != SuccessionSupportStatus.Active)
+                .OrderBy(item => item.ResolutionTurnIndex)
+                .ThenBy(item => item.ResolutionDate)
+                .ThenBy(item => item.SupportId)
+                .ToArray();
+            if (retainedTerminal.Length
+                    != CharacterSuccessionLimits.RecentTerminalSupportsPerSubject
+                || aggregate.LatestDate.CompareTo(
+                    retainedTerminal[0].ResolutionDate!.Value) > 0)
+            {
+                throw new SimulationValidationException(
+                    $"Succession-support history for '{subject}' is inconsistent with retained terminal records.");
+            }
+        }
     }
 
     private static bool IsExactSuccessor(
@@ -2203,6 +3284,18 @@ public sealed class CharacterSuccessionWorldState
         && candidate.DesignatorCharacterId == predecessor.DesignatorCharacterId
         && candidate.EstablishedDate == predecessor.ResolutionDate
         && candidate.EstablishedTurnIndex == predecessor.ResolutionTurnIndex
+        && candidate.SourceCommandId == predecessor.ResolutionCommandId
+        && candidate.SourceEventId == predecessor.ResolutionEventId;
+
+    private static bool IsExactSupportSuccessor(
+        SuccessionSupportState predecessor,
+        SuccessionSupportState candidate) =>
+        predecessor.Status == SuccessionSupportStatus.Replaced
+        && candidate.SupportId != predecessor.SupportId
+        && candidate.SubjectId == predecessor.SubjectId
+        && candidate.SupporterId == predecessor.SupporterId
+        && candidate.DeclaredDate == predecessor.ResolutionDate
+        && candidate.DeclaredTurnIndex == predecessor.ResolutionTurnIndex
         && candidate.SourceCommandId == predecessor.ResolutionCommandId
         && candidate.SourceEventId == predecessor.ResolutionEventId;
 
@@ -2220,6 +3313,15 @@ public sealed class CharacterSuccessionWorldState
                 ? claims[claimId]
                 : null;
 
+    private SuccessionSupportState? GetStoredCurrentSupport(
+        EntityId subjectId,
+        EntityId supporterId) =>
+        activeSupportByPair.TryGetValue(
+            (subjectId, supporterId),
+            out EntityId supportId)
+                ? supports[supportId]
+                : null;
+
     private bool HasRetainedLifecycleIdentity(EntityId identity) =>
         designations.Values.Any(item =>
             item.SourceCommandId == identity
@@ -2230,7 +3332,12 @@ public sealed class CharacterSuccessionWorldState
             item.SourceCommandId == identity
             || item.SourceEventId == identity
             || item.WithdrawalCommandId == identity
-            || item.WithdrawalEventId == identity);
+            || item.WithdrawalEventId == identity)
+        || supports.Values.Any(item =>
+            item.SourceCommandId == identity
+            || item.SourceEventId == identity
+            || item.ResolutionCommandId == identity
+            || item.ResolutionEventId == identity);
 
     private AuthoritativeCharacterProfile RequireCharacter(EntityId characterId, string label)
     {
@@ -2283,6 +3390,25 @@ public sealed class CharacterSuccessionWorldState
                  in candidate.claimHistory)
         {
             claimHistory.Add(id, Clone(aggregate));
+        }
+
+        supports.Clear();
+        foreach ((EntityId id, SuccessionSupportState support) in candidate.supports)
+        {
+            supports.Add(id, Clone(support));
+        }
+
+        activeSupportByPair.Clear();
+        foreach ((var pair, EntityId supportId) in candidate.activeSupportByPair)
+        {
+            activeSupportByPair.Add(pair, supportId);
+        }
+
+        supportHistory.Clear();
+        foreach ((EntityId id, SuccessionSupportHistoryAggregate aggregate)
+                 in candidate.supportHistory)
+        {
+            supportHistory.Add(id, Clone(aggregate));
         }
 
         calendar = candidate.calendar;
@@ -2366,6 +3492,48 @@ public sealed class CharacterSuccessionWorldState
             WithdrawalEventId = eventId,
         };
 
+    private static SuccessionSupportState CreateActiveSupport(
+        EntityId subjectId,
+        EntityId supporterId,
+        EntityId supportedCandidateId,
+        CampaignDate resolutionDate,
+        long resolutionTurnIndex,
+        EntityId commandId,
+        EntityId eventId) => new(
+            CharacterSuccessionContractVersions.SupportState,
+            CharacterSuccessionIds.DeriveSupportId(
+                eventId,
+                subjectId,
+                supporterId,
+                supportedCandidateId),
+            subjectId,
+            supporterId,
+            supportedCandidateId,
+            resolutionDate,
+            resolutionTurnIndex,
+            commandId,
+            eventId,
+            SuccessionSupportStatus.Active,
+            null,
+            null,
+            null,
+            null);
+
+    private static SuccessionSupportState ResolveSupport(
+        SuccessionSupportState current,
+        SuccessionSupportStatus status,
+        CampaignDate resolutionDate,
+        long resolutionTurnIndex,
+        EntityId commandId,
+        EntityId eventId) => current with
+        {
+            Status = status,
+            ResolutionDate = resolutionDate,
+            ResolutionTurnIndex = resolutionTurnIndex,
+            ResolutionCommandId = commandId,
+            ResolutionEventId = eventId,
+        };
+
     private static EntityId GetOutcomeDesignator(ICharacterSuccessionActionOutcome outcome) =>
         outcome switch
         {
@@ -2431,6 +3599,35 @@ public sealed class CharacterSuccessionWorldState
                 "Unsupported succession-claim outcome type."),
         };
 
+    private static ICharacterSuccessionSupportAction Clone(
+        ICharacterSuccessionSupportAction value) => value switch
+        {
+            DeclareSuccessionSupportAction action => action with { },
+            WithdrawSuccessionSupportAction action => action with { },
+            _ => throw new SimulationValidationException(
+                "Unsupported succession-support action type."),
+        };
+
+    private static ICharacterSuccessionSupportActionOutcome Clone(
+        ICharacterSuccessionSupportActionOutcome value) => value switch
+        {
+            SuccessionSupportDeclaredOutcome outcome => outcome with
+            {
+                CurrentSupport = Clone(outcome.CurrentSupport),
+            },
+            SuccessionSupportReplacedOutcome outcome => outcome with
+            {
+                PreviousSupport = Clone(outcome.PreviousSupport),
+                CurrentSupport = Clone(outcome.CurrentSupport),
+            },
+            SuccessionSupportWithdrawnOutcome outcome => outcome with
+            {
+                PreviousSupport = Clone(outcome.PreviousSupport),
+            },
+            _ => throw new SimulationValidationException(
+                "Unsupported succession-support outcome type."),
+        };
+
     private static HeirDesignationState Clone(HeirDesignationState value) => value with { };
 
     private static HeirDesignationHistoryAggregate Clone(
@@ -2440,6 +3637,12 @@ public sealed class CharacterSuccessionWorldState
 
     private static SuccessionClaimHistoryAggregate Clone(
         SuccessionClaimHistoryAggregate value) => value with { };
+
+    private static SuccessionSupportState Clone(
+        SuccessionSupportState value) => value with { };
+
+    private static SuccessionSupportHistoryAggregate Clone(
+        SuccessionSupportHistoryAggregate value) => value with { };
 
     private static CampaignDate Earlier(CampaignDate current, CampaignDate candidate) =>
         candidate.CompareTo(current) < 0 ? candidate : current;
@@ -2463,10 +3666,14 @@ public sealed class CharacterSuccessionWorldState
             || snapshot.History is null
             || snapshot.Claims is null
             || snapshot.ClaimHistory is null
+            || snapshot.Supports is null
+            || snapshot.SupportHistory is null
             || snapshot.Designations.Any(item => item is null)
             || snapshot.History.Any(item => item is null)
             || snapshot.Claims.Any(item => item is null)
-            || snapshot.ClaimHistory.Any(item => item is null))
+            || snapshot.ClaimHistory.Any(item => item is null)
+            || snapshot.Supports.Any(item => item is null)
+            || snapshot.SupportHistory.Any(item => item is null))
         {
             throw new SimulationValidationException(
                 "Character-succession snapshot has an invalid version or null collection/record.");

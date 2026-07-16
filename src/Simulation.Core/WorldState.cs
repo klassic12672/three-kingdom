@@ -589,6 +589,9 @@ public sealed class WorldState : IWorldQuery
             case CharacterSuccessionClaimActionResolvedEventPayload successionClaimAction:
                 ApplyCharacterSuccessionClaimAction(campaignEvent, successionClaimAction);
                 break;
+            case CharacterSuccessionSupportActionResolvedEventPayload successionSupportAction:
+                ApplyCharacterSuccessionSupportAction(campaignEvent, successionSupportAction);
+                break;
             default:
                 throw new SimulationValidationException($"Unregistered event payload '{campaignEvent.Payload.GetType().Name}'.");
         }
@@ -1395,6 +1398,41 @@ public sealed class WorldState : IWorldQuery
 
         CharacterSuccessionWorldUpdatePlan successionPlan =
             CharacterSuccessions.PrepareClaimOutcome(
+                payload,
+                campaignEvent.ResolutionDate,
+                Calendar.TurnIndex,
+                commandId,
+                campaignEvent.EventId);
+        CharacterSuccessions.ApplyPrepared(successionPlan);
+    }
+
+    private void ApplyCharacterSuccessionSupportAction(
+        CampaignEvent campaignEvent,
+        CharacterSuccessionSupportActionResolvedEventPayload payload)
+    {
+        if (campaignEvent.Phase != ResolutionPhase.Commands
+            || campaignEvent.CausalId is not EntityId commandId
+            || !commandId.IsValid)
+        {
+            throw new SimulationValidationException(
+                "Character-succession support events require the Commands phase and a valid causal command ID.");
+        }
+
+        EntityId expectedEventId =
+            CharacterSuccessionIds.DeriveSupportActionEventId(
+                campaignEvent.ResolutionDate,
+                commandId);
+        if (campaignEvent.EventId != expectedEventId
+            || campaignEvent.AffectedIds is null
+            || !campaignEvent.AffectedIds.SequenceEqual(
+                GetCharacterSuccessionSupportActionAffectedIds(payload)))
+        {
+            throw new SimulationValidationException(
+                "Character-succession support event identity or affected IDs do not match its exact deterministic outcome.");
+        }
+
+        CharacterSuccessionWorldUpdatePlan successionPlan =
+            CharacterSuccessions.PrepareSupportOutcome(
                 payload,
                 campaignEvent.ResolutionDate,
                 Calendar.TurnIndex,
@@ -2674,6 +2712,91 @@ public sealed class WorldState : IWorldQuery
         return affected.Distinct().Order().ToArray();
     }
 
+    internal static EntityId[] GetCharacterSuccessionSupportActionAffectedIds(
+        CharacterSuccessionSupportActionResolvedEventPayload payload)
+    {
+        if (payload?.Action is null || payload.Outcome is null)
+        {
+            throw new SimulationValidationException(
+                "Character-succession support event contains null or unsupported data.");
+        }
+
+        SuccessionSupportState[] records = payload.Outcome switch
+        {
+            SuccessionSupportDeclaredOutcome value =>
+                value.CurrentSupport is null
+                    ? throw new SimulationValidationException(
+                        "Character-succession support outcome contains a null record.")
+                    : [value.CurrentSupport],
+            SuccessionSupportReplacedOutcome value =>
+                value.PreviousSupport is null || value.CurrentSupport is null
+                    ? throw new SimulationValidationException(
+                        "Character-succession support outcome contains a null record.")
+                    : [value.PreviousSupport, value.CurrentSupport],
+            SuccessionSupportWithdrawnOutcome value =>
+                value.PreviousSupport is null
+                    ? throw new SimulationValidationException(
+                        "Character-succession support outcome contains a null record.")
+                    : [value.PreviousSupport],
+            _ => throw new SimulationValidationException(
+                "Character-succession support outcome is unsupported."),
+        };
+        bool exactPair = (payload.Action, payload.Outcome) switch
+        {
+            (
+                DeclareSuccessionSupportAction action,
+                SuccessionSupportDeclaredOutcome outcome) =>
+                action.ExpectedCurrentSupportId is null
+                && action.SubjectId == outcome.CurrentSupport.SubjectId
+                && action.SupportedCandidateId
+                    == outcome.CurrentSupport.SupportedCandidateId
+                && payload.ActingCharacterId == outcome.CurrentSupport.SupporterId,
+            (
+                DeclareSuccessionSupportAction action,
+                SuccessionSupportReplacedOutcome outcome) =>
+                action.ExpectedCurrentSupportId
+                    == outcome.PreviousSupport.SupportId
+                && action.SubjectId == outcome.PreviousSupport.SubjectId
+                && action.SubjectId == outcome.CurrentSupport.SubjectId
+                && action.SupportedCandidateId
+                    == outcome.CurrentSupport.SupportedCandidateId
+                && payload.ActingCharacterId == outcome.PreviousSupport.SupporterId
+                && payload.ActingCharacterId == outcome.CurrentSupport.SupporterId,
+            (
+                WithdrawSuccessionSupportAction action,
+                SuccessionSupportWithdrawnOutcome outcome) =>
+                action.SubjectId == outcome.PreviousSupport.SubjectId
+                && action.ExpectedCurrentSupportId
+                    == outcome.PreviousSupport.SupportId
+                && payload.ActingCharacterId == outcome.PreviousSupport.SupporterId,
+            _ => false,
+        };
+        if (!exactPair)
+        {
+            throw new SimulationValidationException(
+                "Character-succession support action/outcome pairing is invalid.");
+        }
+
+        EntityId[] affected = records
+            .SelectMany(item => new[]
+            {
+                item.SupportId,
+                item.SubjectId,
+                item.SupporterId,
+                item.SupportedCandidateId,
+            })
+            .Distinct()
+            .Order()
+            .ToArray();
+        if (affected.Any(id => !id.IsValid))
+        {
+            throw new SimulationValidationException(
+                "Character-succession support event contains an invalid affected ID.");
+        }
+
+        return affected;
+    }
+
     private static void AddDesignationAffectedIds(
         ISet<EntityId> affected,
         HeirDesignationState designation)
@@ -3350,7 +3473,9 @@ public sealed class WorldState : IWorldQuery
         && characterSuccessions.Designations is { Count: 0 }
         && characterSuccessions.History is { Count: 0 }
         && characterSuccessions.Claims is { Count: 0 }
-        && characterSuccessions.ClaimHistory is { Count: 0 };
+        && characterSuccessions.ClaimHistory is { Count: 0 }
+        && characterSuccessions.Supports is { Count: 0 }
+        && characterSuccessions.SupportHistory is { Count: 0 };
 
     private static void ValidatePendingCommands(IReadOnlyList<CampaignCommand> commands)
     {
@@ -3384,6 +3509,7 @@ public sealed class WorldState : IWorldQuery
                 or CharacterFamilyActionCommandPayload
                 or CharacterSuccessionActionCommandPayload
                 or CharacterSuccessionClaimActionCommandPayload
+                or CharacterSuccessionSupportActionCommandPayload
                 or HouseholdDecisionCommandPayload))
         {
             try
@@ -3414,6 +3540,10 @@ public sealed class WorldState : IWorldQuery
                             command.CommandId),
                     CharacterSuccessionClaimActionCommandPayload =>
                         CharacterSuccessionIds.DeriveClaimActionEventId(
+                            command.IssuedDate,
+                            command.CommandId),
+                    CharacterSuccessionSupportActionCommandPayload =>
+                        CharacterSuccessionIds.DeriveSupportActionEventId(
                             command.IssuedDate,
                             command.CommandId),
                     HouseholdDecisionCommandPayload => HouseholdDecisionIds.DeriveActionEventId(

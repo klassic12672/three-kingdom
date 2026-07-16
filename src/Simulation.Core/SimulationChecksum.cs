@@ -18,7 +18,7 @@ public readonly record struct SimulationChecksum(string Value)
 
     internal static SimulationChecksum ComputeForSaveSchema(WorldSnapshot snapshot, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 25)
+        if (schemaVersion is < 1 or > 26)
         {
             throw new ArgumentOutOfRangeException(nameof(schemaVersion));
         }
@@ -56,6 +56,8 @@ public readonly record struct SimulationChecksum(string Value)
         // death resolution vocabulary. Schema 24 is the exact F3 world shape
         // and predates the separate character-succession world. Schema 25 is
         // the exact F6 world shape and predates persistent succession claims.
+        // Schema 26 is the exact F7 world shape and predates persistent
+        // explicit succession-support evidence.
         if (schemaVersion < 25)
         {
             canonical.Remove("characterSuccessions");
@@ -63,6 +65,10 @@ public readonly record struct SimulationChecksum(string Value)
         else if (schemaVersion < 26)
         {
             StripCharacterSuccessionV2Fields(canonical);
+        }
+        else if (schemaVersion < 27)
+        {
+            StripCharacterSuccessionV3Fields(canonical);
         }
 
         if (schemaVersion < 18)
@@ -173,6 +179,20 @@ public readonly record struct SimulationChecksum(string Value)
         successions["contractVersion"] = 1;
         successions.Remove("claims");
         successions.Remove("claimHistory");
+        successions.Remove("supports");
+        successions.Remove("supportHistory");
+    }
+
+    private static void StripCharacterSuccessionV3Fields(JsonObject canonical)
+    {
+        if (canonical["characterSuccessions"] is not JsonObject successions)
+        {
+            return;
+        }
+
+        successions["contractVersion"] = 2;
+        successions.Remove("supports");
+        successions.Remove("supportHistory");
     }
 
     private static void StripCharacterV2Fields(JsonObject canonical)
@@ -362,6 +382,10 @@ public readonly record struct SimulationChecksum(string Value)
                 else if (schemaVersion < 26)
                 {
                     version["version"] = 1;
+                }
+                else if (schemaVersion < 27)
+                {
+                    version["version"] = 2;
                 }
             }
             else if (schemaVersion < 15 && StringComparer.Ordinal.Equals(
