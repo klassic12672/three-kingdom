@@ -18,7 +18,7 @@ public readonly record struct SimulationChecksum(string Value)
 
     internal static SimulationChecksum ComputeForSaveSchema(WorldSnapshot snapshot, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 27)
+        if (schemaVersion is < 1 or > 28)
         {
             throw new ArgumentOutOfRangeException(nameof(schemaVersion));
         }
@@ -59,7 +59,8 @@ public readonly record struct SimulationChecksum(string Value)
         // Schema 26 is the exact F7 world shape and predates persistent
         // explicit succession-support evidence. Schema 27 is the exact F8
         // world shape and predates succession resolution and player
-        // continuity state.
+        // continuity state. Schema 28 is the exact F9 world shape and differs
+        // from schema 29 only in registered character-wound vocabulary.
         if (schemaVersion < 28)
         {
             StripCharacterSuccessionV4Fields(canonical);

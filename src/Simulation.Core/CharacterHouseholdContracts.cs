@@ -25,6 +25,7 @@ public static class CharacterConditionSystem
     UnknownDerivedTypeHandling = JsonUnknownDerivedTypeHandling.FailSerialization)]
 [JsonDerivedType(typeof(IncapacitateCharacterAction), "incapacitate_character.v1")]
 [JsonDerivedType(typeof(RestoreCharacterCapacityAction), "restore_character_capacity.v1")]
+[JsonDerivedType(typeof(ApplyCharacterWoundAction), "apply_character_wound.v1")]
 [JsonDerivedType(typeof(EnterCharacterCustodyAction), "enter_character_custody.v1")]
 [JsonDerivedType(typeof(ReleaseCharacterCustodyAction), "release_character_custody.v1")]
 [JsonDerivedType(typeof(ResolveCharacterDeathAction), "resolve_character_death.v1")]
@@ -39,6 +40,12 @@ public sealed record IncapacitateCharacterAction(
 public sealed record RestoreCharacterCapacityAction(
     EntityId CharacterId,
     CharacterConditionState ExpectedCurrent) : ICharacterConditionAction;
+
+public sealed record ApplyCharacterWoundAction(
+    EntityId CharacterId,
+    CharacterConditionState ExpectedCurrent,
+    CharacterHealthStatus ResultingHealthStatus,
+    bool ResultingIncapacitated) : ICharacterConditionAction;
 
 public sealed record EnterCharacterCustodyAction(
     EntityId CharacterId,

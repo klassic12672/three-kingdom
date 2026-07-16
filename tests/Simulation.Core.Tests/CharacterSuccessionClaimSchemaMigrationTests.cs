@@ -45,7 +45,8 @@ public sealed class CharacterSuccessionClaimSchemaMigrationTests
 
         Assert.True(JsonNode.DeepEquals(original, source));
         Assert.Equal(sourceBytes, File.ReadAllBytes(path));
-        Assert.Equal(28, migrated["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(SaveEnvelope.CurrentSchemaVersion,
+            migrated["schemaVersion"]!.GetValue<int>());
         JsonObject beforeSnapshot = original["snapshot"]!.AsObject();
         JsonObject afterSnapshot = migrated["snapshot"]!.AsObject();
         AssertUnchangedSnapshotProperties(beforeSnapshot, afterSnapshot);

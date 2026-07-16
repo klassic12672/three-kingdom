@@ -64,6 +64,7 @@ public sealed class SaveSchemaRegistry
             new SaveMigrationV25ToV26(),
             new SaveMigrationV26ToV27(),
             new SaveMigrationV27ToV28(),
+            new SaveMigrationV28ToV29(),
         ]).ToArray();
         if (registered.Any(item => item.ToSchemaVersion != item.FromSchemaVersion + 1))
         {
@@ -133,7 +134,7 @@ public sealed class SaveSchemaRegistry
 
     internal static void ValidateHistoricalSourceChecksum(JsonObject source, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 27)
+        if (schemaVersion is < 1 or > 28)
         {
             throw new SaveCompatibilityException($"Save schema {schemaVersion} has no historical checksum contract.");
         }
@@ -432,6 +433,31 @@ public sealed class SaveSchemaRegistry
                     $"Save schema 27 requires exactly one '{CharacterSuccessionSystem.SystemId}@3' system-version registration.");
             }
         }
+        else if (schemaVersion == 28)
+        {
+            JsonObject characterSuccessions = RequireHistoricalObject(
+                snapshot,
+                "characterSuccessions",
+                schemaVersion,
+                "snapshot.characterSuccessions");
+            ValidateCharacterSuccessionSnapshotShape(
+                characterSuccessions,
+                "Save schema 28");
+            JsonObject[] successionSystemVersions = systemVersions
+                .Where(version => IsSystemId(
+                    version,
+                    CharacterSuccessionSystem.SystemId))
+                .ToArray();
+            if (successionSystemVersions.Length != 1
+                || !IsSystemVersion(
+                    successionSystemVersions[0],
+                    CharacterSuccessionSystem.SystemId,
+                    CharacterSuccessionSystem.Version))
+            {
+                throw new SaveCompatibilityException(
+                    $"Save schema 28 requires exactly one '{CharacterSuccessionSystem.SystemId}@{CharacterSuccessionSystem.Version}' system-version registration.");
+            }
+        }
 
         if (schemaVersion < 18
             && (snapshot.ContainsKey("characterPregnancies")
@@ -513,7 +539,7 @@ public sealed class SaveSchemaRegistry
                 $"Schema {schemaVersion} unexpectedly contains schema 10 character-marriage data.");
         }
 
-        if (schemaVersion is >= 10 and <= 27)
+        if (schemaVersion is >= 10 and <= 28)
         {
             ValidateCharacterMarriageSnapshotShape(
                 RequireHistoricalObject(
@@ -657,11 +683,19 @@ public sealed class SaveSchemaRegistry
                 ValidateCurrentCharacterSuccessionDiagnostics(source);
                 RejectF8Discriminators(source, "save payload");
             }
-            else
+            else if (schemaVersion == 27)
             {
                 ValidateSchema24CharacterDeathDiagnostics(source);
                 ValidateCurrentCharacterSuccessionDiagnostics(source);
                 RejectF9Discriminators(source, "save payload");
+            }
+            else
+            {
+                ValidateCurrentCharacterDeathDiagnostics(source);
+                ValidateCurrentCharacterSuccessionDiagnostics(source);
+                ValidateRetainedSuccessionDeathDiagnosticsMatchSnapshot(source);
+                ValidateSuccessionDeathDiagnosticSemanticEvidence(source);
+                RejectGDiscriminators(source, "save payload");
             }
         }
 
@@ -1058,6 +1092,7 @@ public sealed class SaveSchemaRegistry
             characterSuccessions,
             "Current save schema");
         ValidateCurrentCharacterDeathDiagnostics(source);
+        ValidateCurrentCharacterWoundDiagnostics(source);
         ValidateCurrentCharacterSuccessionDiagnostics(source);
         ValidateRetainedSuccessionDeathDiagnosticsMatchSnapshot(source);
         ValidateSuccessionDeathDiagnosticSemanticEvidence(source);
@@ -1204,10 +1239,26 @@ public sealed class SaveSchemaRegistry
                 $"{description} save schema contains incomplete succession-death action diagnostics.");
         }
 
+        if (discriminator == "apply_character_wound.v1"
+            && !IsCompleteCharacterWoundAction(value))
+        {
+            throw new SaveCompatibilityException(
+                $"{description} save schema contains incomplete character-wound action diagnostics.");
+        }
+
         if (discriminator == "character_condition_action_resolved.v1")
         {
             string? actionType = value["action"]?["$type"]?.GetValue<string>();
             string? outcomeType = value["outcome"]?["$type"]?.GetValue<string>();
+            if (actionType == "apply_character_wound.v1"
+                && (outcomeType != "character_condition_changed.v1"
+                    || value.ContainsKey("relationshipMemoryConsequence")
+                        && value["relationshipMemoryConsequence"] is not null))
+            {
+                throw new SaveCompatibilityException(
+                    $"{description} save schema contains incomplete or mismatched character-wound action diagnostics.");
+            }
+
             if ((actionType == "resolve_household_head_death.v1"
                     || outcomeType == "household_head_death_resolved.v1")
                 && (actionType != "resolve_household_head_death.v1"
@@ -1288,6 +1339,242 @@ public sealed class SaveSchemaRegistry
                 description);
         }
     }
+
+    private static bool IsCompleteCharacterWoundAction(JsonObject value)
+    {
+        if (value["characterId"] is not JsonObject
+            || !IsCurrentCharacterCondition(value["expectedCurrent"])
+            || !HasDefinedEnum<CharacterHealthStatus>(
+                value,
+                "resultingHealthStatus")
+            || !HasBoolean(value, "resultingIncapacitated"))
+        {
+            return false;
+        }
+
+        try
+        {
+            return value.Deserialize<ICharacterConditionAction>(
+                    SimulationJson.CreateOptions())
+                is ApplyCharacterWoundAction action
+                && IsValidCharacterWoundTransition(action);
+        }
+        catch (Exception exception) when (
+            SaveDataExceptionPolicy.IsRecoverableDataFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private static bool IsValidCharacterWoundTransition(
+        ApplyCharacterWoundAction action)
+    {
+        if (action.ExpectedCurrent is null
+            || action.ExpectedCurrent.VitalStatus != CharacterVitalStatus.Alive
+            || action.ExpectedCurrent.IsIncapacitated
+                && !action.ResultingIncapacitated)
+        {
+            return false;
+        }
+
+        return action.ResultingHealthStatus switch
+        {
+            CharacterHealthStatus.Injured =>
+                action.ExpectedCurrent.HealthStatus
+                    == CharacterHealthStatus.Healthy,
+            CharacterHealthStatus.Critical =>
+                action.ExpectedCurrent.HealthStatus
+                    != CharacterHealthStatus.Critical
+                && action.ResultingIncapacitated,
+            _ => false,
+        };
+    }
+
+    private static void ValidateCurrentCharacterWoundDiagnostics(JsonObject source)
+    {
+        if (source["diagnosticCommands"] is not JsonArray diagnosticCommands
+            || source["diagnosticEvents"] is not JsonArray diagnosticEvents)
+        {
+            return;
+        }
+
+        foreach (JsonObject campaignEvent in diagnosticEvents.OfType<JsonObject>())
+        {
+            if (campaignEvent["payload"]?["action"]?["$type"]?.GetValue<string>()
+                != "apply_character_wound.v1")
+            {
+                continue;
+            }
+
+            JsonObject payloadNode = campaignEvent["payload"]!.AsObject();
+            if (payloadNode["outcome"] is not JsonObject outcomeNode
+                || outcomeNode["change"] is not JsonObject changeNode
+                || !ContainsOnlyConditionChanges(
+                    new JsonArray(changeNode.DeepClone()),
+                    CharacterConditionContractVersions.Change)
+                || outcomeNode["marriageChanges"] is not JsonObject marriageChanges
+                || !IsCharacterMarriageLifecycleChanges(
+                    marriageChanges,
+                    CurrentDeathDiagnosticVersions()))
+            {
+                throw new SaveCompatibilityException(
+                    "Current save schema contains incomplete character-wound event diagnostics.");
+            }
+
+            try
+            {
+                CampaignEvent typedEvent = campaignEvent.Deserialize<CampaignEvent>(
+                    SimulationJson.CreateOptions())
+                    ?? throw new JsonException(
+                        "Character-wound diagnostic event is empty.");
+                if (typedEvent.CausalId is not EntityId commandId
+                    || typedEvent.Phase != ResolutionPhase.Commands
+                    || typedEvent.EventId != CharacterConditionIds.DeriveActionEventId(
+                        typedEvent.ResolutionDate,
+                        commandId)
+                    || typedEvent.Payload
+                        is not CharacterConditionActionResolvedEventPayload
+                        {
+                            ActingActorId: var actingActorId,
+                            Action: ApplyCharacterWoundAction action,
+                            Outcome: CharacterConditionChangedOutcome outcome,
+                            RelationshipMemoryConsequence: null,
+                        } payload
+                    || actingActorId != CharacterConditionSystem.AuthoritativeActorId
+                    || !IsValidCharacterWoundTransition(action)
+                    || outcome.Change is null
+                    || outcome.MarriageChanges is null
+                    || outcome.Change.CharacterId != action.CharacterId
+                    || outcome.Change.PreviousCondition != action.ExpectedCurrent
+                    || outcome.Change.CurrentCondition != action.ExpectedCurrent with
+                    {
+                        HealthStatus = action.ResultingHealthStatus,
+                        IsIncapacitated = action.ResultingIncapacitated,
+                    }
+                    || outcome.Change.ChangeId != CharacterConditionIds.DeriveChangeId(
+                        typedEvent.EventId,
+                        action.CharacterId)
+                    || outcome.Change.ResolutionDate != typedEvent.ResolutionDate
+                    || outcome.Change.ResolutionTurnIndex < 0
+                    || !IsExactCharacterWoundMarriageLifecycleChanges(
+                        outcome.MarriageChanges,
+                        action,
+                        typedEvent.ResolutionDate,
+                        outcome.Change.ResolutionTurnIndex,
+                        commandId)
+                    || outcome.Change.SourceCommandId != commandId
+                    || typedEvent.AffectedIds is null
+                    || !typedEvent.AffectedIds.SequenceEqual(
+                        WorldState.GetCharacterConditionActionAffectedIds(
+                            payload,
+                            typedEvent.EventId)))
+                {
+                    throw new SaveCompatibilityException(
+                        "Current save schema contains inexact character-wound event diagnostics.");
+                }
+
+                CampaignCommand[] matchingCommands = diagnosticCommands
+                    .OfType<JsonObject>()
+                    .Select(item => item.Deserialize<CampaignCommand>(
+                        SimulationJson.CreateOptions())
+                        ?? throw new JsonException(
+                            "Character-wound diagnostic command is empty."))
+                    .Where(item => item.Validation.IsValid
+                        && item.CommandId == commandId)
+                    .ToArray();
+                if (matchingCommands.Length > 1
+                    || matchingCommands.Length == 1
+                    && !IsExactRetainedWoundCommand(
+                        matchingCommands[0],
+                        typedEvent,
+                        actingActorId,
+                        action))
+                {
+                    throw new SaveCompatibilityException(
+                        "Current save schema contains a mismatched retained character-wound command/event pair.");
+                }
+            }
+            catch (Exception exception) when (exception is JsonException
+                or NotSupportedException
+                or ArgumentException
+                or InvalidOperationException
+                or SimulationValidationException
+                or OverflowException)
+            {
+                throw new SaveCompatibilityException(
+                    "Current save schema contains invalid character-wound event diagnostics.",
+                    exception);
+            }
+        }
+    }
+
+    private static bool IsExactRetainedWoundCommand(
+        CampaignCommand command,
+        CampaignEvent campaignEvent,
+        EntityId actingActorId,
+        ApplyCharacterWoundAction action) =>
+        command.IssuingActor == actingActorId
+        && command.IssuedDate == campaignEvent.ResolutionDate
+        && command.Phase == campaignEvent.Phase
+        && command.Priority == campaignEvent.Priority
+        && command.Payload is CharacterConditionActionCommandPayload
+        {
+            Action: ApplyCharacterWoundAction commandAction,
+        }
+        && commandAction == action;
+
+    private static bool IsExactCharacterWoundMarriageLifecycleChanges(
+        CharacterMarriageLifecycleChangeSet changes,
+        ApplyCharacterWoundAction action,
+        CampaignDate resolutionDate,
+        long resolutionTurnIndex,
+        EntityId commandId)
+    {
+        if (changes.Reason != CharacterMarriageLifecycleReason.ConditionChanged
+            || changes.InvalidatedBetrothals.Count != 0
+            || changes.EndedUnions.Count != 0
+            || !DiagnosticSerializedEquals(
+                changes,
+                changes.Canonicalize())
+            || !action.ResultingIncapacitated
+                && (changes.InvalidatedProposals.Count != 0
+                    || changes.CancelledInvitations.Count != 0
+                    || changes.InvalidatedRomanceRoutes.Count != 0))
+        {
+            return false;
+        }
+
+        return changes.InvalidatedProposals.All(item =>
+                MarriageRecordInvolves(
+                    item.ProposerCharacterId,
+                    item.RecipientCharacterId,
+                    action.CharacterId)
+                && item.Status == MarriageProposalStatus.Invalidated
+                && item.ResolutionDate == resolutionDate
+                && item.ResolutionTurnIndex == resolutionTurnIndex
+                && item.ResolutionCommandId == commandId)
+            && changes.CancelledInvitations.All(item =>
+                MarriageRecordInvolves(
+                    item.InitiatorCharacterId,
+                    item.RecipientCharacterId,
+                    action.CharacterId))
+            && changes.InvalidatedRomanceRoutes.All(item =>
+                MarriageRecordInvolves(
+                    item.FirstCharacterId,
+                    item.SecondCharacterId,
+                    action.CharacterId)
+                && item.Status == RomanceRouteStatus.Invalidated
+                && item.ResolutionDate == resolutionDate
+                && item.ResolutionTurnIndex == resolutionTurnIndex
+                && item.ResolutionCommandId == commandId);
+    }
+
+    private static bool MarriageRecordInvolves(
+        EntityId firstCharacterId,
+        EntityId secondCharacterId,
+        EntityId characterId) =>
+        firstCharacterId == characterId
+        || secondCharacterId == characterId;
 
     private static bool HasNullableHouseholdHeadChange(
         JsonObject value,
@@ -4846,6 +5133,34 @@ public sealed class SaveSchemaRegistry
         }
     }
 
+    private static void RejectGDiscriminators(JsonNode node, string description)
+    {
+        if (ContainsGPropertyOrDiscriminator(node))
+        {
+            throw new SaveCompatibilityException(
+                $"Save schema 28 unexpectedly contains schema 29 character-wound data in {description}.");
+        }
+    }
+
+    private static bool ContainsGPropertyOrDiscriminator(JsonNode? node)
+    {
+        if (node is JsonObject value)
+        {
+            if (value["$type"]?.GetValue<string>() == "apply_character_wound.v1"
+                || value.ContainsKey("resultingHealthStatus")
+                || value.ContainsKey("resultingIncapacitated"))
+            {
+                return true;
+            }
+
+            return value.Any(property =>
+                ContainsGPropertyOrDiscriminator(property.Value));
+        }
+
+        return node is JsonArray array
+            && array.Any(ContainsGPropertyOrDiscriminator);
+    }
+
     private static bool ContainsF9PropertyOrDiscriminator(JsonNode? node)
     {
         if (node is JsonObject value)
@@ -6808,6 +7123,20 @@ public sealed class SaveMigrationV27ToV28 : ISaveMigration
             ?? throw new SaveCompatibilityException(
                 "Migrated schema 28 snapshot is empty.");
         source["checksum"] = SimulationChecksum.Compute(migratedSnapshot).Value;
+        source["schemaVersion"] = ToSchemaVersion;
+        return source;
+    }
+}
+
+public sealed class SaveMigrationV28ToV29 : ISaveMigration
+{
+    public int FromSchemaVersion => 28;
+
+    public int ToSchemaVersion => 29;
+
+    public JsonObject Migrate(JsonObject source)
+    {
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(source, FromSchemaVersion);
         source["schemaVersion"] = ToSchemaVersion;
         return source;
     }

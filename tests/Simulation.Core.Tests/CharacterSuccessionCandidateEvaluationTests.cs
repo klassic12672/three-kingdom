@@ -41,7 +41,7 @@ public sealed class CharacterSuccessionCandidateEvaluationTests(ITestOutputHelpe
         Assert.Equal(6, CharacterSuccessionContractVersions.AuthoritativeQuery);
         Assert.Equal(4, CharacterSuccessionContractVersions.Snapshot);
         Assert.Equal(4, CharacterSuccessionSystem.Version);
-        Assert.Equal(28, SaveEnvelope.CurrentSchemaVersion);
+        Assert.Equal(29, SaveEnvelope.CurrentSchemaVersion);
     }
 
     [Fact]
@@ -673,7 +673,7 @@ public sealed class CharacterSuccessionCandidateEvaluationTests(ITestOutputHelpe
         Assert.Equal(6, CharacterSuccessionContractVersions.AuthoritativeQuery);
         Assert.Equal(4, CharacterSuccessionContractVersions.Snapshot);
         Assert.Equal(4, CharacterSuccessionSystem.Version);
-        Assert.Equal(28, SaveEnvelope.CurrentSchemaVersion);
+        Assert.Equal(29, SaveEnvelope.CurrentSchemaVersion);
         Assert.Equal(
             new SystemVersion(
                 CharacterSuccessionSystem.SystemId,

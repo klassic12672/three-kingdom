@@ -39,7 +39,7 @@ public sealed class CharacterSuccessionCandidateSetTests(ITestOutputHelper outpu
         Assert.Equal(6, CharacterSuccessionContractVersions.AuthoritativeQuery);
         Assert.Equal(4, CharacterSuccessionContractVersions.Snapshot);
         Assert.Equal(4, CharacterSuccessionSystem.Version);
-        Assert.Equal(28, SaveEnvelope.CurrentSchemaVersion);
+        Assert.Equal(29, SaveEnvelope.CurrentSchemaVersion);
     }
 
     [Fact]
@@ -471,7 +471,7 @@ public sealed class CharacterSuccessionCandidateSetTests(ITestOutputHelper outpu
         Assert.All(invalid.Issues, item => Assert.Equal(
             CharacterSuccessionContractVersions.CandidateSet,
             item.ContractVersion));
-        Assert.Equal(28, SaveEnvelope.CurrentSchemaVersion);
+        Assert.Equal(29, SaveEnvelope.CurrentSchemaVersion);
         Assert.Equal(4, CharacterSuccessionSystem.Version);
         Assert.Equal(
             new SystemVersion(

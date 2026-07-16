@@ -828,7 +828,7 @@ public sealed class CharacterSuccessionResolutionCampaignTests
                 pendingPath,
                 pendingEnvelope);
             SaveEnvelope pending = store.Load(pendingPath);
-            Assert.Equal(28, pending.SchemaVersion);
+            Assert.Equal(SaveEnvelope.CurrentSchemaVersion, pending.SchemaVersion);
             Assert.Single(pending.Snapshot.PendingCommands);
             CampaignSimulation replay =
                 new(WorldState.Restore(pending.Snapshot));

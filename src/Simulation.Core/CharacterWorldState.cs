@@ -253,6 +253,7 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
         {
             IncapacitateCharacterAction value => value.CharacterId,
             RestoreCharacterCapacityAction value => value.CharacterId,
+            ApplyCharacterWoundAction value => value.CharacterId,
             EnterCharacterCustodyAction value => value.CharacterId,
             ReleaseCharacterCustodyAction value => value.CharacterId,
             _ => throw new SimulationValidationException(
@@ -262,6 +263,7 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
         {
             IncapacitateCharacterAction value => value.ExpectedCurrent,
             RestoreCharacterCapacityAction value => value.ExpectedCurrent,
+            ApplyCharacterWoundAction value => value.ExpectedCurrent,
             EnterCharacterCustodyAction value => value.ExpectedCurrent,
             ReleaseCharacterCustodyAction value => value.ExpectedCurrent,
             _ => throw new SimulationValidationException(
@@ -299,6 +301,10 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
                     $"Critical character '{characterId}' cannot restore capacity."),
             RestoreCharacterCapacityAction => throw new SimulationValidationException(
                 $"Character '{characterId}' already has capacity."),
+            ApplyCharacterWoundAction value => PlanWound(
+                characterId,
+                profile.Condition,
+                value),
             EnterCharacterCustodyAction value => PlanCustodyEntry(
                 profile,
                 value,
@@ -319,6 +325,35 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
             commandId,
             eventId,
             allowDeath: false);
+    }
+
+    private static CharacterConditionState PlanWound(
+        EntityId characterId,
+        CharacterConditionState current,
+        ApplyCharacterWoundAction action)
+    {
+        bool healthWorsens = action.ResultingHealthStatus switch
+        {
+            CharacterHealthStatus.Injured =>
+                current.HealthStatus == CharacterHealthStatus.Healthy,
+            CharacterHealthStatus.Critical =>
+                current.HealthStatus != CharacterHealthStatus.Critical,
+            _ => false,
+        };
+        if (!healthWorsens
+            || action.ResultingHealthStatus == CharacterHealthStatus.Critical
+                && !action.ResultingIncapacitated
+            || current.IsIncapacitated && !action.ResultingIncapacitated)
+        {
+            throw new SimulationValidationException(
+                $"Character wound for '{characterId}' must genuinely worsen alive health without restoring capacity, and critical wounds must incapacitate.");
+        }
+
+        return current with
+        {
+            HealthStatus = action.ResultingHealthStatus,
+            IsIncapacitated = action.ResultingIncapacitated,
+        };
     }
 
     internal CharacterConditionMutationPlan PrepareDeathPreview(

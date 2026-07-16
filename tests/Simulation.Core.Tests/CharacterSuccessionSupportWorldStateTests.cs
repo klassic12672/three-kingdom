@@ -48,7 +48,7 @@ public sealed class CharacterSuccessionSupportWorldStateTests
         Assert.Equal(1, CharacterSuccessionContractVersions.SupportOutcome);
         Assert.Equal(6, CharacterSuccessionContractVersions.AuthoritativeQuery);
         Assert.Equal(4, CharacterSuccessionSystem.Version);
-        Assert.Equal(28, SaveEnvelope.CurrentSchemaVersion);
+        Assert.Equal(29, SaveEnvelope.CurrentSchemaVersion);
         Assert.StartsWith("event:", first.SourceEventId.Value);
         Assert.StartsWith("succession_support:", first.SupportId.Value);
         Assert.NotEqual(
