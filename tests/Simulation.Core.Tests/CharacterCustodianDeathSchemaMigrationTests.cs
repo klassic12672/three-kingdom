@@ -118,7 +118,7 @@ public sealed class CharacterCustodianDeathSchemaMigrationTests
 
         Assert.Equal(23, schema23["schemaVersion"]!.GetValue<int>());
         JsonObject death23 = HistoricalDeath(schema23);
-        Assert.Equal(CharacterConditionContractVersions.Death, death23["contractVersion"]!.GetValue<int>());
+        Assert.Equal(3, death23["contractVersion"]!.GetValue<int>());
         Assert.Empty(death23["releasedCustodyChanges"]!.AsArray());
         Assert.True(JsonNode.DeepEquals(careerChanges, death23["careerChanges"]));
         Assert.True(JsonNode.DeepEquals(original, schema21));

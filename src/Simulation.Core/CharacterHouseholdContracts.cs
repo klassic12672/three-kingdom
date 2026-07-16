@@ -11,6 +11,7 @@ public static class CharacterConditionContractVersions
     public const int Outcome = 1;
     public const int Change = 1;
     public const int Death = 3;
+    public const int HouseholdHeadChange = 1;
 }
 
 public static class CharacterConditionSystem
@@ -27,6 +28,7 @@ public static class CharacterConditionSystem
 [JsonDerivedType(typeof(EnterCharacterCustodyAction), "enter_character_custody.v1")]
 [JsonDerivedType(typeof(ReleaseCharacterCustodyAction), "release_character_custody.v1")]
 [JsonDerivedType(typeof(ResolveCharacterDeathAction), "resolve_character_death.v1")]
+[JsonDerivedType(typeof(ResolveHouseholdHeadDeathAction), "resolve_household_head_death.v1")]
 public interface ICharacterConditionAction;
 
 public sealed record IncapacitateCharacterAction(
@@ -51,6 +53,12 @@ public sealed record ResolveCharacterDeathAction(
     EntityId CharacterId,
     CharacterConditionState ExpectedCurrent) : ICharacterConditionAction;
 
+public sealed record ResolveHouseholdHeadDeathAction(
+    EntityId CharacterId,
+    CharacterConditionState ExpectedCurrent,
+    EntityId HouseholdId,
+    EntityId ReplacementHeadCharacterId) : ICharacterConditionAction;
+
 [method: JsonConstructor]
 public sealed record CharacterConditionActionCommandPayload(ICharacterConditionAction Action)
     : ICampaignCommandPayload;
@@ -70,6 +78,7 @@ public sealed record CharacterConditionChange(
     UnknownDerivedTypeHandling = JsonUnknownDerivedTypeHandling.FailSerialization)]
 [JsonDerivedType(typeof(CharacterConditionChangedOutcome), "character_condition_changed.v1")]
 [JsonDerivedType(typeof(CharacterDeathResolvedOutcome), "character_death_resolved.v1")]
+[JsonDerivedType(typeof(HouseholdHeadDeathResolvedOutcome), "household_head_death_resolved.v1")]
 public interface ICharacterConditionActionOutcome;
 
 public sealed record CharacterConditionChangedOutcome(
@@ -92,6 +101,22 @@ public sealed record CharacterDeathChange(
     EntityId SourceEventId);
 
 public sealed record CharacterDeathResolvedOutcome(CharacterDeathChange Death)
+    : ICharacterConditionActionOutcome;
+
+public sealed record HouseholdHeadChange(
+    int ContractVersion,
+    EntityId ChangeId,
+    EntityId HouseholdId,
+    EntityId PreviousHeadCharacterId,
+    EntityId CurrentHeadCharacterId,
+    CampaignDate ResolutionDate,
+    long ResolutionTurnIndex,
+    EntityId SourceCommandId,
+    EntityId SourceEventId);
+
+public sealed record HouseholdHeadDeathResolvedOutcome(
+    CharacterDeathChange Death,
+    HouseholdHeadChange HouseholdHeadChange)
     : ICharacterConditionActionOutcome;
 
 public sealed record CharacterConditionActionResolvedEventPayload(
@@ -183,6 +208,15 @@ public static class CharacterConditionIds
             "character-death.v1",
             StableId.RequireId(eventId, nameof(eventId)).Value,
             StableId.RequireId(characterId, nameof(characterId)).Value);
+
+    public static EntityId DeriveHouseholdHeadChangeId(
+        EntityId eventId,
+        EntityId householdId) =>
+        StableId.Hash(
+            "household_head_change",
+            "household-head-change.v1",
+            StableId.RequireId(eventId, nameof(eventId)).Value,
+            StableId.RequireId(householdId, nameof(householdId)).Value);
 
     public static EntityId DeriveRelationshipConsequenceId(
         EntityId eventId,

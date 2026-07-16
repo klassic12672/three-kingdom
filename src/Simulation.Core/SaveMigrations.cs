@@ -14,6 +14,7 @@ public interface ISaveMigration
 
 public sealed class SaveSchemaRegistry
 {
+    private const int Schema23DeathContractVersion = 3;
     private readonly IReadOnlyDictionary<int, ISaveMigration> migrations;
 
     public SaveSchemaRegistry(IEnumerable<ISaveMigration>? migrations = null)
@@ -42,6 +43,7 @@ public sealed class SaveSchemaRegistry
             new SaveMigrationV20ToV21(),
             new SaveMigrationV21ToV22(),
             new SaveMigrationV22ToV23(),
+            new SaveMigrationV23ToV24(),
         ]).ToArray();
         if (registered.Any(item => item.ToSchemaVersion != item.FromSchemaVersion + 1))
         {
@@ -111,7 +113,7 @@ public sealed class SaveSchemaRegistry
 
     internal static void ValidateHistoricalSourceChecksum(JsonObject source, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 22)
+        if (schemaVersion is < 1 or > 23)
         {
             throw new SaveCompatibilityException($"Save schema {schemaVersion} has no historical checksum contract.");
         }
@@ -256,7 +258,7 @@ public sealed class SaveSchemaRegistry
                 $"Schema {schemaVersion} unexpectedly contains schema 10 character-marriage data.");
         }
 
-        if (schemaVersion is >= 10 and <= 22)
+        if (schemaVersion is >= 10 and <= 23)
         {
             ValidateCharacterMarriageSnapshotShape(
                 RequireHistoricalObject(
@@ -373,10 +375,15 @@ public sealed class SaveSchemaRegistry
             {
                 RejectF1Discriminators(source, "save payload");
             }
-            else
+            else if (schemaVersion == 22)
             {
                 ValidateSchema22CharacterDeathDiagnostics(diagnosticEvents);
                 RejectF2Discriminators(source, "save payload");
+            }
+            else
+            {
+                ValidateSchema23CharacterDeathDiagnostics(diagnosticEvents);
+                RejectF3Discriminators(source, "save payload");
             }
         }
 
@@ -768,7 +775,7 @@ public sealed class SaveSchemaRegistry
         ValidateCharacterPregnancySnapshotShape(
             characterPregnancies,
             "Current save schema");
-        ValidateCurrentCharacterDeathDiagnostics(source["diagnosticEvents"]);
+        ValidateCurrentCharacterDeathDiagnostics(source);
 
         if (snapshot["systemVersions"] is not JsonArray systemVersions
             || !systemVersions.Any(IsCurrentCharacterSystemVersion))
@@ -834,6 +841,13 @@ public sealed class SaveSchemaRegistry
             requireReleasedCustodyChanges: false,
             "Schema 22");
 
+    private static void ValidateSchema23CharacterDeathDiagnostics(JsonNode? node) =>
+        ValidateCharacterDeathDiagnostics(
+            node,
+            Schema23DeathContractVersion,
+            requireReleasedCustodyChanges: true,
+            "Schema 23");
+
     private static void ValidateCharacterDeathDiagnostics(
         JsonNode? node,
         int expectedDeathVersion,
@@ -859,28 +873,66 @@ public sealed class SaveSchemaRegistry
             return;
         }
 
-        if (value["$type"]?.GetValue<string>() == "character_death_resolved.v1")
+        string? discriminator = value["$type"]?.GetValue<string>();
+        if (discriminator == "resolve_household_head_death.v1"
+            && (value["characterId"] is not JsonObject
+                || !IsCurrentCharacterCondition(value["expectedCurrent"])
+                || value["householdId"] is not JsonObject
+                || value["replacementHeadCharacterId"] is not JsonObject))
+        {
+            throw new SaveCompatibilityException(
+                $"{description} save schema contains incomplete household-head death action diagnostics.");
+        }
+
+        if (discriminator == "character_condition_action_resolved.v1")
+        {
+            string? actionType = value["action"]?["$type"]?.GetValue<string>();
+            string? outcomeType = value["outcome"]?["$type"]?.GetValue<string>();
+            if ((actionType == "resolve_household_head_death.v1"
+                    || outcomeType == "household_head_death_resolved.v1")
+                && (actionType != "resolve_household_head_death.v1"
+                    || outcomeType != "household_head_death_resolved.v1"))
+            {
+                throw new SaveCompatibilityException(
+                    $"{description} save schema contains incomplete or mismatched household-head death action diagnostics.");
+            }
+        }
+
+        if (discriminator == "character_death_resolved.v1")
         {
             if (value["death"] is not JsonObject death
-                || !HasVersion(death, expectedDeathVersion)
-                || requireReleasedCustodyChanges
-                    && (death["releasedCustodyChanges"] is not JsonArray releasedChanges
-                        || !ContainsOnlyCurrentConditionChanges(releasedChanges))
-                || !requireReleasedCustodyChanges
-                    && death.ContainsKey("releasedCustodyChanges")
-                || death["careerChanges"] is not JsonObject careerChanges
-                || !HasVersion(careerChanges, CareerContractVersions.DeathChange)
-                || careerChanges["invalidatedProposals"] is not JsonArray invalidatedProposals
-                || careerChanges["endedRetinueMemberships"] is not JsonArray endedMemberships
-                || careerChanges["endedPatronageBonds"] is not JsonArray endedBonds
-                || careerChanges["endedEmploymentTenures"] is not JsonArray endedTenures
-                || !ContainsOnlyCurrentCareerStateRecords(invalidatedProposals)
-                || !ContainsOnlyCurrentCareerStateRecords(endedMemberships)
-                || !ContainsOnlyCurrentCareerStateRecords(endedBonds)
-                || !ContainsOnlyCurrentCareerStateRecords(endedTenures))
+                || !IsCharacterDeathChange(
+                    death,
+                    expectedDeathVersion,
+                    requireReleasedCustodyChanges))
             {
                 throw new SaveCompatibilityException(
                     $"{description} save schema contains incomplete or unsupported character-death diagnostics.");
+            }
+        }
+
+        if (discriminator == "household_head_death_resolved.v1")
+        {
+            if (value["death"] is not JsonObject death
+                || !IsCharacterDeathChange(
+                    death,
+                    expectedDeathVersion,
+                    requireReleasedCustodyChanges)
+                || value["householdHeadChange"] is not JsonObject headChange
+                || !HasVersion(
+                    headChange,
+                    CharacterConditionContractVersions.HouseholdHeadChange)
+                || headChange["changeId"] is not JsonObject
+                || headChange["householdId"] is not JsonObject
+                || headChange["previousHeadCharacterId"] is not JsonObject
+                || headChange["currentHeadCharacterId"] is not JsonObject
+                || headChange["resolutionDate"] is not JsonObject
+                || !HasLong(headChange, "resolutionTurnIndex")
+                || headChange["sourceCommandId"] is not JsonObject
+                || headChange["sourceEventId"] is not JsonObject)
+            {
+                throw new SaveCompatibilityException(
+                    $"{description} save schema contains incomplete or unsupported household-head death diagnostics.");
             }
         }
 
@@ -891,6 +943,121 @@ public sealed class SaveSchemaRegistry
                 expectedDeathVersion,
                 requireReleasedCustodyChanges,
                 description);
+        }
+    }
+
+    private static bool IsCharacterDeathChange(
+        JsonObject death,
+        int expectedDeathVersion,
+        bool requireReleasedCustodyChanges)
+    {
+        return HasVersion(death, expectedDeathVersion)
+            && death["deathId"] is JsonObject
+            && death["conditionChange"] is JsonObject conditionChange
+            && ContainsOnlyCurrentConditionChanges(new JsonArray(conditionChange.DeepClone()))
+            && (requireReleasedCustodyChanges
+                ? death["releasedCustodyChanges"] is JsonArray releasedChanges
+                    && ContainsOnlyCurrentConditionChanges(releasedChanges)
+                : !death.ContainsKey("releasedCustodyChanges"))
+            && death["marriageChanges"] is JsonObject marriageChanges
+            && IsCurrentCharacterMarriageLifecycleChanges(marriageChanges)
+            && death["endedGuardianships"] is JsonArray endedGuardianships
+            && ContainsOnlyCurrentGuardianships(endedGuardianships)
+            && death["removedPregnancies"] is JsonArray removedPregnancies
+            && ContainsOnlyCurrentPregnancies(removedPregnancies)
+            && death["careerChanges"] is JsonObject careerChanges
+            && HasVersion(careerChanges, CareerContractVersions.DeathChange)
+            && careerChanges["invalidatedProposals"] is JsonArray invalidatedProposals
+            && careerChanges["endedRetinueMemberships"] is JsonArray endedMemberships
+            && careerChanges["endedPatronageBonds"] is JsonArray endedBonds
+            && careerChanges["endedEmploymentTenures"] is JsonArray endedTenures
+            && ContainsOnlyCurrentCareerStateRecords(invalidatedProposals)
+            && ContainsOnlyCurrentCareerStateRecords(endedMemberships)
+            && ContainsOnlyCurrentCareerStateRecords(endedBonds)
+            && ContainsOnlyCurrentCareerStateRecords(endedTenures)
+            && death["resolutionDate"] is JsonObject
+            && HasLong(death, "resolutionTurnIndex")
+            && death["sourceCommandId"] is JsonObject
+            && death["sourceEventId"] is JsonObject;
+    }
+
+    private static bool IsCurrentCharacterMarriageLifecycleChanges(JsonObject changes)
+    {
+        if (!HasVersion(changes, CharacterMarriageContractVersions.LifecycleChangeSet)
+            || !HasDefinedEnum<CharacterMarriageLifecycleReason>(changes, "reason")
+            || changes["invalidatedProposals"] is not JsonArray invalidatedProposals
+            || changes["invalidatedBetrothals"] is not JsonArray invalidatedBetrothals
+            || changes["endedUnions"] is not JsonArray endedUnions
+            || changes["cancelledInvitations"] is not JsonArray cancelledInvitations
+            || changes["invalidatedRomanceRoutes"] is not JsonArray invalidatedRomanceRoutes)
+        {
+            return false;
+        }
+
+        JsonObject snapshot = new()
+        {
+            ["contractVersion"] = CharacterMarriageContractVersions.Snapshot,
+            ["practices"] = new JsonArray(),
+            ["proposals"] = invalidatedProposals.DeepClone(),
+            ["betrothals"] = invalidatedBetrothals.DeepClone(),
+            ["unions"] = endedUnions.DeepClone(),
+            ["invitations"] = cancelledInvitations.DeepClone(),
+            ["romanceRoutes"] = invalidatedRomanceRoutes.DeepClone(),
+            ["history"] = new JsonArray(),
+        };
+        try
+        {
+            ValidateCharacterMarriageSnapshotShape(
+                snapshot,
+                "Character-death marriage lifecycle changes",
+                CharacterMarriageContractVersions.Snapshot,
+                requireInvitations: true,
+                allowVersionTwoRoutes: true);
+            return true;
+        }
+        catch (SaveCompatibilityException)
+        {
+            return false;
+        }
+    }
+
+    private static bool ContainsOnlyCurrentGuardianships(JsonArray guardianships)
+    {
+        JsonObject snapshot = new()
+        {
+            ["contractVersion"] = CharacterGuardianshipContractVersions.Snapshot,
+            ["guardianships"] = guardianships.DeepClone(),
+        };
+        try
+        {
+            ValidateCharacterGuardianshipSnapshotShape(
+                snapshot,
+                "Character-death guardianship changes");
+            return true;
+        }
+        catch (SaveCompatibilityException)
+        {
+            return false;
+        }
+    }
+
+    private static bool ContainsOnlyCurrentPregnancies(JsonArray pregnancies)
+    {
+        JsonObject snapshot = new()
+        {
+            ["contractVersion"] = CharacterPregnancyContractVersions.Snapshot,
+            ["activePregnancies"] = pregnancies.DeepClone(),
+        };
+        try
+        {
+            ValidateCharacterPregnancySnapshotShape(
+                snapshot,
+                "Character-death pregnancy changes");
+            return true;
+        }
+        catch (SaveCompatibilityException)
+        {
+            return false;
         }
     }
 
@@ -2105,6 +2272,36 @@ public sealed class SaveSchemaRegistry
             throw new SaveCompatibilityException(
                 $"Save schema 22 unexpectedly contains schema 23 custodian-death release data in {description}.");
         }
+    }
+
+    private static void RejectF3Discriminators(JsonNode node, string description)
+    {
+        if (ContainsF3PropertyOrDiscriminator(node))
+        {
+            throw new SaveCompatibilityException(
+                $"Save schema 23 unexpectedly contains schema 24 household-head death data in {description}.");
+        }
+    }
+
+    private static bool ContainsF3PropertyOrDiscriminator(JsonNode? node)
+    {
+        if (node is JsonObject value)
+        {
+            string? discriminator = value["$type"]?.GetValue<string>();
+            if (discriminator is "resolve_household_head_death.v1"
+                    or "household_head_death_resolved.v1"
+                || value.ContainsKey("replacementHeadCharacterId")
+                || value.ContainsKey("householdHeadChange")
+                || value.ContainsKey("previousHeadCharacterId")
+                || value.ContainsKey("currentHeadCharacterId"))
+            {
+                return true;
+            }
+
+            return value.Any(property => ContainsF3PropertyOrDiscriminator(property.Value));
+        }
+
+        return node is JsonArray array && array.Any(ContainsF3PropertyOrDiscriminator);
     }
 
     private static bool ContainsF2PropertyOrVersion(JsonNode? node)
@@ -3605,6 +3802,7 @@ public sealed class SaveMigrationV21ToV22 : ISaveMigration
 public sealed class SaveMigrationV22ToV23 : ISaveMigration
 {
     private const int Schema22DeathContractVersion = 2;
+    private const int Schema23DeathContractVersion = 3;
 
     public int FromSchemaVersion => 22;
 
@@ -3651,7 +3849,7 @@ public sealed class SaveMigrationV22ToV23 : ISaveMigration
                     "Schema 22 character-death diagnostics contain unsupported death-change data.");
             }
 
-            death["contractVersion"] = CharacterConditionContractVersions.Death;
+            death["contractVersion"] = Schema23DeathContractVersion;
             death["releasedCustodyChanges"] = new JsonArray();
         }
 
@@ -3659,5 +3857,24 @@ public sealed class SaveMigrationV22ToV23 : ISaveMigration
         {
             UpgradeCharacterDeathChanges(child);
         }
+    }
+}
+
+public sealed class SaveMigrationV23ToV24 : ISaveMigration
+{
+    public int FromSchemaVersion => 23;
+
+    public int ToSchemaVersion => 24;
+
+    public JsonObject Migrate(JsonObject source)
+    {
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(source, FromSchemaVersion);
+        WorldSnapshot snapshot = (source["snapshot"] as JsonObject)?.Deserialize<WorldSnapshot>(
+            SimulationJson.CreateOptions())
+            ?? throw new SaveCompatibilityException(
+                "Schema 23 save is missing its authoritative snapshot.");
+        source["checksum"] = SimulationChecksum.Compute(snapshot).Value;
+        source["schemaVersion"] = ToSchemaVersion;
+        return source;
     }
 }

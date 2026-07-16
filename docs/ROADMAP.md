@@ -89,6 +89,8 @@ SP-04F1's atomic career-death proposal invalidation and service closure, retaine
 
 SP-04F2's non-head custodian-death custody release, canonical death-v3 evidence, unchanged household-head blocker, and authenticated structural schema-22-to-23 migration have passing [exact-SHA hosted macOS arm64/Windows x64 evidence](evidence/SP-04F2-EXACT-SHA-ab8917a.md) at `ab8917a95ea064911a584cd640647374745fd2c7`. Reassignment, inheritance, successor selection, retinue succession, household-head replacement, player continuity, full SP-04 acceptance, and the three-second budget remain open.
 
+SP-04F3's exact reserved-system household-head death handoff, unchanged ordinary death-v3 contract, mandatory head-change-v1 evidence, and vocabulary-only schema-23-to-24 migration are locally implemented. Its 50 focused cases and zero-warning full Release gate pass 904 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests; validation, diff, LFS, focused formatter checks, and independent architecture/schema/verification reviews also pass. Automatic selection, legal succession, inheritance, claims, regency, retinue succession, player continuity, full SP-04 acceptance, and the three-second budget remain open. Immutable implementation SHA and exact-SHA hosted macOS/Windows evidence are pending.
+
 ## Platform verification gates
 
 - Through M3, Apple Silicon macOS is the primary interactive and visual development platform.
@@ -124,8 +126,9 @@ Before M4, estimates are internal ranges only. After M4, record measured velocit
 20. Complete — SP-04F0 restricted public death is accepted at exact SHA `783ccfb61357248158cf287ee69ba27b56c38f4a` with hosted macOS arm64/Windows x64 evidence.
 21. Complete — SP-04F1 career-death obligation closure is accepted at exact SHA `23045a06a39361ecf8d2ef341cc0458590322f0a` with hosted macOS arm64/Windows x64 evidence.
 22. Complete — SP-04F2 custodian-death custody release is accepted at exact SHA `ab8917a95ea064911a584cd640647374745fd2c7` with hosted macOS arm64/Windows x64 evidence.
-23. Select and implement the next dependency-ordered SP-04 package without crossing the remaining inheritance/succession policy seams prematurely.
+23. Complete SP-04F3 exact household-head death handoff repository gates, independent review, immutable commit, and exact-SHA hosted evidence without treating the supplied replacement as a legal heir.
+24. Select the next dependency-ordered SP-04 succession-policy package only after F3 is accepted.
 
-M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A through SP-04F2 have passing exact-SHA hosted macOS arm64/Windows x64 evidence at their accepted revisions. SP-05 remains blocked, and later SP-04 packages remain pending.
+M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A through SP-04F2 have passing exact-SHA hosted macOS arm64/Windows x64 evidence at their accepted revisions, while F3 remains local pending closeout. SP-05 remains blocked, and later SP-04 packages remain pending.
 
 See the [subsystem plan index](plans/README.md) for dependency status.

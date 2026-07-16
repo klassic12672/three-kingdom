@@ -639,6 +639,17 @@ public sealed class WorldState : IWorldQuery
                 eventId);
         }
 
+        if (payload.Action is ResolveHouseholdHeadDeathAction householdHeadDeath)
+        {
+            return PrepareHouseholdHeadDeathAction(
+                actingActorId,
+                householdHeadDeath,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId,
+                eventId);
+        }
+
         CharacterConditionMutationPlan character = Characters.PrepareConditionAction(
             payload.Action,
             resolutionDate,
@@ -754,6 +765,80 @@ public sealed class WorldState : IWorldQuery
             actingActorId,
             action,
             new CharacterDeathResolvedOutcome(death));
+        return new CharacterConditionAggregatePlan(
+            resolved,
+            character.CharacterPlan,
+            marriage.MarriagePlan,
+            null,
+            guardianship.GuardianshipPlan,
+            pregnancy.PregnancyPlan,
+            career.CareerPlan);
+    }
+
+    private CharacterConditionAggregatePlan PrepareHouseholdHeadDeathAction(
+        EntityId actingActorId,
+        ResolveHouseholdHeadDeathAction action,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        CharacterDeathMutationPlan character = Characters.PrepareHouseholdHeadDeathAction(
+            action,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+        CharacterMarriageLifecycleUpdatePlan marriage = CharacterMarriages.PrepareLifecycleChange(
+            character.CharacterPlan.Candidate,
+            character.Change.CharacterId,
+            CharacterMarriageLifecycleReason.CharacterDied,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId);
+        CharacterGuardianshipDeathPlan guardianship =
+            CharacterGuardianships.PrepareCharacterDeath(
+                action.CharacterId,
+                character.CharacterPlan.Candidate,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId,
+                eventId);
+        CharacterPregnancyDeathPlan pregnancy = CharacterPregnancies.PrepareCharacterDeath(
+            action.CharacterId,
+            character.CharacterPlan.Candidate,
+            marriage.MarriagePlan.Candidate,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+        CharacterCareerDeathPlan career = Careers.PrepareCharacterDeath(
+            action.CharacterId,
+            character.CharacterPlan.Candidate,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+        CharacterDeathChange death = new(
+            CharacterConditionContractVersions.Death,
+            CharacterConditionIds.DeriveDeathId(eventId, action.CharacterId),
+            character.Change,
+            character.ReleasedCustodyChanges,
+            marriage.Changes,
+            guardianship.EndedGuardianships,
+            pregnancy.RemovedPregnancies,
+            career.Changes,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+        HouseholdHeadChange headChange = character.HouseholdHeadChange
+            ?? throw new SimulationValidationException(
+                "Household-head death planning did not produce head-change evidence.");
+        CharacterConditionActionResolvedEventPayload resolved = new(
+            actingActorId,
+            action,
+            new HouseholdHeadDeathResolvedOutcome(death, headChange));
         return new CharacterConditionAggregatePlan(
             resolved,
             character.CharacterPlan,
@@ -1661,8 +1746,28 @@ public sealed class WorldState : IWorldQuery
                     && outcome.Death.ConditionChange.CharacterId == action.CharacterId:
                 AddCharacterDeath(affected, outcome.Death, eventId);
                 break;
+            case (ResolveHouseholdHeadDeathAction action, HouseholdHeadDeathResolvedOutcome outcome)
+                when outcome.Death is not null
+                    && outcome.HouseholdHeadChange is not null
+                    && outcome.Death.ConditionChange is not null
+                    && outcome.Death.ReleasedCustodyChanges is not null
+                    && outcome.Death.MarriageChanges is not null
+                    && outcome.Death.EndedGuardianships is not null
+                    && outcome.Death.RemovedPregnancies is not null
+                    && outcome.Death.CareerChanges is not null
+                    && outcome.Death.ConditionChange.CharacterId == action.CharacterId:
+                AddCharacterDeath(affected, outcome.Death, eventId);
+                AddHouseholdHeadChange(
+                    affected,
+                    outcome.HouseholdHeadChange,
+                    action,
+                    outcome.Death,
+                    eventId);
+                break;
             case (ResolveCharacterDeathAction, _):
             case (_, CharacterDeathResolvedOutcome):
+            case (ResolveHouseholdHeadDeathAction, _):
+            case (_, HouseholdHeadDeathResolvedOutcome):
                 throw new SimulationValidationException(
                     "Character-death action and outcome do not match.");
             case (_, CharacterConditionChangedOutcome outcome)
@@ -1680,7 +1785,8 @@ public sealed class WorldState : IWorldQuery
 
         if (payload.RelationshipMemoryConsequence is not null)
         {
-            if (payload.Outcome is CharacterDeathResolvedOutcome)
+            if (payload.Outcome is CharacterDeathResolvedOutcome
+                or HouseholdHeadDeathResolvedOutcome)
             {
                 throw new SimulationValidationException(
                     "Character-death outcomes cannot contain a relationship consequence.");
@@ -1814,6 +1920,40 @@ public sealed class WorldState : IWorldQuery
             death.ResolutionDate,
             death.ResolutionTurnIndex,
             death.SourceCommandId);
+    }
+
+    private static void AddHouseholdHeadChange(
+        ISet<EntityId> affected,
+        HouseholdHeadChange change,
+        ResolveHouseholdHeadDeathAction action,
+        CharacterDeathChange death,
+        EntityId? eventId)
+    {
+        if (eventId is not EntityId sourceEventId
+            || !sourceEventId.IsValid
+            || change.ContractVersion
+                != CharacterConditionContractVersions.HouseholdHeadChange
+            || change.ChangeId != CharacterConditionIds.DeriveHouseholdHeadChangeId(
+                sourceEventId,
+                action.HouseholdId)
+            || change.HouseholdId != action.HouseholdId
+            || change.PreviousHeadCharacterId != action.CharacterId
+            || change.CurrentHeadCharacterId != action.ReplacementHeadCharacterId
+            || change.PreviousHeadCharacterId == change.CurrentHeadCharacterId
+            || change.ResolutionDate != death.ResolutionDate
+            || change.ResolutionTurnIndex != death.ResolutionTurnIndex
+            || change.SourceCommandId != death.SourceCommandId
+            || change.SourceEventId != death.SourceEventId
+            || change.SourceEventId != sourceEventId)
+        {
+            throw new SimulationValidationException(
+                "Household-head death change contract, identity, or head evidence is invalid.");
+        }
+
+        affected.Add(change.ChangeId);
+        affected.Add(change.HouseholdId);
+        affected.Add(change.PreviousHeadCharacterId);
+        affected.Add(change.CurrentHeadCharacterId);
     }
 
     private static void AddCharacterCareerDeathChanges(

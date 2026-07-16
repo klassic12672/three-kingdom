@@ -375,20 +375,104 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
                 "Character-death action cannot be null.");
         }
 
-        CharacterConditionMutationPlan death = PrepareDeathPreview(
+        return PrepareDeathActionCore(
             action.CharacterId,
             action.ExpectedCurrent,
+            householdId: null,
+            replacementHeadCharacterId: null,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+    }
+
+    internal CharacterDeathMutationPlan PrepareHouseholdHeadDeathAction(
+        ResolveHouseholdHeadDeathAction action,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (action is null)
+        {
+            throw new SimulationValidationException(
+                "Household-head death action cannot be null.");
+        }
+
+        return PrepareDeathActionCore(
+            action.CharacterId,
+            action.ExpectedCurrent,
+            action.HouseholdId,
+            action.ReplacementHeadCharacterId,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+    }
+
+    private CharacterDeathMutationPlan PrepareDeathActionCore(
+        EntityId characterId,
+        CharacterConditionState expectedCurrent,
+        EntityId? householdId,
+        EntityId? replacementHeadCharacterId,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        HouseholdState? household = null;
+        AuthoritativeCharacterProfile? replacement = null;
+        if (householdId is not null || replacementHeadCharacterId is not null)
+        {
+            if (householdId is not EntityId validHouseholdId
+                || replacementHeadCharacterId is not EntityId validReplacementId
+                || !validHouseholdId.IsValid
+                || !validReplacementId.IsValid)
+            {
+                throw new SimulationValidationException(
+                    "Household-head death requires valid household and replacement-head IDs.");
+            }
+
+            if (validReplacementId == characterId)
+            {
+                throw new SimulationValidationException(
+                    "Household-head death replacement must be distinct from the death target.");
+            }
+
+            if (!householdStates.TryGetValue(validHouseholdId, out household)
+                || household.HeadCharacterId != characterId
+                || !household.MemberIds.Contains(characterId)
+                || !household.MemberIds.Contains(validReplacementId))
+            {
+                throw new SimulationValidationException(
+                    "Household-head death requires the exact current household, target head, and same-household replacement member.");
+            }
+
+            replacement = RequireCurrentCharacter(
+                validReplacementId,
+                resolutionDate,
+                "Household-head death replacement");
+            if (replacement.Condition.VitalStatus != CharacterVitalStatus.Alive)
+            {
+                throw new SimulationValidationException(
+                    $"Household-head death replacement '{validReplacementId}' must be living.");
+            }
+        }
+
+        CharacterConditionMutationPlan death = PrepareDeathPreview(
+            characterId,
+            expectedCurrent,
             resolutionDate,
             authoritativeTurnIndex,
             commandId,
             eventId);
         CharacterConditionChange[] releasedCustodyChanges = Profiles.Where(item =>
-            item.CharacterId != action.CharacterId
+            item.CharacterId != characterId
             && item.Condition.VitalStatus == CharacterVitalStatus.Alive
             && item.Condition.CustodyStatus is CharacterCustodyStatus.Detained
                 or CharacterCustodyStatus.Captive
                 or CharacterCustodyStatus.Hostage
-            && item.Condition.CustodianId == action.CharacterId)
+            && item.Condition.CustodianId == characterId)
             .Select(dependent => new CharacterConditionChange(
                 CharacterConditionContractVersions.Change,
                 CharacterConditionIds.DeriveChangeId(eventId, dependent.CharacterId),
@@ -413,14 +497,40 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
                 releasedConditions.TryGetValue(state.CharacterId, out CharacterConditionState? condition)
                     ? state with { Condition = Clone(condition) }
                     : state).ToArray(),
+            HouseholdStates = household is null
+                ? updated.HouseholdStates
+                : updated.HouseholdStates.Select(state =>
+                    state.HouseholdId == household.HouseholdId
+                        ? state with
+                        {
+                            HeadCharacterId = replacement!.CharacterId,
+                            MemberIds = state.MemberIds.ToArray(),
+                        }
+                        : state).ToArray(),
         };
         CharacterWorldState candidate = new(
             updated,
             death.CharacterPlan.Candidate.campaignDate);
 
+        HouseholdHeadChange? headChange = household is null
+            ? null
+            : new HouseholdHeadChange(
+                CharacterConditionContractVersions.HouseholdHeadChange,
+                CharacterConditionIds.DeriveHouseholdHeadChangeId(
+                    eventId,
+                    household.HouseholdId),
+                household.HouseholdId,
+                characterId,
+                replacement!.CharacterId,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId,
+                eventId);
+
         return new CharacterDeathMutationPlan(
             death.Change,
             Array.AsReadOnly(releasedCustodyChanges),
+            headChange,
             new CharacterWorldUpdatePlan(candidate));
     }
 
@@ -2254,6 +2364,7 @@ internal sealed record CharacterConditionMutationPlan(
 internal sealed record CharacterDeathMutationPlan(
     CharacterConditionChange Change,
     IReadOnlyList<CharacterConditionChange> ReleasedCustodyChanges,
+    HouseholdHeadChange? HouseholdHeadChange,
     CharacterWorldUpdatePlan CharacterPlan);
 
 internal sealed record HouseholdDecisionMutationPlan(
