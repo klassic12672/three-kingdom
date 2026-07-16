@@ -87,7 +87,7 @@ SP-04F0's restricted public-death action/outcome, atomic character/marriage/guar
 
 SP-04F1's atomic career-death proposal invalidation and service closure, retained-retinue preservation, household-head/current-custodian blockers, and authenticated structural schema-21-to-22 migration have passing [exact-SHA hosted macOS arm64/Windows x64 evidence](evidence/SP-04F1-EXACT-SHA-23045a0.md) at `23045a06a39361ecf8d2ef341cc0458590322f0a`. Inheritance, successor selection, retinue succession, household-head/captive disposition, player continuity, full SP-04 acceptance, and the three-second budget remain open.
 
-SP-04F2's local implementation candidate releases every living Detained/Captive/Hostage dependent when a non-head custodian dies, records canonical v1 condition changes inside death v3, keeps household-head death blocked, and structurally migrates authenticated schema-22 F1 diagnostics to schema 23 without changing the snapshot or checksum. Focused/complete suites, repository gates, and independent reviews pass locally; exact-SHA hosted macOS arm64/Windows x64 evidence remains pending. F2 is not yet accepted. Reassignment, inheritance, successor selection, retinue succession, household-head replacement, player continuity, full SP-04 acceptance, and the three-second budget remain open.
+SP-04F2's non-head custodian-death custody release, canonical death-v3 evidence, unchanged household-head blocker, and authenticated structural schema-22-to-23 migration have passing [exact-SHA hosted macOS arm64/Windows x64 evidence](evidence/SP-04F2-EXACT-SHA-ab8917a.md) at `ab8917a95ea064911a584cd640647374745fd2c7`. Reassignment, inheritance, successor selection, retinue succession, household-head replacement, player continuity, full SP-04 acceptance, and the three-second budget remain open.
 
 ## Platform verification gates
 
@@ -123,9 +123,9 @@ Before M4, estimates are internal ranges only. After M4, record measured velocit
 19. Preserve SP-04E6's primary-guardian education attainment, runtime-v3/authored-v1-v2 separation, schema-19-to-20 compatibility, independent-remediation record, and exact-SHA hosted evidence at `0928e4484ef41da5ac31f5683af5347800a92dec`.
 20. Complete — SP-04F0 restricted public death is accepted at exact SHA `783ccfb61357248158cf287ee69ba27b56c38f4a` with hosted macOS arm64/Windows x64 evidence.
 21. Complete — SP-04F1 career-death obligation closure is accepted at exact SHA `23045a06a39361ecf8d2ef341cc0458590322f0a` with hosted macOS arm64/Windows x64 evidence.
-22. In progress — SP-04F2 custodian-death custody release passes local repository gates and independent review; exact-SHA hosted evidence remains pending.
-23. After SP-04F2 exact-SHA acceptance, select and implement the next dependency-ordered SP-04 package without crossing the remaining inheritance/succession policy seams prematurely.
+22. Complete — SP-04F2 custodian-death custody release is accepted at exact SHA `ab8917a95ea064911a584cd640647374745fd2c7` with hosted macOS arm64/Windows x64 evidence.
+23. Select and implement the next dependency-ordered SP-04 package without crossing the remaining inheritance/succession policy seams prematurely.
 
-M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A through SP-04F1 have passing exact-SHA hosted macOS arm64/Windows x64 evidence at their accepted revisions; F2 is a local candidate. SP-05 remains blocked, and later SP-04 packages remain pending.
+M0, M1, and SP-03 are complete. M2 remains Active and is not complete. SP-04 is Active: SP-04A through SP-04F2 have passing exact-SHA hosted macOS arm64/Windows x64 evidence at their accepted revisions. SP-05 remains blocked, and later SP-04 packages remain pending.
 
 See the [subsystem plan index](plans/README.md) for dependency status.

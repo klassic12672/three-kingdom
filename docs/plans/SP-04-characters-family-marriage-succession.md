@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — through SP-04F1 exact-SHA hosted; SP-04F2 locally verified, hosted closeout pending |
+| Status | Active — through SP-04F2 accepted with exact-SHA hosted evidence |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -858,7 +858,7 @@ Local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot
 
 Accepted revision `23045a06a39361ecf8d2ef341cc0458590322f0a` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04F1-EXACT-SHA-23045a0.md). F118 therefore passes at that revision. Full SP-04 acceptance, inheritance, succession continuity, and the overall performance gate remain open.
 
-## Active package: SP-04F2 custodian-death custody release
+## Accepted package: SP-04F2 custodian-death custody release
 
 SP-04F2 is the smallest dependency-safe package after accepted F1. It removes only the current-custodian death blocker: when a non-household-head custodian dies through the existing public action, every other living character in Detained, Captive, or Hostage status who names the target as custodian is released through the existing Free/no-custodian transition. F2 chooses release, never reassignment, because no household/faction custody-authority or successor contract exists. Household-head death remains blocked.
 
@@ -893,11 +893,13 @@ F2 does not add custodian reassignment, household-head replacement, household/fa
 | F215 | Exact F1 schema 22 authenticates, migrates structurally, preserves source/checksum, and continues | Frozen fixture identity, direct-step chain, and continuation | Local pass |
 | F216 | Schema 22 rejects isolated F2 properties/version/null/corruption; current schema rejects incomplete diagnostics | Historical injection and current raw-shape matrix | Local pass |
 | F217 | A 1,000-character/200-death/600-release workload records raw local measurements without a brittle threshold | Local Apple Silicon measurement | Local pass; no threshold |
-| F218 | Repository gates, independent reviews, and exact-SHA hosted macOS/Windows evidence pass | Local and hosted closeout | Local gates and independent reviews pass; hosted evidence pending |
+| F218 | Repository gates, independent reviews, and exact-SHA hosted macOS/Windows evidence pass | Local and hosted closeout | Hosted pass at `ab8917a` |
 
 The representative local Release fixture contains 1,000 characters, 200 custodian deaths, and 600 releases. A raw Apple Silicon run measured 5,101.786 ms workflow, 1.746 ms query, and 94.185 ms snapshot/checksum; snapshot JSON was 861,856 bytes, gzip was 17,162 bytes, and checksum was `ffa7c7f393952695c27dd8951cd43c85a0acd448db2b4bc039b4d88a6f8a0c90`. The test asserts shape and correctness only. This component workload neither passes nor waives the full SP-04 three-second campaign-turn budget.
 
-Local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. Focused F2 verification passes 24/24 cases and the complete Simulation.Core suite passes 854/854. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 854 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. `git diff --check`, `git lfs fsck`, and focused formatter verification pass. Independent architecture, simulation, schema/content, and verification reviews report no local blocker. Implementation commit identity and exact-SHA hosted macOS arm64/Windows x64 evidence remain pending; F2 is therefore not yet accepted. Full SP-04 acceptance, inheritance, succession continuity, and the overall performance gate remain open.
+Local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. Focused F2 verification passes 24/24 cases and the complete Simulation.Core suite passes 854/854. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 854 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. `git diff --check`, `git lfs fsck`, and focused formatter verification pass. Independent architecture, simulation, schema/content, and verification reviews report no local blocker.
+
+Accepted revision `ab8917a95ea064911a584cd640647374745fd2c7` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04F2-EXACT-SHA-ab8917a.md). F218 therefore passes at that revision. Full SP-04 acceptance, inheritance, succession continuity, and the overall performance gate remain open.
 
 ## Edge cases and failure handling
 
