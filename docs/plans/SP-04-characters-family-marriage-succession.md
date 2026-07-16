@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — through SP-04F9 accepted; SP-04G local candidate |
+| Status | Active — through SP-04G accepted |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -1171,7 +1171,7 @@ The representative local Release fixture contains 1,000 characters and 100 indep
 
 Current local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. The exact `CharacterSuccession` Release filter passes 307/307 cases. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 1,217 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. Focused formatter verification, `git diff --check`, and `git lfs fsck` pass. The exact ten-year deterministic soak passes 1,044 turns to `0200-01-03` with schema-28 checksum `d3b27aa7c4349a025f274e2386143af8d9ee4fa3fc2c5a8c6941b4d51d261799`. Independent architecture, simulation-engineer, Ponytail, and final integrated verification reviews approve F901–F916 with no remaining local blocker. Accepted revision `d64ab315a96fda15a2802ebcc687bbf50924fa2c` subsequently passed [hosted macOS arm64 and Windows x64 validation, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04F9-EXACT-SHA-d64ab31.md). F917 therefore passes and F9 is accepted. SP-04 and M2 remain Active, SP-05 remains blocked, and SP-04G is the next package but is not started here.
 
-## Candidate package: SP-04G observer queries and minimum integration
+## Accepted package: SP-04G observer queries and minimum integration
 
 SP-04G reuses the authoritative character/marriage/succession queries and the accepted `RelationshipSummary` v2 observer/publicity model. It adds immutable `CharacterProfile`, `HouseholdView`, and `SuccessionView` application contracts plus one controlled-character facade. The field whitelist is deliberately smaller than the authoritative world: public identity, localized names, age, culture/origin, vital status, family/household identity, bounded typed kinship, reputations, legal unions, political betrothals, public completed succession outcome, and minimal public regency reason evidence are exposed. Exact condition/private identity details are self-only except that the current custodian sees custody facts; romance routes are participant-only; active succession planning is limited to the subject or directly named designation/claim/support participants. Birth dates, provenance, education evidence, wealth, estates, career, pregnancy, guardianship, private succession evidence, ranking, inheritance, folded history, hashes, and continuity are absent.
 
@@ -1183,9 +1183,9 @@ Wounds accept only Healthy→Injured or non-Critical living health→Critical. C
 
 The exact schema-28 fixture was generated through public F9 workflows at accepted implementation revision `d64ab315a96fda15a2802ebcc687bbf50924fa2c`. It is 16,294 bytes, has file SHA-256 `f603c2ae99bf836b612edf077d9f157c9faff1a03fc85ca54482fc7a780a0ba8`, stores checksum `7ee3c84b8a29fac72f20f1a2f776073ea33e9ae32abdcc11d26879a3d7b1215f`, and is stamped `gameVersion=sp04f9@d64ab315a96fda15a2802ebcc687bbf50924fa2c`. It retains one selected succession death/control transfer plus one pending legacy condition command. Migration preserves source bytes, snapshot, diagnostics, pending commands, continuity, resolution evidence, and checksum, then continues the pending command deterministically.
 
-G adds no Godot presentation, historical/shipped content, generic knowledge framework, loyalty score, final battle/tactical runtime, political/faction/court/diplomacy integration, armies, AI, or package-specific performance fixture. SP-04/M2 remain Active and SP-05/SP-07/SP-08 remain blocked. SP-04X1 is next only after G exact-SHA hosted acceptance and is not part of this package.
+G adds no Godot presentation, historical/shipped content, generic knowledge framework, loyalty score, final battle/tactical runtime, political/faction/court/diplomacy integration, armies, AI, or package-specific performance fixture. SP-04/M2 remain Active and SP-05/SP-07/SP-08 remain blocked. SP-04X1 is next, is not part of this package, and is not started here.
 
-Current local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. The combined succession/G Release filter passes 329/329 cases. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 1,239 Simulation.Core, 73 Game.Content, 18 Game.Application, and 18 repository tests. Changed-file formatter verification, `git diff --check`, and `git lfs fsck` pass. Project architecture, simulation-engineer, Ponytail full/review, and final independent verification approve G01–G14 with no remaining local blocker. G15 remains pending automatic exact-SHA hosted evidence.
+Current local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. The combined succession/G Release filter passes 329/329 cases. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 1,239 Simulation.Core, 73 Game.Content, 18 Game.Application, and 18 repository tests. Changed-file formatter verification, `git diff --check`, and `git lfs fsck` pass. Project architecture, simulation-engineer, Ponytail full/review, and final independent verification approve G01–G14 with no remaining local blocker. Accepted revision `4bc88aee38bda5cd67902fbb93f8386f5a87f380` subsequently passed [automatic exact-SHA hosted macOS arm64 and Windows x64 validation, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, and artifact/API identity verification](../evidence/SP-04G-EXACT-SHA-4bc88ae.md). G15 therefore passes and G is accepted. SP-04 and M2 remain Active, SP-05/SP-07/SP-08 remain blocked, and SP-04X1 is next but is not started here.
 
 ### SP-04G verification matrix
 
@@ -1205,7 +1205,7 @@ Current local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, a
 | G12 | Exact F9 schema-28 fixture authenticates and migrates vocabulary-only to schema 29 without changing authoritative state or checksum | Fixture identity, historical checksum, migration, restore, and continuation tests | Local pass |
 | G13 | Schema 28 rejects G vocabulary; schema 29 validates pending/resolved wound shape, exact diagnostics, save/load, and tampering | Historical/current raw-shape and round-trip matrix | Local pass |
 | G14 | Focused/full suites, validation, formatter, diff/LFS gates, Ponytail, and independent verification pass | Local repository closeout | Local pass |
-| G15 | The exact implementation SHA passes hosted macOS arm64 and Windows x64 with artifact/API identity evidence | Automatic exact-SHA hosted CI | Pending |
+| G15 | The exact implementation SHA passes hosted macOS arm64 and Windows x64 with artifact/API identity evidence | Automatic exact-SHA hosted CI | Hosted pass at `4bc88aee38bda5cd67902fbb93f8386f5a87f380` |
 
 ## Edge cases and failure handling
 
