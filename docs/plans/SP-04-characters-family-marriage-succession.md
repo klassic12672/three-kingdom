@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — through SP-04F0 exact-SHA hosted; SP-04F1 locally implemented, exact-SHA hosted evidence pending |
+| Status | Active — through SP-04F1 accepted with exact-SHA hosted evidence |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -815,7 +815,7 @@ Local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot
 
 Accepted revision `783ccfb61357248158cf287ee69ba27b56c38f4a` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04F0-EXACT-SHA-783ccfb.md). F023 therefore passes at that revision. Full SP-04 acceptance, inheritance, succession continuity, and the overall performance gate remain open.
 
-## Active package: SP-04F1 career-death obligation closure
+## Accepted package: SP-04F1 career-death obligation closure
 
 SP-04F1 is the smallest dependency-safe package after accepted F0. It removes only F0's career/retinue death blockers: a public death now invalidates every active career proposal in which the target is proposer, recipient, or direct-character principal and ends every active retinue membership, patronage bond, and employment tenure involving the target. The six appended terminal reasons are role-specific: `LeaderDied`, `MemberDied`, `PatronDied`, `BeneficiaryDied`, `EmployeeDied`, and `EmployerDied`. Household-principal records do not treat every household member as the principal. Household-head and current-custodian death blockers remain unchanged.
 
@@ -850,11 +850,13 @@ F1 does not add inheritance, wealth or estate transfer, heir designation, househ
 | F115 | Exact F0 schema 21 authenticates, migrates diagnostics structurally, preserves source/checksum, and continues | Frozen fixture identity, deep comparison, pending death, and nonempty F1 continuation | Local pass |
 | F116 | Schema 21 rejects isolated F1 properties/version/reasons/null and corruption; current schema rejects incomplete diagnostics | Historical injection and current raw-shape matrix | Local pass |
 | F117 | A 1,000-character/200-death career-rich workload records raw local measurements without a brittle threshold | Local Apple Silicon measurement | Local pass; no threshold |
-| F118 | Focused/full suites, repository gates, diff/LFS/format checks, independent reviews, and exact-SHA hosted macOS/Windows evidence pass | Local and hosted closeout | Local gates and independent reviews pass; hosted evidence pending |
+| F118 | Focused/full suites, repository gates, diff/LFS/format checks, independent reviews, and exact-SHA hosted macOS/Windows evidence pass | Local and hosted closeout | Hosted pass at `23045a0` |
 
 The representative local Release fixture contains 1,000 characters and 200 deaths, each with one active proposal, membership, patronage bond, and employment tenure. A raw Apple Silicon run measured 5,940.911 ms workflow, 0.693 ms query, and 4.326 ms snapshot/checksum; snapshot JSON was 1,441,251 bytes, gzip was 85,205 bytes, and checksum was `e8da6e52e9b1c34d0c2cd6787f5aa65f9564cca28f2ecf1415db1568d1a9f730`. The test asserts shape and correctness only. This component workload neither passes nor waives the full SP-04 three-second campaign-turn budget.
 
-Local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. Focused F1 verification passes 40/40 cases and the complete Simulation.Core suite passes 831/831. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 831 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. `git diff --check`, `git lfs fsck`, and focused formatter verification pass. Independent architecture, verification, and schema/content reviews report no local blocker. Implementation commit identity and exact-SHA hosted macOS arm64/Windows x64 evidence remain pending; F1 is therefore not yet accepted. Full SP-04 acceptance, inheritance, succession continuity, and the overall performance gate remain open.
+Local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. Focused F1 verification passes 40/40 cases and the complete Simulation.Core suite passes 831/831. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 831 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. `git diff --check`, `git lfs fsck`, and focused formatter verification pass. Independent architecture, verification, and schema/content reviews report no local blocker.
+
+Accepted revision `23045a06a39361ecf8d2ef341cc0458590322f0a` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04F1-EXACT-SHA-23045a0.md). F118 therefore passes at that revision. Full SP-04 acceptance, inheritance, succession continuity, and the overall performance gate remain open.
 
 ## Edge cases and failure handling
 
