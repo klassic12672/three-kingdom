@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — through SP-04F2 accepted; SP-04F3 locally verified pending immutable/hosted closeout |
+| Status | Active — through SP-04F3 accepted |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -901,7 +901,7 @@ Local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot
 
 Accepted revision `ab8917a95ea064911a584cd640647374745fd2c7` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04F2-EXACT-SHA-ab8917a.md). F218 therefore passes at that revision. Full SP-04 acceptance, inheritance, succession continuity, and the overall performance gate remain open.
 
-## Active package: SP-04F3 exact household-head death handoff
+## Accepted package: SP-04F3 exact household-head death handoff
 
 SP-04F3 is the smallest dependency-safe package after accepted F2. Leaving a deceased character silently recorded as the current `HeadCharacterId` would change the public household contract without versioned event evidence, while automatic replacement selection is blocked by missing designation, claim, legal-precedence, regency, and political-support policy. F3 therefore adds one exact reserved-system mechanism: `resolve_household_head_death.v1` names the living current head, exact expected condition, exact household, and a caller-supplied replacement. The replacement must be a different, born, living current member of that household at resolution. No adult, capability, custody, kinship, claim, designation, or legal-heir preference is inferred. No locked decision changes and no ADR is required.
 
@@ -931,11 +931,13 @@ F3 does not add an automatic successor selector, heir designation, claims, legal
 | F312 | Schema 23 rejects isolated F3 discriminator/property/null injection without mutating the source | Historical raw-shape matrix | Local pass |
 | F313 | Current schema rejects incomplete nested condition/marriage/guardianship/pregnancy/career/head-change data and either action/outcome cross-pair | Complete current raw-shape matrix | Local pass |
 | F314 | A 1,000-character/200-household-head-death workload records raw local measurements without a brittle threshold | Local Apple Silicon measurement | Local pass; no threshold |
-| F315 | Focused/full Core suites, repository gates, independent reviews, and exact-SHA hosted macOS/Windows evidence pass | Local and hosted closeout | Local gates/reviews pass; hosted pending |
+| F315 | Focused/full Core suites, repository gates, independent reviews, and exact-SHA hosted macOS/Windows evidence pass | Local and hosted closeout | Hosted pass at `72e5bd3` |
 
 The representative local Release fixture contains 1,000 characters, 200 households, and 200 head deaths. A raw Apple Silicon run measured 3,097.329 ms workflow, 0.692 ms query, and 106.810 ms snapshot/checksum; snapshot JSON was 865,654 bytes, gzip was 21,453 bytes, and checksum was `0dbff510540076cd6b80a56a45ddcaa774e5b0e0f36bf1fc377ef2b6e77d9c85`. The test asserts fixture shape and correctness only. This component workload neither passes nor waives the full SP-04 three-second campaign-turn budget.
 
-Local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. Focused F3 verification passes 50/50 cases. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 904 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. `git diff --check`, `git lfs fsck`, and focused formatter verification pass. Independent architecture, schema, and verification re-reviews report no remaining local blocker. Immutable implementation SHA and exact-SHA hosted macOS/Windows evidence remain pending.
+Local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. Focused F3 verification passes 50/50 cases. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 904 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. `git diff --check`, `git lfs fsck`, and focused formatter verification pass. Independent architecture, schema, and verification re-reviews report no remaining local blocker.
+
+Accepted revision `72e5bd34f41f068c2e07a580e02522f8222eca30` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04F3-EXACT-SHA-72e5bd3.md). F315 therefore passes at that revision. Full SP-04 acceptance, automatic/legal succession, inheritance, player continuity, and the overall performance gate remain open.
 
 ## Edge cases and failure handling
 
