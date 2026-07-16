@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — SP-04F5 locally verified; through SP-04F4 accepted |
+| Status | Active — through SP-04F5 accepted |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -979,7 +979,7 @@ Final local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and
 
 Accepted revision `ebde5387ac2d7398105f11043d9cdaeb2c2ae187` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04F4-EXACT-SHA-ebde538.md). F415 therefore passes at that revision. Full SP-04 acceptance, legal succession, claims, inheritance, player continuity, and the overall performance gate remain open.
 
-## Locally verified package: SP-04F5 pairwise legal-candidate eligibility
+## Accepted package: SP-04F5 pairwise legal-candidate eligibility
 
 SP-04F5 is the smallest dependency-safe legal-rule package after accepted F4. It extends only the authoritative succession query contract from version 1 to 2 with a current-state `EvaluateCandidate` operation over one explicit subject/candidate pair. The request carries a transient version-1 `SuccessionCandidateEligibilityRule`: a nonempty set of recognized bases, maximum descendant generation from 1 through 64, minimum candidate age from 0 through 100, explicit incapacity permission, and a nonempty exact subset of the four custody states. The rule is neither persisted nor assigned. No default cultural law, law owner, historical practice, title/faction jurisdiction, or content record is inferred.
 
@@ -1004,11 +1004,13 @@ Results contain current date/turn, every recognized basis in canonical order, ty
 | F509 | Save schema 25, succession snapshot/system v1, commands/events, and all F4 persistence remain unchanged | Version, system-registration, save, and diff review | Local pass |
 | F510 | A 1,000-character/999-pair workload records raw local measurements without a brittle threshold | Local Apple Silicon measurement | Local pass; no threshold |
 | F511 | Focused/full suites, validation, formatter, diff/LFS gates, and independent reviews pass | Local repository closeout | Local pass |
-| F512 | The accepted exact SHA passes hosted macOS arm64 and Windows x64 | Clean-checkout hosted CI and artifact evidence | Pending |
+| F512 | The accepted exact SHA passes hosted macOS arm64 and Windows x64 | Clean-checkout hosted CI and artifact evidence | Hosted pass at `bb9dcff` |
 
 The representative local Release fixture contains 1,000 characters and evaluates 999 direct biological children. A raw Apple Silicon run measured 195.721 ms for all pairwise evaluations and 172.633 ms for snapshot/checksum/JSON/gzip; snapshot JSON was 936,957 bytes, gzip was 18,104 bytes, and the unchanged-state checksum was `a142ae1bb38f58235ea967733a2aaa81b36ea7dbfd4b6d4f87749b77f0dbcabe`. The test asserts shape and correctness without a wall-clock threshold. This component observation neither passes nor waives the full SP-04 three-second campaign-turn budget.
 
-Current local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. The exact `CharacterSuccession` Release filter passes 105/105 cases. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 1,015 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. Focused formatter verification, `git diff --check`, and `git lfs fsck` pass. Independent architecture, compatibility, and verification reviews approve the final production, public-contract, save/schema, test, and documentation boundaries. Exact-SHA hosted macOS/Windows evidence remains pending. Claims, precedence, deterministic resolution, inheritance, regency, retinue succession, household/office/title/faction effects, disputed support, and player continuity remain later dependency-ordered packages.
+Current local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. The exact `CharacterSuccession` Release filter passes 105/105 cases. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 1,015 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. Focused formatter verification, `git diff --check`, and `git lfs fsck` pass. Independent architecture, compatibility, and verification reviews approve the final production, public-contract, save/schema, test, and documentation boundaries.
+
+Accepted revision `bb9dcffab8f517e7a2f9cb0b47072bb096fc7725` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04F5-EXACT-SHA-bb9dcff.md). F512 therefore passes at that revision. Claims, precedence, deterministic resolution, inheritance, regency, retinue succession, household/office/title/faction effects, disputed support, player continuity, the full SP-04 three-second budget, and full SP-04 acceptance remain open.
 
 ## Edge cases and failure handling
 
