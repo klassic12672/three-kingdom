@@ -586,6 +586,9 @@ public sealed class WorldState : IWorldQuery
             case CharacterSuccessionActionResolvedEventPayload successionAction:
                 ApplyCharacterSuccessionAction(campaignEvent, successionAction);
                 break;
+            case CharacterSuccessionClaimActionResolvedEventPayload successionClaimAction:
+                ApplyCharacterSuccessionClaimAction(campaignEvent, successionClaimAction);
+                break;
             default:
                 throw new SimulationValidationException($"Unregistered event payload '{campaignEvent.Payload.GetType().Name}'.");
         }
@@ -1358,6 +1361,40 @@ public sealed class WorldState : IWorldQuery
 
         CharacterSuccessionWorldUpdatePlan successionPlan =
             CharacterSuccessions.PrepareOutcome(
+                payload,
+                campaignEvent.ResolutionDate,
+                Calendar.TurnIndex,
+                commandId,
+                campaignEvent.EventId);
+        CharacterSuccessions.ApplyPrepared(successionPlan);
+    }
+
+    private void ApplyCharacterSuccessionClaimAction(
+        CampaignEvent campaignEvent,
+        CharacterSuccessionClaimActionResolvedEventPayload payload)
+    {
+        if (campaignEvent.Phase != ResolutionPhase.Commands
+            || campaignEvent.CausalId is not EntityId commandId
+            || !commandId.IsValid)
+        {
+            throw new SimulationValidationException(
+                "Character-succession claim events require the Commands phase and a valid causal command ID.");
+        }
+
+        EntityId expectedEventId = CharacterSuccessionIds.DeriveClaimActionEventId(
+            campaignEvent.ResolutionDate,
+            commandId);
+        if (campaignEvent.EventId != expectedEventId
+            || campaignEvent.AffectedIds is null
+            || !campaignEvent.AffectedIds.SequenceEqual(
+                GetCharacterSuccessionClaimActionAffectedIds(payload)))
+        {
+            throw new SimulationValidationException(
+                "Character-succession claim event identity or affected IDs do not match its exact deterministic outcome.");
+        }
+
+        CharacterSuccessionWorldUpdatePlan successionPlan =
+            CharacterSuccessions.PrepareClaimOutcome(
                 payload,
                 campaignEvent.ResolutionDate,
                 Calendar.TurnIndex,
@@ -2588,6 +2625,55 @@ public sealed class WorldState : IWorldQuery
         return affected.Order().ToArray();
     }
 
+    internal static EntityId[] GetCharacterSuccessionClaimActionAffectedIds(
+        CharacterSuccessionClaimActionResolvedEventPayload payload)
+    {
+        if (payload?.Action is null || payload.Outcome is null)
+        {
+            throw new SimulationValidationException(
+                "Character-succession claim event contains null or unsupported data.");
+        }
+
+        SuccessionClaimState claim = payload.Outcome switch
+        {
+            SuccessionClaimAssertedOutcome value => value.CurrentClaim,
+            SuccessionClaimWithdrawnOutcome value => value.PreviousClaim,
+            _ => throw new SimulationValidationException(
+                "Character-succession claim outcome is unsupported."),
+        } ?? throw new SimulationValidationException(
+            "Character-succession claim outcome contains a null record.");
+        bool exactPair = (payload.Action, payload.Outcome) switch
+        {
+            (AssertSuccessionClaimAction action, SuccessionClaimAssertedOutcome) =>
+                action.SubjectCharacterId == claim.SubjectCharacterId
+                && payload.ActingCharacterId == claim.ClaimantCharacterId,
+            (WithdrawSuccessionClaimAction action, SuccessionClaimWithdrawnOutcome) =>
+                action.SubjectCharacterId == claim.SubjectCharacterId
+                && action.ExpectedCurrentClaimId == claim.ClaimId
+                && payload.ActingCharacterId == claim.ClaimantCharacterId,
+            _ => false,
+        };
+        if (!exactPair)
+        {
+            throw new SimulationValidationException(
+                "Character-succession claim action/outcome pairing is invalid.");
+        }
+
+        EntityId[] affected =
+        [
+            claim.ClaimId,
+            claim.SubjectCharacterId,
+            claim.ClaimantCharacterId,
+        ];
+        if (affected.Any(id => !id.IsValid))
+        {
+            throw new SimulationValidationException(
+                "Character-succession claim event contains an invalid affected ID.");
+        }
+
+        return affected.Distinct().Order().ToArray();
+    }
+
     private static void AddDesignationAffectedIds(
         ISet<EntityId> affected,
         HeirDesignationState designation)
@@ -3262,7 +3348,9 @@ public sealed class WorldState : IWorldQuery
         characterSuccessions.ContractVersion
             == CharacterSuccessionContractVersions.Snapshot
         && characterSuccessions.Designations is { Count: 0 }
-        && characterSuccessions.History is { Count: 0 };
+        && characterSuccessions.History is { Count: 0 }
+        && characterSuccessions.Claims is { Count: 0 }
+        && characterSuccessions.ClaimHistory is { Count: 0 };
 
     private static void ValidatePendingCommands(IReadOnlyList<CampaignCommand> commands)
     {
@@ -3295,6 +3383,7 @@ public sealed class WorldState : IWorldQuery
                 or CharacterConditionActionCommandPayload
                 or CharacterFamilyActionCommandPayload
                 or CharacterSuccessionActionCommandPayload
+                or CharacterSuccessionClaimActionCommandPayload
                 or HouseholdDecisionCommandPayload))
         {
             try
@@ -3321,6 +3410,10 @@ public sealed class WorldState : IWorldQuery
                         command.CommandId),
                     CharacterSuccessionActionCommandPayload =>
                         CharacterSuccessionIds.DeriveActionEventId(
+                            command.IssuedDate,
+                            command.CommandId),
+                    CharacterSuccessionClaimActionCommandPayload =>
+                        CharacterSuccessionIds.DeriveClaimActionEventId(
                             command.IssuedDate,
                             command.CommandId),
                     HouseholdDecisionCommandPayload => HouseholdDecisionIds.DeriveActionEventId(

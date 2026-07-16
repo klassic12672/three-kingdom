@@ -1048,6 +1048,45 @@ Accepted revision `7e96930d103081e981c0cf1a06736223e222bc07` subsequently passed
 
 Claims, precedence, deterministic resolution, inheritance, regency, retinue succession, household/office/title/faction effects, disputed support, player continuity, the full SP-04 three-second budget, and full SP-04 acceptance remain open.
 
+## Current package: SP-04F7 neutral personal succession claims
+
+SP-04F7 is the smallest dependency-safe persistent package after accepted F6. It implements the succession-claim step already ordered after designation and legal-candidate evaluation, without beginning precedence or resolution. A character-issued Commands-phase `character_succession_claim_action.v1` envelope registers `assert_succession_claim.v1` and `withdraw_succession_claim.v1`. The issuing character is the claimant and must be born, living, capable, and free. The distinct subject must exist and be born but may be dead, incapacitated, or in custody. Assertion requires no active ordered-pair claim; withdrawal requires the exact active claim ID; reassertion creates a new stable identity.
+
+Claim state v1 contains only personal-assertion origin, subject, claimant, assertion evidence, Active/Withdrawn status, and all-or-none withdrawal evidence. It grants no eligibility, legality, legitimacy, rank, strength, recognition, support, precedence, or result. F5/F6 eligibility neither creates nor is required by a claim. F7 adds no automatic claim from descent, adoption, designation, marriage, office, or title, and later participant condition or family/household changes do not silently rewrite claim evidence.
+
+The snapshot/system advance to v2 and the authoritative query advances to v4. At most 64 active claims are retained per subject and per claimant. The newest 32 withdrawn claims per subject remain detailed and older records fold in deterministic withdrawal turn/date/claim-ID order into checked history. Queries are subject-bounded, canonical, and defensive. Claim lifecycle identities are globally unique within the claim workflow and cannot reuse any retained designation command/event role; F4's exact replacement resolution-to-successor-source edge remains the sole allowed designation sharing.
+
+Save schema 26 adds checksum-bearing claim and claim-history arrays. The authenticated 25→26 migration accepts only exact F6 succession snapshot/system v1, preserves all F4 designation/history/pending/diagnostic and unrelated data, adds empty claim arrays, advances only the succession snapshot/system versions, and recomputes the destination checksum. Schema 25 rejects every F7 discriminator and unique property including explicit null. Its checksum path upgrades only a deep clone for current DTO use and applies an inverse v2→v1 downgrade for exact historical authentication. The frozen source fixture was generated in a temporary detached worktree at exact accepted F6 revision `7e96930d103081e981c0cf1a06736223e222bc07`, then authenticated and stamped by that same revision with the exact source SHA in `gameVersion`; it is 21,419 bytes with file SHA-256 `ad85ff638f72b743fb9033c64642a49f7157cfd7e3206241813822f8ef9af6c1` and stored checksum `7042138074e069633eda94539f22b0759bcb462383f4e12bcdb43545e3c37bec`.
+
+F7 adds no spouse/collateral rule, missing-heir policy, claim ranking, precedence, winner, fallback, inheritance, death/incapacity succession trigger, regency, household/estate/wealth/office/title/faction/retinue effect, disputed support, player continuity, content, localization, observer-filtered application query, UI, AI, or battle integration. No locked decision changes and no ADR is required.
+
+### SP-04F7 verification matrix
+
+| ID | Observable package criterion | Required evidence | Current classification |
+|---|---|---|---|
+| F701 | Accepted F6 dependency and the neutral personal-assertion boundary are dependency-safe and require no ADR | Source-of-truth and architecture review | Local pass |
+| F702 | Versioned claim/action/outcome/query contracts and separate namespaced stable IDs are exact | Contract, JSON, reflection, and ID tests | Local pass |
+| F703 | Assert/withdraw use registered Commands-phase command/events and one atomic exact-pair mutation | World-state and campaign workflow tests | Local pass |
+| F704 | Claimant agency and the subject life/incapacity/custody/minority matrix match the explicit boundary | Participant-condition matrix | Local pass |
+| F705 | Claims remain independent from designation and F5/F6 eligibility and create no automatic effect | Independence and candidate-query tests | Local pass |
+| F706 | Duplicate assertion, stale withdrawal, priority/event ordering, replay, and submission order resolve deterministically | Race and replay tests | Local pass |
+| F707 | Later participant condition changes do not silently rewrite retained evidence | Claimant/subject death lifecycle preservation tests | Local pass |
+| F708 | 64/64 active limits, 32 recent withdrawals, deterministic folding, and checked overflow are atomic | Capacity, retention, and overflow tests | Local pass |
+| F709 | Subject-bounded queries and snapshots are canonical, bounded, defensive, and input-order invariant | Query/copy/reorder tests | Local pass |
+| F710 | Checksums, pending/resolved saves, exact replanning, affected IDs, tamper rejection, and later-day continuation are exact | Campaign/save/tamper tests | Local pass |
+| F711 | The frozen exact-F6 schema-25 fixture authenticates, downgrades to its stored checksum, migrates minimally, and continues | Fixture identity and migration tests | Local pass |
+| F712 | Schema 25 rejects all F7 discriminators, claim collections, unique properties, snapshot v2, and system @2 including explicit null | Historical raw-shape matrix | Local pass |
+| F713 | Schema 26 requires complete claim/history shapes, exact action/outcome pairing, and one succession @2 registration | Current raw-shape and restore tests | Local pass |
+| F714 | A representative 1,000-character/500-claim workload records raw local measurements without a brittle threshold | Local Apple Silicon measurement | Local pass; no threshold |
+| F715 | Focused/full suites, validation, formatter, diff/LFS gates, and independent reviews pass | Local repository closeout | Local pass |
+| F716 | The exact implementation SHA passes hosted macOS arm64 and Windows x64 | Clean-checkout hosted CI and artifact evidence | Pending immutable SHA |
+
+The representative local Release fixture contains 1,000 characters and 500 independent active claim pairs. A raw Apple Silicon run measured 1,396.681 ms for workflow, 0.969 ms for queries, and 149.235 ms for snapshot/checksum/JSON/gzip; snapshot JSON was 1,102,720 bytes, gzip was 68,002 bytes, and checksum was `e7009528025b97ddbce45fd72cddfe5c257516353a4a4f5ad693f28d13136561`. The test asserts shape and correctness without a wall-clock threshold. This component observation neither passes nor waives the full SP-04 three-second campaign-turn budget.
+
+Current local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. The exact `CharacterSuccession` Release filter passes 167/167 cases. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 1,077 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. Focused formatter verification, `git diff --check`, and `git lfs fsck` pass. Independent architecture, compatibility, simulation-engineer, and verification reviews approve F701–F715 with no remaining local blocker. F716 remains pending immutable-SHA hosted macOS arm64 and Windows x64 evidence, so F7 is not yet accepted.
+
+Precedence, deterministic resolution, spouse/collateral and missing-heir law, inheritance, regency, retinue/office/household effects, disputed support, player continuity, the full SP-04 three-second budget, and full SP-04 acceptance remain open.
+
 ## Edge cases and failure handling
 
 - Invalid parentage cycles, duplicate spouses where rules forbid them, impossible ages, and self-relationships fail content validation.

@@ -36,10 +36,10 @@ public sealed class CharacterSuccessionCandidateSetTests(ITestOutputHelper outpu
         Assert.All(contracts, contract => Assert.False(
             typeof(ICampaignEventPayload).IsAssignableFrom(contract)));
         Assert.Equal(1, CharacterSuccessionContractVersions.CandidateSet);
-        Assert.Equal(3, CharacterSuccessionContractVersions.AuthoritativeQuery);
-        Assert.Equal(1, CharacterSuccessionContractVersions.Snapshot);
-        Assert.Equal(1, CharacterSuccessionSystem.Version);
-        Assert.Equal(25, SaveEnvelope.CurrentSchemaVersion);
+        Assert.Equal(4, CharacterSuccessionContractVersions.AuthoritativeQuery);
+        Assert.Equal(2, CharacterSuccessionContractVersions.Snapshot);
+        Assert.Equal(2, CharacterSuccessionSystem.Version);
+        Assert.Equal(26, SaveEnvelope.CurrentSchemaVersion);
     }
 
     [Fact]
@@ -471,10 +471,10 @@ public sealed class CharacterSuccessionCandidateSetTests(ITestOutputHelper outpu
         Assert.All(invalid.Issues, item => Assert.Equal(
             CharacterSuccessionContractVersions.CandidateSet,
             item.ContractVersion));
-        Assert.Equal(25, SaveEnvelope.CurrentSchemaVersion);
-        Assert.Equal(1, CharacterSuccessionSystem.Version);
+        Assert.Equal(26, SaveEnvelope.CurrentSchemaVersion);
+        Assert.Equal(2, CharacterSuccessionSystem.Version);
         Assert.Equal(
-            new SystemVersion(CharacterSuccessionSystem.SystemId, 1),
+            new SystemVersion(CharacterSuccessionSystem.SystemId, 2),
             world.CaptureSnapshot().SystemVersions.Single(item =>
                 item.SystemId == CharacterSuccessionSystem.SystemId));
     }
@@ -610,6 +610,8 @@ public sealed class CharacterSuccessionCandidateSetTests(ITestOutputHelper outpu
             new CharacterSuccessionWorldSnapshot(
                 CharacterSuccessionContractVersions.Snapshot,
                 designations.OrderBy(item => item.DesignationId).ToArray(),
+                [],
+                [],
                 []));
     }
 

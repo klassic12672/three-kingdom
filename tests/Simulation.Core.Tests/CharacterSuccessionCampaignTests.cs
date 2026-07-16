@@ -954,6 +954,8 @@ public sealed class CharacterSuccessionCampaignTests
             CharacterSuccessions = new CharacterSuccessionWorldSnapshot(
                 CharacterSuccessionContractVersions.Snapshot,
                 [first, second],
+                [],
+                [],
                 []),
         };
 
@@ -1007,6 +1009,8 @@ public sealed class CharacterSuccessionCampaignTests
             CharacterSuccessions = new CharacterSuccessionWorldSnapshot(
                 CharacterSuccessionContractVersions.Snapshot,
                 records,
+                [],
+                [],
                 []),
         };
     }

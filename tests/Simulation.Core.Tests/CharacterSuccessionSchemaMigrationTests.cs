@@ -32,7 +32,7 @@ public sealed class CharacterSuccessionSchemaMigrationTests
 
         JsonObject migrated = new SaveSchemaRegistry().MigrateToCurrent(source);
 
-        Assert.Equal(25, migrated["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(26, migrated["schemaVersion"]!.GetValue<int>());
         Assert.True(JsonNode.DeepEquals(original, source));
         Assert.Equal(sourceBytes, File.ReadAllBytes(path));
         JsonObject migratedSnapshot = migrated["snapshot"]!.AsObject();
@@ -41,6 +41,8 @@ public sealed class CharacterSuccessionSchemaMigrationTests
             succession["contractVersion"]!.GetValue<int>());
         Assert.Empty(succession["designations"]!.AsArray());
         Assert.Empty(succession["history"]!.AsArray());
+        Assert.Empty(succession["claims"]!.AsArray());
+        Assert.Empty(succession["claimHistory"]!.AsArray());
         Assert.Single(migratedSnapshot["systemVersions"]!.AsArray(), node =>
             node!["systemId"]!.GetValue<string>() == CharacterSuccessionSystem.SystemId
             && node["version"]!.GetValue<int>() == CharacterSuccessionSystem.Version);

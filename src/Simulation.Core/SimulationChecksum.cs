@@ -18,7 +18,7 @@ public readonly record struct SimulationChecksum(string Value)
 
     internal static SimulationChecksum ComputeForSaveSchema(WorldSnapshot snapshot, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 24)
+        if (schemaVersion is < 1 or > 25)
         {
             throw new ArgumentOutOfRangeException(nameof(schemaVersion));
         }
@@ -54,10 +54,15 @@ public readonly record struct SimulationChecksum(string Value)
         // custodian-death release evidence. Schema 23 is the exact F2 world
         // shape and differs from schema 24 only in registered household-head
         // death resolution vocabulary. Schema 24 is the exact F3 world shape
-        // and predates the separate character-succession world.
+        // and predates the separate character-succession world. Schema 25 is
+        // the exact F6 world shape and predates persistent succession claims.
         if (schemaVersion < 25)
         {
             canonical.Remove("characterSuccessions");
+        }
+        else if (schemaVersion < 26)
+        {
+            StripCharacterSuccessionV2Fields(canonical);
         }
 
         if (schemaVersion < 18)
@@ -156,6 +161,18 @@ public readonly record struct SimulationChecksum(string Value)
                 route.Remove(field);
             }
         }
+    }
+
+    private static void StripCharacterSuccessionV2Fields(JsonObject canonical)
+    {
+        if (canonical["characterSuccessions"] is not JsonObject successions)
+        {
+            return;
+        }
+
+        successions["contractVersion"] = 1;
+        successions.Remove("claims");
+        successions.Remove("claimHistory");
     }
 
     private static void StripCharacterV2Fields(JsonObject canonical)
@@ -333,6 +350,19 @@ public readonly record struct SimulationChecksum(string Value)
                 CharacterMarriageSystem.SystemId))
             {
                 versions.RemoveAt(index);
+            }
+            else if (StringComparer.Ordinal.Equals(
+                systemId,
+                CharacterSuccessionSystem.SystemId))
+            {
+                if (schemaVersion < 25)
+                {
+                    versions.RemoveAt(index);
+                }
+                else if (schemaVersion < 26)
+                {
+                    version["version"] = 1;
+                }
             }
             else if (schemaVersion < 15 && StringComparer.Ordinal.Equals(
                 systemId,

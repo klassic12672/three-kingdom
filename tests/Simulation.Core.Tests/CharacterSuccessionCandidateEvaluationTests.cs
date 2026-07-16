@@ -38,10 +38,10 @@ public sealed class CharacterSuccessionCandidateEvaluationTests(ITestOutputHelpe
             typeof(ICampaignCommandPayload).IsAssignableFrom(contract)));
         Assert.All(contracts, contract => Assert.False(
             typeof(ICampaignEventPayload).IsAssignableFrom(contract)));
-        Assert.Equal(3, CharacterSuccessionContractVersions.AuthoritativeQuery);
-        Assert.Equal(1, CharacterSuccessionContractVersions.Snapshot);
-        Assert.Equal(1, CharacterSuccessionSystem.Version);
-        Assert.Equal(25, SaveEnvelope.CurrentSchemaVersion);
+        Assert.Equal(4, CharacterSuccessionContractVersions.AuthoritativeQuery);
+        Assert.Equal(2, CharacterSuccessionContractVersions.Snapshot);
+        Assert.Equal(2, CharacterSuccessionSystem.Version);
+        Assert.Equal(26, SaveEnvelope.CurrentSchemaVersion);
     }
 
     [Fact]
@@ -670,12 +670,12 @@ public sealed class CharacterSuccessionCandidateEvaluationTests(ITestOutputHelpe
             Serialize(JsonSerializer.Deserialize<SuccessionCandidateEvaluationResult>(
                 Serialize(issueResult),
                 SimulationJson.CreateOptions())!));
-        Assert.Equal(3, CharacterSuccessionContractVersions.AuthoritativeQuery);
-        Assert.Equal(1, CharacterSuccessionContractVersions.Snapshot);
-        Assert.Equal(1, CharacterSuccessionSystem.Version);
-        Assert.Equal(25, SaveEnvelope.CurrentSchemaVersion);
+        Assert.Equal(4, CharacterSuccessionContractVersions.AuthoritativeQuery);
+        Assert.Equal(2, CharacterSuccessionContractVersions.Snapshot);
+        Assert.Equal(2, CharacterSuccessionSystem.Version);
+        Assert.Equal(26, SaveEnvelope.CurrentSchemaVersion);
         Assert.Equal(
-            new SystemVersion(CharacterSuccessionSystem.SystemId, 1),
+            new SystemVersion(CharacterSuccessionSystem.SystemId, 2),
             world.CaptureSnapshot().SystemVersions.Single(item =>
                 item.SystemId == CharacterSuccessionSystem.SystemId));
     }
@@ -808,6 +808,8 @@ public sealed class CharacterSuccessionCandidateEvaluationTests(ITestOutputHelpe
         CharacterSuccessionWorldSnapshot successions = new(
             CharacterSuccessionContractVersions.Snapshot,
             designations.OrderBy(item => item.DesignationId).ToArray(),
+            [],
+            [],
             []);
         return WorldState.Create(
             Date,

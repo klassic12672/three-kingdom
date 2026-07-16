@@ -10,6 +10,10 @@ public sealed class CharacterSuccessionWorldState
     private readonly SortedDictionary<EntityId, HeirDesignationState> designations = [];
     private readonly SortedDictionary<EntityId, EntityId> activeByDesignator = [];
     private readonly SortedDictionary<EntityId, HeirDesignationHistoryAggregate> history = [];
+    private readonly SortedDictionary<EntityId, SuccessionClaimState> claims = [];
+    private readonly Dictionary<(EntityId Subject, EntityId Claimant), EntityId>
+        activeClaimByPair = [];
+    private readonly SortedDictionary<EntityId, SuccessionClaimHistoryAggregate> claimHistory = [];
     private CampaignCalendar calendar;
 
     public CharacterSuccessionWorldState(
@@ -31,6 +35,8 @@ public sealed class CharacterSuccessionWorldState
         ValidateSnapshotShape(snapshot);
         AddDesignations(snapshot.Designations);
         AddHistory(snapshot.History);
+        AddClaims(snapshot.Claims);
+        AddClaimHistory(snapshot.ClaimHistory);
         ValidateRetentionBounds();
     }
 
@@ -76,6 +82,65 @@ public sealed class CharacterSuccessionWorldState
         if (history.TryGetValue(
                 designatorCharacterId,
                 out HeirDesignationHistoryAggregate? stored))
+        {
+            aggregate = Clone(stored);
+            return true;
+        }
+
+        aggregate = null;
+        return false;
+    }
+
+    public bool TryGetActiveClaim(
+        EntityId subjectCharacterId,
+        EntityId claimantCharacterId,
+        [NotNullWhen(true)] out SuccessionClaimState? claim)
+    {
+        RequireCharacter(subjectCharacterId, "Succession-claim query subject");
+        RequireCharacter(claimantCharacterId, "Succession-claim query claimant");
+        if (activeClaimByPair.TryGetValue(
+                (subjectCharacterId, claimantCharacterId),
+                out EntityId claimId))
+        {
+            claim = Clone(claims[claimId]);
+            return true;
+        }
+
+        claim = null;
+        return false;
+    }
+
+    public IReadOnlyList<SuccessionClaimState> GetActiveClaimsForSubject(
+        EntityId subjectCharacterId)
+    {
+        RequireCharacter(subjectCharacterId, "Succession-claim query subject");
+        return claims.Values
+            .Where(item => item.SubjectCharacterId == subjectCharacterId
+                && item.Status == SuccessionClaimStatus.Active)
+            .OrderBy(item => item.ClaimId)
+            .Select(Clone)
+            .ToArray();
+    }
+
+    public IReadOnlyList<SuccessionClaimState> GetRecentClaimRecordsForSubject(
+        EntityId subjectCharacterId)
+    {
+        RequireCharacter(subjectCharacterId, "Succession-claim query subject");
+        return claims.Values
+            .Where(item => item.SubjectCharacterId == subjectCharacterId)
+            .OrderBy(item => item.ClaimId)
+            .Select(Clone)
+            .ToArray();
+    }
+
+    public bool TryGetClaimHistory(
+        EntityId subjectCharacterId,
+        [NotNullWhen(true)] out SuccessionClaimHistoryAggregate? aggregate)
+    {
+        RequireCharacter(subjectCharacterId, "Succession-claim history query subject");
+        if (claimHistory.TryGetValue(
+                subjectCharacterId,
+                out SuccessionClaimHistoryAggregate? stored))
         {
             aggregate = Clone(stored);
             return true;
@@ -313,7 +378,9 @@ public sealed class CharacterSuccessionWorldState
     public CharacterSuccessionWorldSnapshot CaptureSnapshot() => new(
         CharacterSuccessionContractVersions.Snapshot,
         designations.Values.Select(Clone).ToArray(),
-        history.Values.Select(Clone).ToArray());
+        history.Values.Select(Clone).ToArray(),
+        claims.Values.Select(Clone).ToArray(),
+        claimHistory.Values.Select(Clone).ToArray());
 
     private bool ValidateEligibilityRule(
         SuccessionCandidateEligibilityRule? rule,
@@ -688,11 +755,8 @@ public sealed class CharacterSuccessionWorldState
                 $"Character-succession event ID '{eventId}' does not match command '{commandId}'.");
         }
 
-        if (designations.Values.Any(item =>
-                item.SourceCommandId == commandId
-                || item.ResolutionCommandId == commandId
-                || item.SourceEventId == eventId
-                || item.ResolutionEventId == eventId))
+        if (HasRetainedLifecycleIdentity(commandId)
+            || HasRetainedLifecycleIdentity(eventId))
         {
             throw new SimulationValidationException(
                 $"Character-succession command/event identity '{commandId}'/'{eventId}' is already retained.");
@@ -793,6 +857,135 @@ public sealed class CharacterSuccessionWorldState
         return new CharacterSuccessionWorldUpdatePlan(candidate);
     }
 
+    public CommandValidationResult ValidateClaimAction(
+        EntityId actingCharacterId,
+        CharacterSuccessionClaimActionCommandPayload payload,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex)
+    {
+        List<ValidationIssue> issues = [];
+        ValidateClaimActionEnvelope(
+            actingCharacterId,
+            payload,
+            resolutionDate,
+            authoritativeTurnIndex,
+            issues);
+        return issues.Count == 0 ? CommandValidationResult.Valid : new(false, issues);
+    }
+
+    public CharacterSuccessionClaimActionResolvedEventPayload PlanClaimAction(
+        EntityId actingCharacterId,
+        CharacterSuccessionClaimActionCommandPayload payload,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        List<ValidationIssue> issues = [];
+        ValidateClaimActionEnvelope(
+            actingCharacterId,
+            payload,
+            resolutionDate,
+            authoritativeTurnIndex,
+            issues);
+        ThrowIfInvalid(issues);
+        ValidateId(commandId, "Succession-claim command ID");
+        ValidateId(eventId, "Succession-claim event ID");
+        if (eventId != CharacterSuccessionIds.DeriveClaimActionEventId(
+                resolutionDate,
+                commandId))
+        {
+            throw new SimulationValidationException(
+                $"Succession-claim event ID '{eventId}' does not match command '{commandId}'.");
+        }
+
+        if (HasRetainedLifecycleIdentity(commandId)
+            || HasRetainedLifecycleIdentity(eventId))
+        {
+            throw new SimulationValidationException(
+                $"Succession-claim command/event identity '{commandId}'/'{eventId}' is already retained.");
+        }
+
+        ICharacterSuccessionClaimActionOutcome outcome = payload.Action switch
+        {
+            AssertSuccessionClaimAction assertion =>
+                new SuccessionClaimAssertedOutcome(CreateActiveClaim(
+                    assertion.SubjectCharacterId,
+                    actingCharacterId,
+                    resolutionDate,
+                    authoritativeTurnIndex,
+                    commandId,
+                    eventId)),
+            WithdrawSuccessionClaimAction withdrawal =>
+                new SuccessionClaimWithdrawnOutcome(WithdrawClaim(
+                    GetStoredActiveClaim(
+                        withdrawal.SubjectCharacterId,
+                        actingCharacterId)!,
+                    resolutionDate,
+                    authoritativeTurnIndex,
+                    commandId,
+                    eventId)),
+            _ => throw new SimulationValidationException(
+                "Unsupported succession-claim action type."),
+        };
+
+        return new CharacterSuccessionClaimActionResolvedEventPayload(
+            actingCharacterId,
+            Clone(payload.Action),
+            Clone(outcome));
+    }
+
+    public void PrevalidateClaimOutcome(
+        CharacterSuccessionClaimActionResolvedEventPayload payload,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId) => _ = PrepareClaimOutcome(
+            payload,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+
+    internal CharacterSuccessionWorldUpdatePlan PrepareClaimOutcome(
+        CharacterSuccessionClaimActionResolvedEventPayload payload,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (payload is null)
+        {
+            throw new SimulationValidationException(
+                "Succession-claim action outcome payload cannot be null.");
+        }
+
+        CharacterSuccessionClaimActionResolvedEventPayload expected = PlanClaimAction(
+            payload.ActingCharacterId,
+            new CharacterSuccessionClaimActionCommandPayload(payload.Action),
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+        string expectedJson = JsonSerializer.Serialize(expected, SimulationJson.CreateOptions());
+        string actualJson = JsonSerializer.Serialize(payload, SimulationJson.CreateOptions());
+        if (!StringComparer.Ordinal.Equals(expectedJson, actualJson))
+        {
+            throw new SimulationValidationException(
+                "Succession-claim action outcome does not match the exact deterministic plan.");
+        }
+
+        CampaignCalendar candidateCalendar = new(
+            resolutionDate.CompareTo(calendar.Date) > 0 ? resolutionDate : calendar.Date,
+            Math.Max(calendar.TurnIndex, authoritativeTurnIndex));
+        CharacterSuccessionWorldState candidate = new(
+            CaptureSnapshot(),
+            characters,
+            candidateCalendar);
+        candidate.CommitClaimOutcome(payload.Outcome);
+        return new CharacterSuccessionWorldUpdatePlan(candidate);
+    }
+
     internal void ApplyPrepared(CharacterSuccessionWorldUpdatePlan plan)
     {
         if (plan?.Candidate is null)
@@ -825,6 +1018,127 @@ public sealed class CharacterSuccessionWorldState
 
         EnforceRetentionBound(GetOutcomeDesignator(outcome));
         ValidateRetentionBounds();
+    }
+
+    private void CommitClaimOutcome(ICharacterSuccessionClaimActionOutcome outcome)
+    {
+        EntityId subjectCharacterId;
+        switch (outcome)
+        {
+            case SuccessionClaimAssertedOutcome asserted:
+                AddActiveClaim(asserted.CurrentClaim);
+                subjectCharacterId = asserted.CurrentClaim.SubjectCharacterId;
+                break;
+            case SuccessionClaimWithdrawnOutcome withdrawn:
+                ReplaceActiveClaim(withdrawn.PreviousClaim);
+                subjectCharacterId = withdrawn.PreviousClaim.SubjectCharacterId;
+                break;
+            default:
+                throw new SimulationValidationException(
+                    "Unsupported succession-claim outcome type.");
+        }
+
+        EnforceClaimRetentionBound(subjectCharacterId);
+        ValidateRetentionBounds();
+    }
+
+    private void AddActiveClaim(SuccessionClaimState claim)
+    {
+        ValidateClaim(claim);
+        if (claim.Status != SuccessionClaimStatus.Active
+            || !claims.TryAdd(claim.ClaimId, Clone(claim))
+            || !activeClaimByPair.TryAdd(
+                (claim.SubjectCharacterId, claim.ClaimantCharacterId),
+                claim.ClaimId))
+        {
+            throw new SimulationValidationException(
+                $"Succession claim '{claim.ClaimId}' cannot become active.");
+        }
+
+        if (claims.Values.Count(item =>
+                item.SubjectCharacterId == claim.SubjectCharacterId
+                && item.Status == SuccessionClaimStatus.Active)
+                > CharacterSuccessionLimits.MaximumActiveClaimsPerSubject
+            || claims.Values.Count(item =>
+                item.ClaimantCharacterId == claim.ClaimantCharacterId
+                && item.Status == SuccessionClaimStatus.Active)
+                > CharacterSuccessionLimits.MaximumActiveClaimsPerClaimant)
+        {
+            throw new SimulationValidationException(
+                "Succession-claim active capacity was exceeded.");
+        }
+    }
+
+    private void ReplaceActiveClaim(SuccessionClaimState withdrawn)
+    {
+        ValidateClaim(withdrawn);
+        (EntityId Subject, EntityId Claimant) pair = (
+            withdrawn.SubjectCharacterId,
+            withdrawn.ClaimantCharacterId);
+        if (withdrawn.Status != SuccessionClaimStatus.Withdrawn
+            || !activeClaimByPair.TryGetValue(pair, out EntityId activeId)
+            || activeId != withdrawn.ClaimId
+            || !claims.ContainsKey(activeId))
+        {
+            throw new SimulationValidationException(
+                $"Succession claim '{withdrawn.ClaimId}' is not the exact active record.");
+        }
+
+        claims[activeId] = Clone(withdrawn);
+        activeClaimByPair.Remove(pair);
+    }
+
+    private void EnforceClaimRetentionBound(EntityId subjectCharacterId)
+    {
+        while (claims.Values.Count(item =>
+                   item.SubjectCharacterId == subjectCharacterId
+                   && item.Status == SuccessionClaimStatus.Withdrawn)
+               > CharacterSuccessionLimits.RecentWithdrawnClaimsPerSubject)
+        {
+            SuccessionClaimState evicted = claims.Values
+                .Where(item => item.SubjectCharacterId == subjectCharacterId
+                    && item.Status == SuccessionClaimStatus.Withdrawn)
+                .OrderBy(item => item.WithdrawalTurnIndex)
+                .ThenBy(item => item.WithdrawalDate)
+                .ThenBy(item => item.ClaimId)
+                .First();
+            FoldClaim(evicted);
+            claims.Remove(evicted.ClaimId);
+        }
+    }
+
+    private void FoldClaim(SuccessionClaimState claim)
+    {
+        CampaignDate withdrawalDate = claim.WithdrawalDate
+            ?? throw new SimulationValidationException(
+                "Withdrawn succession claim is missing its withdrawal date.");
+        SuccessionClaimHistoryAggregate aggregate = claimHistory.TryGetValue(
+            claim.SubjectCharacterId,
+            out SuccessionClaimHistoryAggregate? stored)
+            ? stored
+            : new(
+                CharacterSuccessionContractVersions.ClaimHistory,
+                claim.SubjectCharacterId,
+                0,
+                withdrawalDate,
+                withdrawalDate);
+        try
+        {
+            aggregate = aggregate with
+            {
+                FoldedWithdrawnCount = checked(aggregate.FoldedWithdrawnCount + 1),
+                EarliestDate = Earlier(aggregate.EarliestDate, withdrawalDate),
+                LatestDate = Later(aggregate.LatestDate, withdrawalDate),
+            };
+            _ = aggregate.TotalFoldedCount;
+        }
+        catch (OverflowException exception)
+        {
+            throw new SimulationValidationException(
+                $"Succession-claim history for '{claim.SubjectCharacterId}' exceeds Int64 capacity: {exception.Message}");
+        }
+
+        claimHistory[claim.SubjectCharacterId] = aggregate;
     }
 
     private void AddActive(HeirDesignationState designation)
@@ -1047,6 +1361,160 @@ public sealed class CharacterSuccessionWorldState
         }
     }
 
+    private void ValidateClaimActionEnvelope(
+        EntityId actingCharacterId,
+        CharacterSuccessionClaimActionCommandPayload? payload,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        ICollection<ValidationIssue> issues)
+    {
+        if (!resolutionDate.IsValid)
+        {
+            issues.Add(new(
+                "invalid_resolution_date",
+                "Succession-claim resolution date is invalid."));
+        }
+        else if (resolutionDate.CompareTo(calendar.Date) < 0)
+        {
+            issues.Add(new(
+                "past_resolution_date",
+                "Succession-claim resolution date precedes succession state."));
+        }
+
+        if (authoritativeTurnIndex < calendar.TurnIndex)
+        {
+            issues.Add(new(
+                "past_turn_index",
+                "Succession-claim action turn precedes succession state."));
+        }
+
+        AuthoritativeCharacterProfile? claimant = ValidateClaimParticipant(
+            actingCharacterId,
+            resolutionDate,
+            "claimant",
+            issues,
+            requireAgency: true);
+        if (payload?.Action is null)
+        {
+            issues.Add(new(
+                "invalid_payload",
+                "Character-succession claim action cannot be null."));
+            return;
+        }
+
+        EntityId subjectCharacterId = payload.Action switch
+        {
+            AssertSuccessionClaimAction assertion => assertion.SubjectCharacterId,
+            WithdrawSuccessionClaimAction withdrawal => withdrawal.SubjectCharacterId,
+            _ => default,
+        };
+        AuthoritativeCharacterProfile? subject = ValidateClaimParticipant(
+            subjectCharacterId,
+            resolutionDate,
+            "subject",
+            issues,
+            requireAgency: false);
+        if (claimant is not null && subject is not null
+            && actingCharacterId == subjectCharacterId)
+        {
+            issues.Add(new(
+                "self_succession_claim",
+                "A character cannot assert a succession claim to themself."));
+        }
+
+        SuccessionClaimState? current = actingCharacterId.IsValid
+            && subjectCharacterId.IsValid
+                ? GetStoredActiveClaim(subjectCharacterId, actingCharacterId)
+                : null;
+        switch (payload.Action)
+        {
+            case AssertSuccessionClaimAction:
+                if (current is not null)
+                {
+                    issues.Add(new(
+                        "succession_claim_already_active",
+                        "The claimant already has an active claim to this subject."));
+                }
+
+                if (claims.Values.Count(item =>
+                        item.SubjectCharacterId == subjectCharacterId
+                        && item.Status == SuccessionClaimStatus.Active)
+                    >= CharacterSuccessionLimits.MaximumActiveClaimsPerSubject)
+                {
+                    issues.Add(new(
+                        "succession_claim_subject_capacity",
+                        "The subject has reached the active succession-claim capacity."));
+                }
+
+                if (claims.Values.Count(item =>
+                        item.ClaimantCharacterId == actingCharacterId
+                        && item.Status == SuccessionClaimStatus.Active)
+                    >= CharacterSuccessionLimits.MaximumActiveClaimsPerClaimant)
+                {
+                    issues.Add(new(
+                        "succession_claim_claimant_capacity",
+                        "The claimant has reached the active succession-claim capacity."));
+                }
+
+                break;
+            case WithdrawSuccessionClaimAction withdrawal:
+                if (!withdrawal.ExpectedCurrentClaimId.IsValid)
+                {
+                    issues.Add(new(
+                        "invalid_expected_succession_claim",
+                        "Succession-claim withdrawal requires a valid expected current claim ID."));
+                }
+
+                if (current?.ClaimId != withdrawal.ExpectedCurrentClaimId)
+                {
+                    issues.Add(new(
+                        "stale_succession_claim",
+                        "Expected current succession claim does not match authoritative state."));
+                }
+
+                if (current is not null)
+                {
+                    ValidateClaimFoldCapacity(current, issues);
+                }
+
+                break;
+            default:
+                issues.Add(new(
+                    "unsupported_character_succession_claim_action",
+                    "Only assert_succession_claim.v1 and withdraw_succession_claim.v1 are registered."));
+                break;
+        }
+    }
+
+    private void ValidateClaimFoldCapacity(
+        SuccessionClaimState current,
+        ICollection<ValidationIssue> issues)
+    {
+        int terminalCount = claims.Values.Count(item =>
+            item.SubjectCharacterId == current.SubjectCharacterId
+            && item.Status == SuccessionClaimStatus.Withdrawn);
+        if (terminalCount < CharacterSuccessionLimits.RecentWithdrawnClaimsPerSubject)
+        {
+            return;
+        }
+
+        if (claimHistory.TryGetValue(
+                current.SubjectCharacterId,
+                out SuccessionClaimHistoryAggregate? aggregate))
+        {
+            try
+            {
+                _ = checked(aggregate.FoldedWithdrawnCount + 1);
+            }
+            catch (OverflowException)
+            {
+                issues.Add(new(
+                    "succession_claim_history_overflow",
+                    "Succession-claim history cannot fold another withdrawn record without exceeding Int64 capacity."));
+            }
+        }
+    }
+
     private void ValidateFoldCapacity(
         HeirDesignationState current,
         HeirDesignationStatus terminalStatus,
@@ -1189,6 +1657,62 @@ public sealed class CharacterSuccessionWorldState
         return profile;
     }
 
+    private AuthoritativeCharacterProfile? ValidateClaimParticipant(
+        EntityId characterId,
+        CampaignDate resolutionDate,
+        string role,
+        ICollection<ValidationIssue> issues,
+        bool requireAgency)
+    {
+        if (!characterId.IsValid)
+        {
+            issues.Add(new(
+                $"invalid_{role}",
+                $"Succession-claim {role} ID is invalid."));
+            return null;
+        }
+
+        if (!characters.TryGetCharacterProfile(
+                characterId,
+                out AuthoritativeCharacterProfile? profile))
+        {
+            issues.Add(new(
+                $"unknown_{role}",
+                $"Succession-claim {role} '{characterId}' does not exist."));
+            return null;
+        }
+
+        if (resolutionDate.IsValid && profile.BirthDate.CompareTo(resolutionDate) > 0)
+        {
+            issues.Add(new(
+                $"{role}_not_born",
+                $"Succession-claim {role} is not born by resolution."));
+        }
+
+        if (requireAgency && profile.Condition.VitalStatus != CharacterVitalStatus.Alive)
+        {
+            issues.Add(new(
+                "claimant_dead",
+                "Succession-claim claimant is dead."));
+        }
+
+        if (requireAgency && profile.Condition.IsIncapacitated)
+        {
+            issues.Add(new(
+                "claimant_incapacitated",
+                "Succession-claim claimant is incapacitated."));
+        }
+
+        if (requireAgency && profile.Condition.CustodyStatus != CharacterCustodyStatus.Free)
+        {
+            issues.Add(new(
+                "claimant_not_free",
+                "Succession-claim claimant is not free to act."));
+        }
+
+        return profile;
+    }
+
     private void AddDesignations(IReadOnlyList<HeirDesignationState> source)
     {
         foreach (HeirDesignationState designation in source)
@@ -1255,6 +1779,159 @@ public sealed class CharacterSuccessionWorldState
                 throw new SimulationValidationException(
                     $"Duplicate heir-designation history for '{aggregate.DesignatorCharacterId}'.");
             }
+        }
+    }
+
+    private void AddClaims(IReadOnlyList<SuccessionClaimState> source)
+    {
+        foreach (SuccessionClaimState claim in source)
+        {
+            ValidateClaim(claim);
+            if (!claims.TryAdd(claim.ClaimId, Clone(claim)))
+            {
+                throw new SimulationValidationException(
+                    $"Duplicate succession claim '{claim.ClaimId}'.");
+            }
+
+            if (claim.Status == SuccessionClaimStatus.Active
+                && !activeClaimByPair.TryAdd(
+                    (claim.SubjectCharacterId, claim.ClaimantCharacterId),
+                    claim.ClaimId))
+            {
+                throw new SimulationValidationException(
+                    $"Claimant '{claim.ClaimantCharacterId}' has multiple active succession claims to '{claim.SubjectCharacterId}'.");
+            }
+        }
+    }
+
+    private void AddClaimHistory(
+        IReadOnlyList<SuccessionClaimHistoryAggregate> source)
+    {
+        foreach (SuccessionClaimHistoryAggregate aggregate in source)
+        {
+            if (aggregate.ContractVersion
+                    != CharacterSuccessionContractVersions.ClaimHistory
+                || aggregate.FoldedWithdrawnCount <= 0
+                || !aggregate.EarliestDate.IsValid
+                || !aggregate.LatestDate.IsValid
+                || aggregate.EarliestDate.CompareTo(aggregate.LatestDate) > 0
+                || aggregate.LatestDate.CompareTo(calendar.Date) > 0)
+            {
+                throw new SimulationValidationException(
+                    "Succession-claim history aggregate is malformed.");
+            }
+
+            AuthoritativeCharacterProfile subject = RequireCharacter(
+                aggregate.SubjectCharacterId,
+                "Succession-claim history subject");
+            if (subject.BirthDate.CompareTo(aggregate.EarliestDate) > 0)
+            {
+                throw new SimulationValidationException(
+                    "Succession-claim history predates its subject's birth.");
+            }
+
+            try
+            {
+                if (aggregate.TotalFoldedCount <= 0)
+                {
+                    throw new SimulationValidationException(
+                        "Succession-claim history aggregate must retain at least one folded record.");
+                }
+            }
+            catch (OverflowException exception)
+            {
+                throw new SimulationValidationException(
+                    $"Succession-claim history aggregate exceeds Int64 capacity: {exception.Message}");
+            }
+
+            if (!claimHistory.TryAdd(
+                    aggregate.SubjectCharacterId,
+                    Clone(aggregate)))
+            {
+                throw new SimulationValidationException(
+                    $"Duplicate succession-claim history for '{aggregate.SubjectCharacterId}'.");
+            }
+        }
+    }
+
+    private void ValidateClaim(SuccessionClaimState claim)
+    {
+        if (claim.ContractVersion != CharacterSuccessionContractVersions.ClaimState
+            || !claim.ClaimId.IsValid
+            || !Enum.IsDefined(claim.Origin)
+            || claim.Origin != SuccessionClaimOrigin.PersonalAssertion
+            || !claim.AssertedDate.IsValid
+            || claim.AssertedTurnIndex < 0
+            || !claim.SourceCommandId.IsValid
+            || !claim.SourceEventId.IsValid
+            || !Enum.IsDefined(claim.Status))
+        {
+            throw new SimulationValidationException(
+                "Succession-claim record contains an invalid version, ID, date, turn, origin, or status.");
+        }
+
+        AuthoritativeCharacterProfile subject = RequireCharacter(
+            claim.SubjectCharacterId,
+            "Succession-claim subject");
+        AuthoritativeCharacterProfile claimant = RequireCharacter(
+            claim.ClaimantCharacterId,
+            "Succession-claim claimant");
+        if (claim.SubjectCharacterId == claim.ClaimantCharacterId
+            || subject.BirthDate.CompareTo(claim.AssertedDate) > 0
+            || claimant.BirthDate.CompareTo(claim.AssertedDate) > 0
+            || claim.AssertedDate.CompareTo(calendar.Date) > 0
+            || claim.AssertedTurnIndex > calendar.TurnIndex)
+        {
+            throw new SimulationValidationException(
+                $"Succession claim '{claim.ClaimId}' has invalid participants or assertion time.");
+        }
+
+        EntityId expectedEventId = CharacterSuccessionIds.DeriveClaimActionEventId(
+            claim.AssertedDate,
+            claim.SourceCommandId);
+        if (claim.SourceEventId != expectedEventId
+            || claim.ClaimId != CharacterSuccessionIds.DeriveClaimId(
+                claim.SourceEventId,
+                claim.SubjectCharacterId,
+                claim.ClaimantCharacterId))
+        {
+            throw new SimulationValidationException(
+                $"Succession claim '{claim.ClaimId}' has invalid stable identity evidence.");
+        }
+
+        if (claim.Status == SuccessionClaimStatus.Active)
+        {
+            if (claim.WithdrawalDate is not null
+                || claim.WithdrawalTurnIndex is not null
+                || claim.WithdrawalCommandId is not null
+                || claim.WithdrawalEventId is not null)
+            {
+                throw new SimulationValidationException(
+                    $"Active succession claim '{claim.ClaimId}' contains withdrawal evidence.");
+            }
+
+            return;
+        }
+
+        if (claim.WithdrawalDate is not CampaignDate withdrawalDate
+            || claim.WithdrawalTurnIndex is not long withdrawalTurnIndex
+            || claim.WithdrawalCommandId is not EntityId withdrawalCommandId
+            || claim.WithdrawalEventId is not EntityId withdrawalEventId
+            || !withdrawalDate.IsValid
+            || withdrawalTurnIndex < claim.AssertedTurnIndex
+            || withdrawalDate.CompareTo(claim.AssertedDate) < 0
+            || withdrawalDate.CompareTo(calendar.Date) > 0
+            || withdrawalTurnIndex > calendar.TurnIndex
+            || !withdrawalCommandId.IsValid
+            || !withdrawalEventId.IsValid
+            || withdrawalCommandId == claim.SourceCommandId
+            || withdrawalEventId == claim.SourceEventId
+            || withdrawalEventId != CharacterSuccessionIds.DeriveClaimActionEventId(
+                withdrawalDate,
+                withdrawalCommandId))
+        {
+            throw new SimulationValidationException(
+                $"Withdrawn succession claim '{claim.ClaimId}' has incomplete or invalid withdrawal evidence.");
         }
     }
 
@@ -1356,6 +2033,38 @@ public sealed class CharacterSuccessionWorldState
                 "Heir-designation state has duplicate global lifecycle event roles.");
         }
 
+        EntityId[] designationLifecycleIdentities = allRecords
+            .SelectMany(item => new EntityId?[]
+            {
+                item.SourceCommandId,
+                item.SourceEventId,
+                item.ResolutionCommandId,
+                item.ResolutionEventId,
+            })
+            .Where(item => item.HasValue)
+            .Select(item => item!.Value)
+            .Distinct()
+            .ToArray();
+        EntityId[] claimLifecycleIdentities = claims.Values
+            .SelectMany(item => new EntityId?[]
+            {
+                item.SourceCommandId,
+                item.SourceEventId,
+                item.WithdrawalCommandId,
+                item.WithdrawalEventId,
+            })
+            .Where(item => item.HasValue)
+            .Select(item => item!.Value)
+            .ToArray();
+        if (claimLifecycleIdentities.Distinct().Count()
+                != claimLifecycleIdentities.Length
+            || claimLifecycleIdentities.Intersect(
+                designationLifecycleIdentities).Any())
+        {
+            throw new SimulationValidationException(
+                "Succession-claim state has duplicate or cross-workflow lifecycle identities.");
+        }
+
         foreach (HeirDesignationState terminal in allTerminalRecords)
         {
             HeirDesignationState[] linkedSources = allRecords.Where(candidate =>
@@ -1439,6 +2148,51 @@ public sealed class CharacterSuccessionWorldState
                     $"Heir-designation history for '{designator}' is inconsistent with retained terminal records.");
             }
         }
+
+        foreach (IGrouping<EntityId, SuccessionClaimState> group in claims.Values
+                     .GroupBy(item => item.SubjectCharacterId))
+        {
+            if (group.Count(item => item.Status == SuccessionClaimStatus.Active)
+                    > CharacterSuccessionLimits.MaximumActiveClaimsPerSubject
+                || group.Count(item => item.Status == SuccessionClaimStatus.Withdrawn)
+                    > CharacterSuccessionLimits.RecentWithdrawnClaimsPerSubject)
+            {
+                throw new SimulationValidationException(
+                    $"Subject '{group.Key}' exceeds succession-claim bounds.");
+            }
+        }
+
+        foreach (IGrouping<EntityId, SuccessionClaimState> group in claims.Values
+                     .Where(item => item.Status == SuccessionClaimStatus.Active)
+                     .GroupBy(item => item.ClaimantCharacterId))
+        {
+            if (group.Count()
+                > CharacterSuccessionLimits.MaximumActiveClaimsPerClaimant)
+            {
+                throw new SimulationValidationException(
+                    $"Claimant '{group.Key}' exceeds active succession-claim capacity.");
+            }
+        }
+
+        foreach ((EntityId subject, SuccessionClaimHistoryAggregate aggregate)
+                 in claimHistory)
+        {
+            SuccessionClaimState[] retainedWithdrawn = claims.Values
+                .Where(item => item.SubjectCharacterId == subject
+                    && item.Status == SuccessionClaimStatus.Withdrawn)
+                .OrderBy(item => item.WithdrawalTurnIndex)
+                .ThenBy(item => item.WithdrawalDate)
+                .ThenBy(item => item.ClaimId)
+                .ToArray();
+            if (retainedWithdrawn.Length
+                    != CharacterSuccessionLimits.RecentWithdrawnClaimsPerSubject
+                || aggregate.LatestDate.CompareTo(
+                    retainedWithdrawn[0].WithdrawalDate!.Value) > 0)
+            {
+                throw new SimulationValidationException(
+                    $"Succession-claim history for '{subject}' is inconsistent with retained withdrawn records.");
+            }
+        }
     }
 
     private static bool IsExactSuccessor(
@@ -1456,6 +2210,27 @@ public sealed class CharacterSuccessionWorldState
         activeByDesignator.TryGetValue(designatorCharacterId, out EntityId designationId)
             ? designations[designationId]
             : null;
+
+    private SuccessionClaimState? GetStoredActiveClaim(
+        EntityId subjectCharacterId,
+        EntityId claimantCharacterId) =>
+        activeClaimByPair.TryGetValue(
+            (subjectCharacterId, claimantCharacterId),
+            out EntityId claimId)
+                ? claims[claimId]
+                : null;
+
+    private bool HasRetainedLifecycleIdentity(EntityId identity) =>
+        designations.Values.Any(item =>
+            item.SourceCommandId == identity
+            || item.SourceEventId == identity
+            || item.ResolutionCommandId == identity
+            || item.ResolutionEventId == identity)
+        || claims.Values.Any(item =>
+            item.SourceCommandId == identity
+            || item.SourceEventId == identity
+            || item.WithdrawalCommandId == identity
+            || item.WithdrawalEventId == identity);
 
     private AuthoritativeCharacterProfile RequireCharacter(EntityId characterId, string label)
     {
@@ -1488,6 +2263,26 @@ public sealed class CharacterSuccessionWorldState
         foreach ((EntityId id, HeirDesignationHistoryAggregate aggregate) in candidate.history)
         {
             history.Add(id, Clone(aggregate));
+        }
+
+
+        claims.Clear();
+        foreach ((EntityId id, SuccessionClaimState claim) in candidate.claims)
+        {
+            claims.Add(id, Clone(claim));
+        }
+
+        activeClaimByPair.Clear();
+        foreach ((var pair, EntityId claimId) in candidate.activeClaimByPair)
+        {
+            activeClaimByPair.Add(pair, claimId);
+        }
+
+        claimHistory.Clear();
+        foreach ((EntityId id, SuccessionClaimHistoryAggregate aggregate)
+                 in candidate.claimHistory)
+        {
+            claimHistory.Add(id, Clone(aggregate));
         }
 
         calendar = candidate.calendar;
@@ -1532,6 +2327,45 @@ public sealed class CharacterSuccessionWorldState
             ResolutionEventId = eventId,
         };
 
+    private static SuccessionClaimState CreateActiveClaim(
+        EntityId subjectCharacterId,
+        EntityId claimantCharacterId,
+        CampaignDate resolutionDate,
+        long resolutionTurnIndex,
+        EntityId commandId,
+        EntityId eventId) => new(
+            CharacterSuccessionContractVersions.ClaimState,
+            CharacterSuccessionIds.DeriveClaimId(
+                eventId,
+                subjectCharacterId,
+                claimantCharacterId),
+            subjectCharacterId,
+            claimantCharacterId,
+            SuccessionClaimOrigin.PersonalAssertion,
+            resolutionDate,
+            resolutionTurnIndex,
+            commandId,
+            eventId,
+            SuccessionClaimStatus.Active,
+            null,
+            null,
+            null,
+            null);
+
+    private static SuccessionClaimState WithdrawClaim(
+        SuccessionClaimState current,
+        CampaignDate resolutionDate,
+        long resolutionTurnIndex,
+        EntityId commandId,
+        EntityId eventId) => current with
+        {
+            Status = SuccessionClaimStatus.Withdrawn,
+            WithdrawalDate = resolutionDate,
+            WithdrawalTurnIndex = resolutionTurnIndex,
+            WithdrawalCommandId = commandId,
+            WithdrawalEventId = eventId,
+        };
+
     private static EntityId GetOutcomeDesignator(ICharacterSuccessionActionOutcome outcome) =>
         outcome switch
         {
@@ -1573,10 +2407,39 @@ public sealed class CharacterSuccessionWorldState
                 "Unsupported character-succession outcome type."),
         };
 
+    private static ICharacterSuccessionClaimAction Clone(
+        ICharacterSuccessionClaimAction value) => value switch
+        {
+            AssertSuccessionClaimAction action => action with { },
+            WithdrawSuccessionClaimAction action => action with { },
+            _ => throw new SimulationValidationException(
+                "Unsupported succession-claim action type."),
+        };
+
+    private static ICharacterSuccessionClaimActionOutcome Clone(
+        ICharacterSuccessionClaimActionOutcome value) => value switch
+        {
+            SuccessionClaimAssertedOutcome outcome => outcome with
+            {
+                CurrentClaim = Clone(outcome.CurrentClaim),
+            },
+            SuccessionClaimWithdrawnOutcome outcome => outcome with
+            {
+                PreviousClaim = Clone(outcome.PreviousClaim),
+            },
+            _ => throw new SimulationValidationException(
+                "Unsupported succession-claim outcome type."),
+        };
+
     private static HeirDesignationState Clone(HeirDesignationState value) => value with { };
 
     private static HeirDesignationHistoryAggregate Clone(
         HeirDesignationHistoryAggregate value) => value with { };
+
+    private static SuccessionClaimState Clone(SuccessionClaimState value) => value with { };
+
+    private static SuccessionClaimHistoryAggregate Clone(
+        SuccessionClaimHistoryAggregate value) => value with { };
 
     private static CampaignDate Earlier(CampaignDate current, CampaignDate candidate) =>
         candidate.CompareTo(current) < 0 ? candidate : current;
@@ -1598,8 +2461,12 @@ public sealed class CharacterSuccessionWorldState
         if (snapshot.ContractVersion != CharacterSuccessionContractVersions.Snapshot
             || snapshot.Designations is null
             || snapshot.History is null
+            || snapshot.Claims is null
+            || snapshot.ClaimHistory is null
             || snapshot.Designations.Any(item => item is null)
-            || snapshot.History.Any(item => item is null))
+            || snapshot.History.Any(item => item is null)
+            || snapshot.Claims.Any(item => item is null)
+            || snapshot.ClaimHistory.Any(item => item is null))
         {
             throw new SimulationValidationException(
                 "Character-succession snapshot has an invalid version or null collection/record.");

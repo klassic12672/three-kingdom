@@ -5,19 +5,26 @@ namespace Simulation.Core;
 
 public static class CharacterSuccessionContractVersions
 {
-    public const int Snapshot = 1;
+    public const int Snapshot = 2;
     public const int State = 1;
     public const int Action = 1;
     public const int Outcome = 1;
+    public const int ClaimState = 1;
+    public const int ClaimHistory = 1;
+    public const int ClaimAction = 1;
+    public const int ClaimOutcome = 1;
     public const int CandidateEligibilityRule = 1;
     public const int CandidateEvaluation = 1;
     public const int CandidateSet = 1;
-    public const int AuthoritativeQuery = 3;
+    public const int AuthoritativeQuery = 4;
 }
 
 public static class CharacterSuccessionLimits
 {
     public const int RecentTerminalDesignationsPerCharacter = 32;
+    public const int MaximumActiveClaimsPerSubject = 64;
+    public const int MaximumActiveClaimsPerClaimant = 64;
+    public const int RecentWithdrawnClaimsPerSubject = 32;
     public const int MaximumEvaluatedDescendantGeneration = 64;
     public const int MaximumConfiguredMinimumCandidateAge = 100;
 }
@@ -25,7 +32,7 @@ public static class CharacterSuccessionLimits
 public static class CharacterSuccessionSystem
 {
     public const string SystemId = "simulation.character_succession";
-    public const int Version = 1;
+    public const int Version = 2;
 }
 
 public enum HeirDesignationStatus
@@ -33,6 +40,17 @@ public enum HeirDesignationStatus
     Active = 0,
     Replaced = 1,
     Revoked = 2,
+}
+
+public enum SuccessionClaimOrigin
+{
+    PersonalAssertion = 0,
+}
+
+public enum SuccessionClaimStatus
+{
+    Active = 0,
+    Withdrawn = 1,
 }
 
 public enum SuccessionCandidateBasis
@@ -193,13 +211,44 @@ public sealed record HeirDesignationHistoryAggregate(
     public long TotalFoldedCount => checked(FoldedReplacedCount + FoldedRevokedCount);
 }
 
+public sealed record SuccessionClaimState(
+    int ContractVersion,
+    EntityId ClaimId,
+    EntityId SubjectCharacterId,
+    EntityId ClaimantCharacterId,
+    SuccessionClaimOrigin Origin,
+    CampaignDate AssertedDate,
+    long AssertedTurnIndex,
+    EntityId SourceCommandId,
+    EntityId SourceEventId,
+    SuccessionClaimStatus Status,
+    CampaignDate? WithdrawalDate,
+    long? WithdrawalTurnIndex,
+    EntityId? WithdrawalCommandId,
+    EntityId? WithdrawalEventId);
+
+public sealed record SuccessionClaimHistoryAggregate(
+    int ContractVersion,
+    EntityId SubjectCharacterId,
+    long FoldedWithdrawnCount,
+    CampaignDate EarliestDate,
+    CampaignDate LatestDate)
+{
+    [JsonIgnore]
+    public long TotalFoldedCount => checked(FoldedWithdrawnCount);
+}
+
 public sealed record CharacterSuccessionWorldSnapshot(
     int ContractVersion,
     IReadOnlyList<HeirDesignationState> Designations,
-    IReadOnlyList<HeirDesignationHistoryAggregate> History)
+    IReadOnlyList<HeirDesignationHistoryAggregate> History,
+    IReadOnlyList<SuccessionClaimState> Claims,
+    IReadOnlyList<SuccessionClaimHistoryAggregate> ClaimHistory)
 {
     public static CharacterSuccessionWorldSnapshot Empty { get; } = new(
         CharacterSuccessionContractVersions.Snapshot,
+        [],
+        [],
         [],
         []);
 
@@ -207,6 +256,8 @@ public sealed record CharacterSuccessionWorldSnapshot(
     {
         Designations = Designations.OrderBy(item => item.DesignationId).ToArray(),
         History = History.OrderBy(item => item.DesignatorCharacterId).ToArray(),
+        Claims = Claims.OrderBy(item => item.ClaimId).ToArray(),
+        ClaimHistory = ClaimHistory.OrderBy(item => item.SubjectCharacterId).ToArray(),
     };
 }
 
@@ -232,6 +283,21 @@ public interface IAuthoritativeCharacterSuccessionWorldQuery
 
     SuccessionCandidateSetResult FindEligibleCandidates(
         SuccessionCandidateSetRequest request);
+
+    bool TryGetActiveClaim(
+        EntityId subjectCharacterId,
+        EntityId claimantCharacterId,
+        [NotNullWhen(true)] out SuccessionClaimState? claim);
+
+    IReadOnlyList<SuccessionClaimState> GetActiveClaimsForSubject(
+        EntityId subjectCharacterId);
+
+    IReadOnlyList<SuccessionClaimState> GetRecentClaimRecordsForSubject(
+        EntityId subjectCharacterId);
+
+    bool TryGetClaimHistory(
+        EntityId subjectCharacterId,
+        [NotNullWhen(true)] out SuccessionClaimHistoryAggregate? history);
 }
 
 [JsonPolymorphic(
@@ -277,12 +343,60 @@ public sealed record CharacterSuccessionActionResolvedEventPayload(
     ICharacterSuccessionActionOutcome Outcome)
     : ICampaignEventPayload;
 
+[JsonPolymorphic(
+    TypeDiscriminatorPropertyName = "$type",
+    UnknownDerivedTypeHandling = JsonUnknownDerivedTypeHandling.FailSerialization)]
+[JsonDerivedType(typeof(AssertSuccessionClaimAction), "assert_succession_claim.v1")]
+[JsonDerivedType(typeof(WithdrawSuccessionClaimAction), "withdraw_succession_claim.v1")]
+public interface ICharacterSuccessionClaimAction;
+
+public sealed record AssertSuccessionClaimAction(EntityId SubjectCharacterId)
+    : ICharacterSuccessionClaimAction;
+
+public sealed record WithdrawSuccessionClaimAction(
+    EntityId SubjectCharacterId,
+    EntityId ExpectedCurrentClaimId)
+    : ICharacterSuccessionClaimAction;
+
+[method: JsonConstructor]
+public sealed record CharacterSuccessionClaimActionCommandPayload(
+    ICharacterSuccessionClaimAction Action)
+    : ICampaignCommandPayload;
+
+[JsonPolymorphic(
+    TypeDiscriminatorPropertyName = "$type",
+    UnknownDerivedTypeHandling = JsonUnknownDerivedTypeHandling.FailSerialization)]
+[JsonDerivedType(typeof(SuccessionClaimAssertedOutcome), "succession_claim_asserted.v1")]
+[JsonDerivedType(typeof(SuccessionClaimWithdrawnOutcome), "succession_claim_withdrawn.v1")]
+public interface ICharacterSuccessionClaimActionOutcome;
+
+public sealed record SuccessionClaimAssertedOutcome(SuccessionClaimState CurrentClaim)
+    : ICharacterSuccessionClaimActionOutcome;
+
+public sealed record SuccessionClaimWithdrawnOutcome(SuccessionClaimState PreviousClaim)
+    : ICharacterSuccessionClaimActionOutcome;
+
+public sealed record CharacterSuccessionClaimActionResolvedEventPayload(
+    EntityId ActingCharacterId,
+    ICharacterSuccessionClaimAction Action,
+    ICharacterSuccessionClaimActionOutcome Outcome)
+    : ICampaignEventPayload;
+
 public static class CharacterSuccessionIds
 {
     public static EntityId DeriveActionEventId(CampaignDate resolutionDate, EntityId commandId) =>
         StableId.Hash(
             "event",
             "character-succession-action-event.v1",
+            StableId.FormatDate(resolutionDate),
+            StableId.RequireId(commandId, nameof(commandId)).Value);
+
+    public static EntityId DeriveClaimActionEventId(
+        CampaignDate resolutionDate,
+        EntityId commandId) =>
+        StableId.Hash(
+            "event",
+            "character-succession-claim-action-event.v1",
             StableId.FormatDate(resolutionDate),
             StableId.RequireId(commandId, nameof(commandId)).Value);
 
@@ -296,4 +410,15 @@ public static class CharacterSuccessionIds
             StableId.RequireId(eventId, nameof(eventId)).Value,
             StableId.RequireId(designatorCharacterId, nameof(designatorCharacterId)).Value,
             StableId.RequireId(heirCharacterId, nameof(heirCharacterId)).Value);
+
+    public static EntityId DeriveClaimId(
+        EntityId eventId,
+        EntityId subjectCharacterId,
+        EntityId claimantCharacterId) =>
+        StableId.Hash(
+            "succession_claim",
+            "succession-claim.v1",
+            StableId.RequireId(eventId, nameof(eventId)).Value,
+            StableId.RequireId(subjectCharacterId, nameof(subjectCharacterId)).Value,
+            StableId.RequireId(claimantCharacterId, nameof(claimantCharacterId)).Value);
 }
