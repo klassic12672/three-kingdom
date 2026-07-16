@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — through SP-04F6 accepted |
+| Status | Active — through SP-04F7 accepted |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -1048,7 +1048,7 @@ Accepted revision `7e96930d103081e981c0cf1a06736223e222bc07` subsequently passed
 
 Claims, precedence, deterministic resolution, inheritance, regency, retinue succession, household/office/title/faction effects, disputed support, player continuity, the full SP-04 three-second budget, and full SP-04 acceptance remain open.
 
-## Current package: SP-04F7 neutral personal succession claims
+## Accepted package: SP-04F7 neutral personal succession claims
 
 SP-04F7 is the smallest dependency-safe persistent package after accepted F6. It implements the succession-claim step already ordered after designation and legal-candidate evaluation, without beginning precedence or resolution. A character-issued Commands-phase `character_succession_claim_action.v1` envelope registers `assert_succession_claim.v1` and `withdraw_succession_claim.v1`. The issuing character is the claimant and must be born, living, capable, and free. The distinct subject must exist and be born but may be dead, incapacitated, or in custody. Assertion requires no active ordered-pair claim; withdrawal requires the exact active claim ID; reassertion creates a new stable identity.
 
@@ -1079,11 +1079,11 @@ F7 adds no spouse/collateral rule, missing-heir policy, claim ranking, precedenc
 | F713 | Schema 26 requires complete claim/history shapes, exact action/outcome pairing, and one succession @2 registration | Current raw-shape and restore tests | Local pass |
 | F714 | A representative 1,000-character/500-claim workload records raw local measurements without a brittle threshold | Local Apple Silicon measurement | Local pass; no threshold |
 | F715 | Focused/full suites, validation, formatter, diff/LFS gates, and independent reviews pass | Local repository closeout | Local pass |
-| F716 | The exact implementation SHA passes hosted macOS arm64 and Windows x64 | Clean-checkout hosted CI and artifact evidence | Pending immutable SHA |
+| F716 | The exact implementation SHA passes hosted macOS arm64 and Windows x64 | Clean-checkout hosted CI and artifact evidence | Hosted pass at `62e03b6` |
 
 The representative local Release fixture contains 1,000 characters and 500 independent active claim pairs. A raw Apple Silicon run measured 1,396.681 ms for workflow, 0.969 ms for queries, and 149.235 ms for snapshot/checksum/JSON/gzip; snapshot JSON was 1,102,720 bytes, gzip was 68,002 bytes, and checksum was `e7009528025b97ddbce45fd72cddfe5c257516353a4a4f5ad693f28d13136561`. The test asserts shape and correctness without a wall-clock threshold. This component observation neither passes nor waives the full SP-04 three-second campaign-turn budget.
 
-Current local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. The exact `CharacterSuccession` Release filter passes 167/167 cases. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 1,077 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. Focused formatter verification, `git diff --check`, and `git lfs fsck` pass. Independent architecture, compatibility, simulation-engineer, and verification reviews approve F701–F715 with no remaining local blocker. F716 remains pending immutable-SHA hosted macOS arm64 and Windows x64 evidence, so F7 is not yet accepted.
+Current local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. The exact `CharacterSuccession` Release filter passes 167/167 cases. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 1,077 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. Focused formatter verification, `git diff --check`, and `git lfs fsck` pass. Independent architecture, compatibility, simulation-engineer, and verification reviews approve F701–F715 with no remaining local blocker. Accepted revision `62e03b6e7d4a3965de4c97ed9b92e03b6d40fbe4` subsequently passed [hosted macOS arm64 and Windows x64 validation, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04F7-EXACT-SHA-62e03b6.md). F716 therefore passes and F7 is accepted.
 
 Precedence, deterministic resolution, spouse/collateral and missing-heir law, inheritance, regency, retinue/office/household effects, disputed support, player continuity, the full SP-04 three-second budget, and full SP-04 acceptance remain open.
 
