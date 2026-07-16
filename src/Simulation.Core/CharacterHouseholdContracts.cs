@@ -10,7 +10,7 @@ public static class CharacterConditionContractVersions
     public const int Action = 1;
     public const int Outcome = 1;
     public const int Change = 1;
-    public const int Death = 2;
+    public const int Death = 3;
 }
 
 public static class CharacterConditionSystem
@@ -81,6 +81,7 @@ public sealed record CharacterDeathChange(
     int ContractVersion,
     EntityId DeathId,
     CharacterConditionChange ConditionChange,
+    IReadOnlyList<CharacterConditionChange> ReleasedCustodyChanges,
     CharacterMarriageLifecycleChangeSet MarriageChanges,
     IReadOnlyList<CharacterGuardianshipState> EndedGuardianships,
     IReadOnlyList<CharacterPregnancyState> RemovedPregnancies,

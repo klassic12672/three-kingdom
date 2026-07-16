@@ -31,6 +31,7 @@ public sealed class CharacterCareerDeathSchemaMigrationTests
         JsonObject expectedDeath = HistoricalDeath(expected);
         expectedDeath["contractVersion"] = CharacterConditionContractVersions.Death;
         expectedDeath["careerChanges"] = EmptyCareerChanges();
+        expectedDeath["releasedCustodyChanges"] = new JsonArray();
 
         JsonObject migrated = new SaveSchemaRegistry().MigrateToCurrent(frozen);
 
@@ -49,6 +50,7 @@ public sealed class CharacterCareerDeathSchemaMigrationTests
                         Outcome: CharacterDeathResolvedOutcome,
                     }).Payload).Outcome).Death;
         Assert.Equal(CharacterConditionContractVersions.Death, historicalDeath.ContractVersion);
+        Assert.Empty(historicalDeath.ReleasedCustodyChanges);
         Assert.Empty(historicalDeath.CareerChanges.InvalidatedProposals);
         Assert.Empty(historicalDeath.CareerChanges.EndedRetinueMemberships);
         Assert.Empty(historicalDeath.CareerChanges.EndedPatronageBonds);
@@ -149,7 +151,7 @@ public sealed class CharacterCareerDeathSchemaMigrationTests
         }
         else if (mutation == "death-v2")
         {
-            death["contractVersion"] = CharacterConditionContractVersions.Death;
+            death["contractVersion"] = 2;
         }
         else if (mutation == "invalidated-proposals-direct")
         {

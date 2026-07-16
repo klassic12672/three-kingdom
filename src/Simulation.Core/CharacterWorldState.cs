@@ -249,17 +249,6 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
             throw new SimulationValidationException("Character-condition action cannot be null.");
         }
 
-        if (action is ResolveCharacterDeathAction death)
-        {
-            return PrepareDeathPreview(
-                death.CharacterId,
-                death.ExpectedCurrent,
-                resolutionDate,
-                authoritativeTurnIndex,
-                commandId,
-                eventId);
-        }
-
         EntityId characterId = action switch
         {
             IncapacitateCharacterAction value => value.CharacterId,
@@ -314,14 +303,9 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
                 profile,
                 value,
                 resolutionDate),
-            ReleaseCharacterCustodyAction when profile.Condition.CustodyStatus
-                != CharacterCustodyStatus.Free => profile.Condition with
-                {
-                    CustodyStatus = CharacterCustodyStatus.Free,
-                    CustodianId = null,
-                },
-            ReleaseCharacterCustodyAction => throw new SimulationValidationException(
-                $"Character '{characterId}' is already free of custody."),
+            ReleaseCharacterCustodyAction => PlanCustodyRelease(
+                characterId,
+                profile.Condition),
             _ => throw new SimulationValidationException(
                 $"Unsupported character-condition action '{action.GetType().Name}'."),
         };
@@ -376,6 +360,68 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
             commandId,
             eventId,
             allowDeath: true);
+    }
+
+    internal CharacterDeathMutationPlan PrepareDeathAction(
+        ResolveCharacterDeathAction action,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (action is null)
+        {
+            throw new SimulationValidationException(
+                "Character-death action cannot be null.");
+        }
+
+        CharacterConditionMutationPlan death = PrepareDeathPreview(
+            action.CharacterId,
+            action.ExpectedCurrent,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+        CharacterConditionChange[] releasedCustodyChanges = Profiles.Where(item =>
+            item.CharacterId != action.CharacterId
+            && item.Condition.VitalStatus == CharacterVitalStatus.Alive
+            && item.Condition.CustodyStatus is CharacterCustodyStatus.Detained
+                or CharacterCustodyStatus.Captive
+                or CharacterCustodyStatus.Hostage
+            && item.Condition.CustodianId == action.CharacterId)
+            .Select(dependent => new CharacterConditionChange(
+                CharacterConditionContractVersions.Change,
+                CharacterConditionIds.DeriveChangeId(eventId, dependent.CharacterId),
+                dependent.CharacterId,
+                Clone(dependent.Condition),
+                Clone(PlanCustodyRelease(
+                    dependent.CharacterId,
+                    dependent.Condition)),
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId))
+            .OrderBy(item => item.ChangeId)
+            .ToArray();
+        IReadOnlyDictionary<EntityId, CharacterConditionState> releasedConditions =
+            releasedCustodyChanges.ToDictionary(
+                item => item.CharacterId,
+                item => item.CurrentCondition);
+        CharacterWorldSnapshot updated = death.CharacterPlan.Candidate.CaptureSnapshot();
+        updated = updated with
+        {
+            CharacterStates = updated.CharacterStates.Select(state =>
+                releasedConditions.TryGetValue(state.CharacterId, out CharacterConditionState? condition)
+                    ? state with { Condition = Clone(condition) }
+                    : state).ToArray(),
+        };
+        CharacterWorldState candidate = new(
+            updated,
+            death.CharacterPlan.Candidate.campaignDate);
+
+        return new CharacterDeathMutationPlan(
+            death.Change,
+            Array.AsReadOnly(releasedCustodyChanges),
+            new CharacterWorldUpdatePlan(candidate));
     }
 
     internal CharacterBirthMutationPlan PreparePregnancyBirth(
@@ -886,6 +932,23 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
         {
             CustodyStatus = action.CustodyStatus,
             CustodianId = custodian.CharacterId,
+        };
+    }
+
+    private static CharacterConditionState PlanCustodyRelease(
+        EntityId characterId,
+        CharacterConditionState condition)
+    {
+        if (condition.CustodyStatus == CharacterCustodyStatus.Free)
+        {
+            throw new SimulationValidationException(
+                $"Character '{characterId}' is already free of custody.");
+        }
+
+        return condition with
+        {
+            CustodyStatus = CharacterCustodyStatus.Free,
+            CustodianId = null,
         };
     }
 
@@ -2186,6 +2249,11 @@ internal sealed record CharacterFamilyMutationPlan(
 
 internal sealed record CharacterConditionMutationPlan(
     CharacterConditionChange Change,
+    CharacterWorldUpdatePlan CharacterPlan);
+
+internal sealed record CharacterDeathMutationPlan(
+    CharacterConditionChange Change,
+    IReadOnlyList<CharacterConditionChange> ReleasedCustodyChanges,
     CharacterWorldUpdatePlan CharacterPlan);
 
 internal sealed record HouseholdDecisionMutationPlan(

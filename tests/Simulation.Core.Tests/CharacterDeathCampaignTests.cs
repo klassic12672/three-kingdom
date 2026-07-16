@@ -228,10 +228,15 @@ public sealed class CharacterDeathCampaignTests
     }
 
     [Fact]
-    public void F107_HouseholdHeadAndCustodianRemainBlockedButBareRetinueIsPreserved()
+    public void F207_HouseholdHeadRemainsBlockedWhileCustodianDeathReleasesAndBareRetinueIsPreserved()
     {
         CampaignSimulation householdHead = CreateSimpleSimulation(
-            householdHead: true);
+            householdHead: true,
+            otherCondition: CharacterConditionState.Default with
+            {
+                CustodyStatus = CharacterCustodyStatus.Captive,
+                CustodianId = Target,
+            });
         string householdHeadBefore = SnapshotJson(householdHead);
         AssertInvalid(householdHead.Submit(DeathCommand(householdHead, "head")));
         AssertAliveAndUnchanged(householdHead, householdHeadBefore);
@@ -242,9 +247,18 @@ public sealed class CharacterDeathCampaignTests
                 CustodyStatus = CharacterCustodyStatus.Captive,
                 CustodianId = Target,
             });
-        string custodianBefore = SnapshotJson(custodian);
-        AssertInvalid(custodian.Submit(DeathCommand(custodian, "custodian")));
-        AssertAliveAndUnchanged(custodian, custodianBefore);
+        CharacterConditionState dependentBefore = Profile(custodian, Other).Condition;
+        CharacterDeathChange custodianDeath = Assert.IsType<CharacterDeathResolvedOutcome>(
+            Assert.IsType<CharacterConditionActionResolvedEventPayload>(
+                SubmitDeath(custodian, "custodian").Payload).Outcome).Death;
+        CharacterConditionChange release = Assert.Single(
+            custodianDeath.ReleasedCustodyChanges);
+        Assert.Equal(Other, release.CharacterId);
+        Assert.Equal(dependentBefore, release.PreviousCondition);
+        Assert.Equal(CharacterCustodyStatus.Free, release.CurrentCondition.CustodyStatus);
+        Assert.Null(release.CurrentCondition.CustodianId);
+        Assert.Equal(CharacterVitalStatus.Dead, Profile(custodian, Target).Condition.VitalStatus);
+        Assert.Equal(release.CurrentCondition, Profile(custodian, Other).Condition);
 
         CampaignSimulation retinueLeader = CreateSimpleSimulation(
             careers: new CareerWorldSnapshot(
@@ -271,6 +285,533 @@ public sealed class CharacterDeathCampaignTests
             retinueLeaderBefore,
             SimulationJson.CreateOptions())!;
         Assert.Equal(Serialize(retinueBefore.Careers), Serialize(retinueAfter.Careers));
+    }
+
+    [Fact]
+    public void F202_F205_DeathV3ReleasesEveryCustodyStatusCanonicallyAndDefensively()
+    {
+        IReadOnlyDictionary<EntityId, CharacterConditionState> conditions =
+            new Dictionary<EntityId, CharacterConditionState>
+            {
+                [Spouse] = CharacterConditionState.Default with
+                {
+                    HealthStatus = CharacterHealthStatus.Injured,
+                    CustodyStatus = CharacterCustodyStatus.Detained,
+                    CustodianId = Target,
+                },
+                [Ward] = CharacterConditionState.Default with
+                {
+                    IsIncapacitated = true,
+                    CustodyStatus = CharacterCustodyStatus.Captive,
+                    CustodianId = Target,
+                },
+                [Other] = CharacterConditionState.Default with
+                {
+                    CustodyStatus = CharacterCustodyStatus.Hostage,
+                    CustodianId = Target,
+                },
+            };
+        CampaignSimulation simulation = CreateSimpleSimulation(
+            conditionOverrides: conditions);
+        WorldSnapshot before = simulation.World.CaptureSnapshot();
+        CampaignCommand command = DeathCommand(simulation, "custody-all-statuses");
+        CharacterDeathChange death = Assert.IsType<CharacterDeathResolvedOutcome>(
+            Assert.IsType<CharacterConditionActionResolvedEventPayload>(
+                SubmitDeath(simulation, "custody-all-statuses").Payload).Outcome).Death;
+
+        Assert.Equal(3, CharacterConditionContractVersions.Death);
+        Assert.Equal(CharacterConditionContractVersions.Death, death.ContractVersion);
+        Assert.Equal(3, death.ReleasedCustodyChanges.Count);
+        Assert.Equal(
+            death.ReleasedCustodyChanges.OrderBy(item => item.ChangeId),
+            death.ReleasedCustodyChanges);
+        Assert.Equal(
+            death.ReleasedCustodyChanges.Count,
+            death.ReleasedCustodyChanges.Select(item => item.ChangeId).Distinct().Count());
+        Assert.Equal(
+            new[] { Spouse, Ward, Other }.Order(),
+            death.ReleasedCustodyChanges.Select(item => item.CharacterId).Order());
+        EntityId eventId = CharacterConditionIds.DeriveActionEventId(Date, command.CommandId);
+        foreach (CharacterConditionChange release in death.ReleasedCustodyChanges)
+        {
+            Assert.Equal(CharacterConditionContractVersions.Change, release.ContractVersion);
+            Assert.Equal(
+                CharacterConditionIds.DeriveChangeId(eventId, release.CharacterId),
+                release.ChangeId);
+            Assert.Equal(Date, release.ResolutionDate);
+            Assert.Equal(0, release.ResolutionTurnIndex);
+            Assert.Equal(command.CommandId, release.SourceCommandId);
+            Assert.Equal(Target, release.PreviousCondition.CustodianId);
+            Assert.Equal(
+                release.PreviousCondition with
+                {
+                    CustodyStatus = CharacterCustodyStatus.Free,
+                    CustodianId = null,
+                },
+                release.CurrentCondition);
+            Assert.Equal(release.CurrentCondition, Profile(simulation, release.CharacterId).Condition);
+            CharacterState previous = before.Characters.CharacterStates.Single(
+                item => item.CharacterId == release.CharacterId);
+            CharacterState current = simulation.World.CaptureSnapshot().Characters.CharacterStates.Single(
+                item => item.CharacterId == release.CharacterId);
+            Assert.Equal(
+                Serialize(previous with { Condition = release.CurrentCondition }),
+                Serialize(current));
+        }
+
+        IList<CharacterConditionChange> readOnly =
+            Assert.IsAssignableFrom<IList<CharacterConditionChange>>(
+                death.ReleasedCustodyChanges);
+        Assert.Throws<NotSupportedException>(() => readOnly[0] = readOnly[0]);
+        CharacterDeathChange roundTrip = JsonSerializer.Deserialize<CharacterDeathChange>(
+            Serialize(death),
+            SimulationJson.CreateOptions())!;
+        Assert.Equal(Serialize(death), Serialize(roundTrip));
+    }
+
+    [Fact]
+    public void F206_TargetCustodyUsesOnlyThePrimaryDeathChange()
+    {
+        CharacterConditionState targetBefore = CharacterConditionState.Default with
+        {
+            HealthStatus = CharacterHealthStatus.Injured,
+            CustodyStatus = CharacterCustodyStatus.Captive,
+            CustodianId = Other,
+        };
+        CampaignSimulation simulation = CreateSimpleSimulation(
+            conditionOverrides: new Dictionary<EntityId, CharacterConditionState>
+            {
+                [Target] = targetBefore,
+            });
+
+        CharacterDeathChange death = Assert.IsType<CharacterDeathResolvedOutcome>(
+            Assert.IsType<CharacterConditionActionResolvedEventPayload>(
+                SubmitDeath(simulation, "target-in-custody").Payload).Outcome).Death;
+
+        Assert.Empty(death.ReleasedCustodyChanges);
+        Assert.Equal(targetBefore, death.ConditionChange.PreviousCondition);
+        Assert.Equal(CharacterVitalStatus.Dead, death.ConditionChange.CurrentCondition.VitalStatus);
+        Assert.Equal(CharacterCustodyStatus.Free, death.ConditionChange.CurrentCondition.CustodyStatus);
+        Assert.Null(death.ConditionChange.CurrentCondition.CustodianId);
+    }
+
+    [Fact]
+    public void F207_UnrelatedCustodyRemainsUnchanged()
+    {
+        CharacterConditionState unrelated = CharacterConditionState.Default with
+        {
+            CustodyStatus = CharacterCustodyStatus.Hostage,
+            CustodianId = Spouse,
+        };
+        CampaignSimulation simulation = CreateSimpleSimulation(
+            otherCondition: unrelated);
+
+        CharacterDeathChange death = Assert.IsType<CharacterDeathResolvedOutcome>(
+            Assert.IsType<CharacterConditionActionResolvedEventPayload>(
+                SubmitDeath(simulation, "unrelated-custody").Payload).Outcome).Death;
+
+        Assert.Empty(death.ReleasedCustodyChanges);
+        Assert.Equal(unrelated, Profile(simulation, Other).Condition);
+    }
+
+    [Fact]
+    public void F209_LaterCandidateFailureRollsBackPreparedCustodyReleases()
+    {
+        CampaignSimulation simulation = CreateSimpleSimulation(
+            otherCondition: CharacterConditionState.Default with
+            {
+                CustodyStatus = CharacterCustodyStatus.Captive,
+                CustodianId = Target,
+            },
+            careers: CreateOverflowCareerDeathSnapshot());
+        string before = SnapshotJson(simulation);
+
+        AssertInvalid(simulation.Submit(DeathCommand(simulation, "custody-career-overflow")));
+
+        Assert.Equal(before, SnapshotJson(simulation));
+        Assert.Equal(CharacterVitalStatus.Alive, Profile(simulation, Target).Condition.VitalStatus);
+        Assert.Equal(CharacterCustodyStatus.Captive, Profile(simulation, Other).Condition.CustodyStatus);
+        Assert.Equal(Target, Profile(simulation, Other).Condition.CustodianId);
+    }
+
+    [Fact]
+    public void F210_CustodyReleaseAffectedIdsAndEvidenceTamperingRollBack()
+    {
+        CampaignSimulation simulation = CreateSimpleSimulation(
+            conditionOverrides: new Dictionary<EntityId, CharacterConditionState>
+            {
+                [Spouse] = CharacterConditionState.Default with
+                {
+                    CustodyStatus = CharacterCustodyStatus.Detained,
+                    CustodianId = Target,
+                },
+                [Other] = CharacterConditionState.Default with
+                {
+                    CustodyStatus = CharacterCustodyStatus.Captive,
+                    CustodianId = Target,
+                },
+            });
+        CampaignCommand command = DeathCommand(simulation, "custody-tamper");
+        EntityId eventId = CharacterConditionIds.DeriveActionEventId(Date, command.CommandId);
+        CharacterConditionAggregatePlan plan = simulation.World.PrepareCharacterConditionAction(
+            command.IssuingActor,
+            Assert.IsType<CharacterConditionActionCommandPayload>(command.Payload),
+            Date,
+            simulation.World.Calendar.TurnIndex,
+            command.CommandId,
+            eventId);
+        CharacterConditionActionResolvedEventPayload resolved = plan.ResolvedPayload;
+        CharacterDeathChange death = Assert.IsType<CharacterDeathResolvedOutcome>(
+            resolved.Outcome).Death;
+        Assert.Equal(2, death.ReleasedCustodyChanges.Count);
+        CharacterConditionChange release = death.ReleasedCustodyChanges[0];
+        EntityId[] affected = WorldState.GetCharacterConditionActionAffectedIds(resolved, eventId);
+        Assert.Equal(affected.Order(), affected);
+        Assert.Equal(affected.Length, affected.Distinct().Count());
+        Assert.Contains(release.ChangeId, affected);
+        Assert.Contains(release.CharacterId, affected);
+        Assert.Contains(Target, affected);
+        CampaignEvent valid = new(
+            ContractVersions.CampaignEvent,
+            eventId,
+            command.CommandId,
+            Date,
+            ResolutionPhase.Commands,
+            command.Priority,
+            affected,
+            resolved);
+        string before = SnapshotJson(simulation);
+
+        void AssertRejected(
+            IReadOnlyList<CharacterConditionChange> forged,
+            bool recomputeAffectedIds = false)
+        {
+            CharacterConditionActionResolvedEventPayload payload = resolved with
+            {
+                Outcome = new CharacterDeathResolvedOutcome(death with
+                {
+                    ReleasedCustodyChanges = forged,
+                }),
+            };
+            CampaignEvent forgedEvent = valid with
+            {
+                Payload = payload,
+            };
+            if (recomputeAffectedIds)
+            {
+                forgedEvent = forgedEvent with
+                {
+                    AffectedIds = WorldState.GetCharacterConditionActionAffectedIds(
+                        payload,
+                        eventId),
+                };
+            }
+
+            Assert.Throws<SimulationValidationException>(() =>
+                simulation.World.Apply(forgedEvent));
+            Assert.Equal(before, SnapshotJson(simulation));
+        }
+
+        Assert.Throws<SimulationValidationException>(() => simulation.World.Apply(valid with
+        {
+            AffectedIds = affected.Where(item => item != release.ChangeId).ToArray(),
+        }));
+        Assert.Equal(before, SnapshotJson(simulation));
+        AssertRejected(null!);
+        AssertRejected([]);
+        AssertRejected([release, release]);
+        AssertRejected(death.ReleasedCustodyChanges.Reverse().ToArray());
+        AssertRejected([release with { ContractVersion = 2 }]);
+        AssertRejected([release with { ChangeId = new EntityId("character_condition_change:test/forged") }]);
+        AssertRejected([release with { SourceCommandId = new EntityId("command:test/forged") }]);
+        AssertRejected([release with
+        {
+            CurrentCondition = release.CurrentCondition with
+            {
+                CustodyStatus = CharacterCustodyStatus.Captive,
+                CustodianId = Target,
+            },
+        }]);
+        CharacterConditionState forgedPrevious = CharacterConditionState.Default with
+        {
+            CustodyStatus = CharacterCustodyStatus.Captive,
+            CustodianId = Target,
+        };
+        CharacterConditionChange forgedFreeCharacterRelease = release with
+        {
+            ChangeId = CharacterConditionIds.DeriveChangeId(eventId, Ward),
+            CharacterId = Ward,
+            PreviousCondition = forgedPrevious,
+            CurrentCondition = forgedPrevious with
+            {
+                CustodyStatus = CharacterCustodyStatus.Free,
+                CustodianId = null,
+            },
+        };
+        AssertRejected(
+            death.ReleasedCustodyChanges.Append(forgedFreeCharacterRelease)
+                .OrderBy(item => item.ChangeId)
+                .ToArray(),
+            recomputeAffectedIds: true);
+
+        simulation.World.Apply(valid);
+        Assert.Equal(CharacterVitalStatus.Dead, Profile(simulation, Target).Condition.VitalStatus);
+        Assert.Equal(CharacterCustodyStatus.Free, Profile(simulation, Spouse).Condition.CustodyStatus);
+        Assert.Equal(CharacterCustodyStatus.Free, Profile(simulation, Other).Condition.CustodyStatus);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void F211_CustodyEntryOrReleaseAndDeathRaceAcrossPrioritiesAndSubmissionOrders(
+        bool custodyEntry)
+    {
+        for (int conditionFirst = 0; conditionFirst < 2; conditionFirst++)
+        {
+            string? expectedEvents = null;
+            string? expectedChecksum = null;
+            for (int submissionOrder = 0; submissionOrder < 2; submissionOrder++)
+            {
+                string raceKind = custodyEntry ? "entry" : "release";
+                CharacterConditionState initial = custodyEntry
+                    ? CharacterConditionState.Default
+                    : CharacterConditionState.Default with
+                    {
+                        CustodyStatus = CharacterCustodyStatus.Captive,
+                        CustodianId = Target,
+                    };
+                CampaignSimulation simulation = CreateSimpleSimulation(
+                    otherCondition: initial);
+                ICharacterConditionAction conditionAction = custodyEntry
+                    ? new EnterCharacterCustodyAction(
+                        Other,
+                        initial,
+                        CharacterCustodyStatus.Captive,
+                        Target)
+                    : new ReleaseCharacterCustodyAction(Other, initial);
+                CampaignCommand condition = CampaignCommand.Create(
+                    new EntityId($"command:test/f2-condition-race-{raceKind}-{conditionFirst}"),
+                    CharacterConditionSystem.AuthoritativeActorId,
+                    Date,
+                    new CharacterConditionActionCommandPayload(conditionAction),
+                    priority: conditionFirst == 1 ? 0 : 1);
+                CampaignCommand death = DeathCommand(
+                    simulation,
+                    $"f2-condition-race-death-{raceKind}-{conditionFirst}",
+                    priority: conditionFirst == 1 ? 1 : 0);
+                foreach (CampaignCommand pending in submissionOrder == 0
+                    ? new[] { condition, death }
+                    : new[] { death, condition })
+                {
+                    AssertValid(simulation.Submit(pending));
+                }
+
+                IReadOnlyList<CampaignEvent> events = simulation.ResolveTurn();
+                Assert.Equal(conditionFirst == 1 ? 0 : 1, events.Count(
+                    item => item.Payload is CommandCancelledEventPayload));
+                CharacterDeathChange deathChange = Assert.IsType<CharacterDeathResolvedOutcome>(
+                    Assert.IsType<CharacterConditionActionResolvedEventPayload>(events.Single(item =>
+                        item.Payload is CharacterConditionActionResolvedEventPayload
+                        {
+                            Outcome: CharacterDeathResolvedOutcome,
+                        }).Payload).Outcome).Death;
+                int expectedReleases = conditionFirst == 1
+                    ? custodyEntry ? 1 : 0
+                    : custodyEntry ? 0 : 1;
+                Assert.Equal(expectedReleases, deathChange.ReleasedCustodyChanges.Count);
+                Assert.Equal(CharacterVitalStatus.Dead, Profile(simulation, Target).Condition.VitalStatus);
+                Assert.Equal(CharacterCustodyStatus.Free, Profile(simulation, Other).Condition.CustodyStatus);
+                string serialized = Serialize(events);
+                string checksum = SimulationChecksum.Compute(
+                    simulation.World.CaptureSnapshot()).Value;
+                if (submissionOrder == 0)
+                {
+                    expectedEvents = serialized;
+                    expectedChecksum = checksum;
+                }
+                else
+                {
+                    Assert.Equal(expectedEvents, serialized);
+                    Assert.Equal(expectedChecksum, checksum);
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public void F211_DependentConditionMutationAndDeathPreserveOrCancelExactState()
+    {
+        for (int mutationFirst = 0; mutationFirst < 2; mutationFirst++)
+        {
+            string? expectedEvents = null;
+            string? expectedChecksum = null;
+            for (int submissionOrder = 0; submissionOrder < 2; submissionOrder++)
+            {
+                CharacterConditionState initial = CharacterConditionState.Default with
+                {
+                    CustodyStatus = CharacterCustodyStatus.Captive,
+                    CustodianId = Target,
+                };
+                CampaignSimulation simulation = CreateSimpleSimulation(otherCondition: initial);
+                CampaignCommand mutation = CampaignCommand.Create(
+                    new EntityId($"command:test/f2-dependent-mutation-{mutationFirst}"),
+                    CharacterConditionSystem.AuthoritativeActorId,
+                    Date,
+                    new CharacterConditionActionCommandPayload(new IncapacitateCharacterAction(
+                        Other,
+                        initial)),
+                    priority: mutationFirst == 1 ? 0 : 1);
+                CampaignCommand death = DeathCommand(
+                    simulation,
+                    $"f2-dependent-mutation-death-{mutationFirst}",
+                    priority: mutationFirst == 1 ? 1 : 0);
+                foreach (CampaignCommand pending in submissionOrder == 0
+                    ? new[] { mutation, death }
+                    : new[] { death, mutation })
+                {
+                    AssertValid(simulation.Submit(pending));
+                }
+
+                IReadOnlyList<CampaignEvent> events = simulation.ResolveTurn();
+                Assert.Equal(mutationFirst == 1 ? 0 : 1, events.Count(
+                    item => item.Payload is CommandCancelledEventPayload));
+                Assert.Equal(
+                    mutationFirst == 1,
+                    Profile(simulation, Other).Condition.IsIncapacitated);
+                Assert.Equal(CharacterCustodyStatus.Free, Profile(simulation, Other).Condition.CustodyStatus);
+                CharacterConditionChange release = Assert.Single(
+                    Assert.IsType<CharacterDeathResolvedOutcome>(
+                        Assert.IsType<CharacterConditionActionResolvedEventPayload>(events.Single(item =>
+                            item.Payload is CharacterConditionActionResolvedEventPayload
+                            {
+                                Outcome: CharacterDeathResolvedOutcome,
+                            }).Payload).Outcome)
+                    .Death.ReleasedCustodyChanges);
+                Assert.Equal(mutationFirst == 1, release.PreviousCondition.IsIncapacitated);
+                Assert.Equal(mutationFirst == 1, release.CurrentCondition.IsIncapacitated);
+                string serialized = Serialize(events);
+                string checksum = SimulationChecksum.Compute(
+                    simulation.World.CaptureSnapshot()).Value;
+                if (submissionOrder == 0)
+                {
+                    expectedEvents = serialized;
+                    expectedChecksum = checksum;
+                }
+                else
+                {
+                    Assert.Equal(expectedEvents, serialized);
+                    Assert.Equal(expectedChecksum, checksum);
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public void F212_CustodianAndDependentDeathsFollowExpectedStateDeterministically()
+    {
+        for (int custodianFirst = 0; custodianFirst < 2; custodianFirst++)
+        {
+            string? expectedEvents = null;
+            string? expectedChecksum = null;
+            for (int submissionOrder = 0; submissionOrder < 2; submissionOrder++)
+            {
+                CampaignSimulation simulation = CreateSimpleSimulation(
+                    otherCondition: CharacterConditionState.Default with
+                    {
+                        CustodyStatus = CharacterCustodyStatus.Hostage,
+                        CustodianId = Target,
+                    });
+                CampaignCommand custodianDeath = DeathCommand(
+                    simulation,
+                    new EntityId($"command:test/f2-simultaneous-custodian-{custodianFirst}"),
+                    Target,
+                    priority: custodianFirst == 1 ? 0 : 1);
+                CampaignCommand dependentDeath = DeathCommand(
+                    simulation,
+                    new EntityId($"command:test/f2-simultaneous-dependent-{custodianFirst}"),
+                    Other,
+                    priority: custodianFirst == 1 ? 1 : 0);
+                foreach (CampaignCommand pending in submissionOrder == 0
+                    ? new[] { custodianDeath, dependentDeath }
+                    : new[] { dependentDeath, custodianDeath })
+                {
+                    AssertValid(simulation.Submit(pending));
+                }
+
+                IReadOnlyList<CampaignEvent> events = simulation.ResolveTurn();
+                Assert.Equal(custodianFirst == 1 ? 1 : 0, events.Count(
+                    item => item.Payload is CommandCancelledEventPayload));
+                Assert.Equal(CharacterVitalStatus.Dead, Profile(simulation, Target).Condition.VitalStatus);
+                Assert.Equal(
+                    custodianFirst == 1
+                        ? CharacterVitalStatus.Alive
+                        : CharacterVitalStatus.Dead,
+                    Profile(simulation, Other).Condition.VitalStatus);
+                CharacterDeathChange targetDeath = Assert.IsType<CharacterDeathResolvedOutcome>(
+                    Assert.IsType<CharacterConditionActionResolvedEventPayload>(events.Single(item =>
+                        item.Payload is CharacterConditionActionResolvedEventPayload payload
+                        && payload.Outcome is CharacterDeathResolvedOutcome outcome
+                        && outcome.Death.ConditionChange.CharacterId == Target).Payload).Outcome).Death;
+                Assert.Equal(custodianFirst == 1 ? 1 : 0, targetDeath.ReleasedCustodyChanges.Count);
+                string serialized = Serialize(events);
+                string checksum = SimulationChecksum.Compute(
+                    simulation.World.CaptureSnapshot()).Value;
+                if (submissionOrder == 0)
+                {
+                    expectedEvents = serialized;
+                    expectedChecksum = checksum;
+                }
+                else
+                {
+                    Assert.Equal(expectedEvents, serialized);
+                    Assert.Equal(expectedChecksum, checksum);
+                }
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void F213_CustodyRichPendingDeathReplaysOnEveryLaterTurnDay(int dayOffset)
+    {
+        CampaignSimulation seeded = CreateSimpleSimulation(
+            otherCondition: CharacterConditionState.Default with
+            {
+                CustodyStatus = CharacterCustodyStatus.Detained,
+                CustodianId = Target,
+            });
+        CampaignSimulation original = new(WorldState.Restore(
+            seeded.World.CaptureSnapshot() with
+            {
+                Calendar = new CampaignCalendar(Date, 1),
+            }));
+        CampaignDate resolutionDate = Date.AddDays(dayOffset);
+        CampaignCommand command = CampaignCommand.Create(
+            new EntityId($"command:test/f2-later-day-{dayOffset}"),
+            CharacterConditionSystem.AuthoritativeActorId,
+            resolutionDate,
+            new CharacterConditionActionCommandPayload(new ResolveCharacterDeathAction(
+                Target,
+                Profile(original, Target).Condition)));
+        AssertValid(original.Submit(command));
+        CampaignSimulation replay = new(WorldState.Restore(original.World.CaptureSnapshot()));
+
+        CampaignEvent first = Assert.Single(original.ResolveTurn());
+        CampaignEvent second = Assert.Single(replay.ResolveTurn());
+
+        Assert.Equal(Serialize(first), Serialize(second));
+        Assert.Equal(
+            SimulationChecksum.Compute(original.World.CaptureSnapshot()),
+            SimulationChecksum.Compute(replay.World.CaptureSnapshot()));
+        CharacterConditionChange release = Assert.Single(
+            Assert.IsType<CharacterDeathResolvedOutcome>(
+                Assert.IsType<CharacterConditionActionResolvedEventPayload>(first.Payload).Outcome)
+            .Death.ReleasedCustodyChanges);
+        Assert.Equal(resolutionDate, release.ResolutionDate);
+        Assert.Equal(command.CommandId, release.SourceCommandId);
+        Assert.Equal(CharacterCustodyStatus.Free, Profile(original, Other).Condition.CustodyStatus);
     }
 
     [Fact]
@@ -1910,6 +2451,136 @@ public sealed class CharacterDeathCampaignTests
             + $"checksum={value.Value}");
     }
 
+    [Fact]
+    public void F217_ThousandCharacterCustodyRichDeathWorkloadRecordsRawPerformance()
+    {
+        const int population = 1_000;
+        const int deaths = 200;
+        EntityId[] ids = Enumerable.Range(0, population)
+            .Select(index => new EntityId($"character:test/f2-performance-{index:D4}"))
+            .ToArray();
+        CharacterDefinition[] definitions = ids.Select(id =>
+        {
+            EntityId nameKey = new($"loc:{id.Value.Replace(':', '/')}");
+            return new CharacterDefinition(
+                CharacterContractVersions.Definition,
+                id,
+                nameKey,
+                new CampaignDate(170, 1, 1),
+                [],
+                [],
+                [],
+                [],
+                [],
+                new StructuredCharacterName(nameKey, null),
+                CharacterContentOrigin.LegacyUnknown(id),
+                null,
+                null,
+                []);
+        }).ToArray();
+        CharacterState[] states = ids.Select((id, index) => new CharacterState(
+            CharacterContractVersions.State,
+            id,
+            [],
+            [],
+            index switch
+            {
+                >= deaths and < deaths * 2 => CharacterConditionState.Default with
+                {
+                    CustodyStatus = CharacterCustodyStatus.Detained,
+                    CustodianId = ids[index - deaths],
+                },
+                >= deaths * 2 and < deaths * 3 => CharacterConditionState.Default with
+                {
+                    CustodyStatus = CharacterCustodyStatus.Captive,
+                    CustodianId = ids[index - deaths * 2],
+                },
+                >= deaths * 3 and < deaths * 4 => CharacterConditionState.Default with
+                {
+                    CustodyStatus = CharacterCustodyStatus.Hostage,
+                    CustodianId = ids[index - deaths * 3],
+                },
+                _ => CharacterConditionState.Default,
+            },
+            []))
+            .ToArray();
+        CampaignSimulation simulation = new(WorldState.Create(
+            Date,
+            20260716,
+            [],
+            GeographicWorldSnapshot.Empty,
+            new CharacterWorldSnapshot(
+                CharacterContractVersions.Snapshot,
+                [],
+                definitions,
+                [],
+                [],
+                states,
+                [],
+                []),
+            RelationshipWorldSnapshot.Empty,
+            CareerWorldSnapshot.Empty,
+            CharacterResourceWorldSnapshot.Empty,
+            CharacterEstateHoldingWorldSnapshot.Empty,
+            CharacterMarriageWorldSnapshot.Empty,
+            CharacterGuardianshipWorldSnapshot.Empty,
+            CharacterPregnancyWorldSnapshot.Empty));
+        Stopwatch workflow = Stopwatch.StartNew();
+        for (int index = 0; index < deaths; index++)
+        {
+            EntityId target = ids[index];
+            CampaignCommand command = CampaignCommand.Create(
+                new EntityId($"command:test/f2-performance-{index:D4}"),
+                CharacterConditionSystem.AuthoritativeActorId,
+                Date,
+                new CharacterConditionActionCommandPayload(new ResolveCharacterDeathAction(
+                    target,
+                    Profile(simulation, target).Condition)));
+            AssertValid(simulation.Submit(command));
+        }
+
+        IReadOnlyList<CampaignEvent> events = simulation.ResolveTurn();
+        workflow.Stop();
+        Assert.Equal(deaths, events.Count);
+        Assert.Equal(
+            deaths * 3,
+            events.Sum(item => Assert.IsType<CharacterDeathResolvedOutcome>(
+                Assert.IsType<CharacterConditionActionResolvedEventPayload>(item.Payload).Outcome)
+            .Death.ReleasedCustodyChanges.Count));
+        Stopwatch query = Stopwatch.StartNew();
+        Assert.Equal(
+            deaths,
+            simulation.World.Characters.Profiles.Count(
+                item => item.Condition.VitalStatus == CharacterVitalStatus.Dead));
+        Assert.DoesNotContain(
+            simulation.World.Characters.Profiles,
+            item => item.Condition.CustodyStatus != CharacterCustodyStatus.Free);
+        query.Stop();
+        Stopwatch checksum = Stopwatch.StartNew();
+        WorldSnapshot snapshot = simulation.World.CaptureSnapshot();
+        SimulationChecksum value = SimulationChecksum.Compute(snapshot);
+        checksum.Stop();
+        byte[] json = JsonSerializer.SerializeToUtf8Bytes(snapshot, CanonicalJson.Options);
+        using MemoryStream compressed = new();
+        using (GZipStream gzip = new(
+            compressed,
+            CompressionLevel.SmallestSize,
+            leaveOpen: true))
+        {
+            gzip.Write(json);
+        }
+
+        Assert.False(string.IsNullOrWhiteSpace(value.Value));
+        Assert.True(compressed.Length > 0);
+        output.WriteLine(
+            $"SP-04F2 raw fixture: characters={population}; deaths={deaths}; "
+            + $"released={deaths * 3}; workflow_ms={workflow.Elapsed.TotalMilliseconds:F3}; "
+            + $"query_ms={query.Elapsed.TotalMilliseconds:F3}; "
+            + $"snapshot_checksum_ms={checksum.Elapsed.TotalMilliseconds:F3}; "
+            + $"json_bytes={json.Length}; gzip_bytes={compressed.Length}; "
+            + $"checksum={value.Value}");
+    }
+
     private static CampaignEvent SubmitDeath(CampaignSimulation simulation, string suffix)
     {
         AssertValid(simulation.Submit(DeathCommand(simulation, suffix)));
@@ -2119,6 +2790,7 @@ public sealed class CharacterDeathCampaignTests
         bool householdHead = false,
         bool richPreservedState = false,
         CharacterConditionState? otherCondition = null,
+        IReadOnlyDictionary<EntityId, CharacterConditionState>? conditionOverrides = null,
         CareerWorldSnapshot? careers = null,
         CharacterMarriageWorldSnapshot? marriages = null,
         CharacterGuardianshipWorldSnapshot? guardianships = null,
@@ -2184,7 +2856,12 @@ public sealed class CharacterDeathCampaignTests
             richPreservedState && id == Target
                 ? [new CharacterParentLink(Other, ParentChildLinkKind.Biological)]
                 : [],
-            id == Other ? otherCondition ?? CharacterConditionState.Default : CharacterConditionState.Default,
+            conditionOverrides is not null
+                && conditionOverrides.TryGetValue(id, out CharacterConditionState? condition)
+                    ? condition
+                    : id == Other
+                        ? otherCondition ?? CharacterConditionState.Default
+                        : CharacterConditionState.Default,
             richPreservedState && id == Target ? [attainment] : []))
             .OrderBy(item => item.CharacterId)
             .ToArray();

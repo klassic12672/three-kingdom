@@ -701,7 +701,7 @@ public sealed class WorldState : IWorldQuery
         EntityId eventId)
     {
         ValidateCharacterDeathBlockers(action.CharacterId);
-        CharacterConditionMutationPlan character = Characters.PrepareConditionAction(
+        CharacterDeathMutationPlan character = Characters.PrepareDeathAction(
             action,
             resolutionDate,
             authoritativeTurnIndex,
@@ -741,6 +741,7 @@ public sealed class WorldState : IWorldQuery
             CharacterConditionContractVersions.Death,
             CharacterConditionIds.DeriveDeathId(eventId, action.CharacterId),
             character.Change,
+            character.ReleasedCustodyChanges,
             marriage.Changes,
             guardianship.EndedGuardianships,
             pregnancy.RemovedPregnancies,
@@ -775,14 +776,6 @@ public sealed class WorldState : IWorldQuery
         {
             throw new SimulationValidationException(
                 $"Character-death target '{characterId}' is a household head and requires later succession policy.");
-        }
-
-        if (Characters.Profiles.Any(item => item.CharacterId != characterId
-            && item.Condition.CustodyStatus != CharacterCustodyStatus.Free
-            && item.Condition.CustodianId == characterId))
-        {
-            throw new SimulationValidationException(
-                $"Character-death target '{characterId}' is the current custodian of another character.");
         }
 
     }
@@ -1660,6 +1653,7 @@ public sealed class WorldState : IWorldQuery
             case (ResolveCharacterDeathAction action, CharacterDeathResolvedOutcome outcome)
                 when outcome.Death is not null
                     && outcome.Death.ConditionChange is not null
+                    && outcome.Death.ReleasedCustodyChanges is not null
                     && outcome.Death.MarriageChanges is not null
                     && outcome.Death.EndedGuardianships is not null
                     && outcome.Death.RemovedPregnancies is not null
@@ -1734,6 +1728,9 @@ public sealed class WorldState : IWorldQuery
                 sourceEventId,
                 change.CharacterId)
             || change.CurrentCondition?.VitalStatus != CharacterVitalStatus.Dead
+            || !IsCanonicalUnique(
+                death.ReleasedCustodyChanges,
+                item => item.ChangeId)
             || !death.EndedGuardianships.SequenceEqual(
                 death.EndedGuardianships.OrderBy(item => item.GuardianshipId))
             || !death.RemovedPregnancies.SequenceEqual(
@@ -1748,6 +1745,39 @@ public sealed class WorldState : IWorldQuery
         affected.Add(change.CharacterId);
         AddConditionCustodian(affected, change.PreviousCondition);
         AddConditionCustodian(affected, change.CurrentCondition);
+        foreach (CharacterConditionChange release in death.ReleasedCustodyChanges)
+        {
+            if (release is null
+                || release.ContractVersion != CharacterConditionContractVersions.Change
+                || release.CharacterId == change.CharacterId
+                || release.ChangeId != CharacterConditionIds.DeriveChangeId(
+                    sourceEventId,
+                    release.CharacterId)
+                || release.ResolutionDate != death.ResolutionDate
+                || release.ResolutionTurnIndex != death.ResolutionTurnIndex
+                || release.SourceCommandId != death.SourceCommandId
+                || release.PreviousCondition?.VitalStatus != CharacterVitalStatus.Alive
+                || release.PreviousCondition.CustodyStatus is not (
+                    CharacterCustodyStatus.Detained
+                    or CharacterCustodyStatus.Captive
+                    or CharacterCustodyStatus.Hostage)
+                || release.PreviousCondition.CustodianId != change.CharacterId
+                || release.CurrentCondition != release.PreviousCondition with
+                {
+                    CustodyStatus = CharacterCustodyStatus.Free,
+                    CustodianId = null,
+                })
+            {
+                throw new SimulationValidationException(
+                    "Character-death custody-release evidence is invalid.");
+            }
+
+            affected.Add(release.ChangeId);
+            affected.Add(release.CharacterId);
+            AddConditionCustodian(affected, release.PreviousCondition);
+            AddConditionCustodian(affected, release.CurrentCondition);
+        }
+
         AddMarriageLifecycleChanges(affected, death.MarriageChanges);
         foreach (CharacterGuardianshipState guardianship in death.EndedGuardianships)
         {
