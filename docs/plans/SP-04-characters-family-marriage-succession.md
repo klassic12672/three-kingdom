@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — through SP-04F5 accepted |
+| Status | Active — SP-04F6 locally verified; through SP-04F5 accepted |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -1011,6 +1011,40 @@ The representative local Release fixture contains 1,000 characters and evaluates
 Current local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. The exact `CharacterSuccession` Release filter passes 105/105 cases. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 1,015 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. Focused formatter verification, `git diff --check`, and `git lfs fsck` pass. Independent architecture, compatibility, and verification reviews approve the final production, public-contract, save/schema, test, and documentation boundaries.
 
 Accepted revision `bb9dcffab8f517e7a2f9cb0b47072bb096fc7725` subsequently passed [hosted macOS arm64 and Windows x64 validation, build, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04F5-EXACT-SHA-bb9dcff.md). F512 therefore passes at that revision. Claims, precedence, deterministic resolution, inheritance, regency, retinue succession, household/office/title/faction effects, disputed support, player continuity, the full SP-04 three-second budget, and full SP-04 acceptance remain open.
+
+## Locally verified package: SP-04F6 caller-bounded candidate-set enumeration
+
+SP-04F6 is the smallest dependency-safe query package after accepted F5. It advances only the authoritative succession query contract from version 2 to 3 with `FindEligibleCandidates`. The request identifies one subject, the complete transient F5 eligibility rule, and a positive caller-selected `MaximumCandidates`. Candidate-set request, entry, issue, and result contracts are independently versioned at 1. Schema 25, the succession snapshot/system, and F4/F5 state/action/outcome/evaluation contracts remain unchanged.
+
+The query freezes the valid rule into canonical arrays, evaluates every current authoritative character profile through F5, and includes each eligible character once with every recognized basis. A complete result therefore contains the full current F5-eligible set for that subject and rule, ordered by character ID with canonical nested basis order. Character-ID order is only deterministic serialization; it is not seniority, precedence, primogeniture, legitimacy, claim strength, political support, or selection.
+
+`MaximumCandidates` bounds the returned and retained candidate entries, not the authoritative scan needed for an exact count. If eligibility exceeds the caller's maximum, the implementation clears the retained prefix on first overflow, allocates no further set entries or basis copies, continues evaluating only to count the exact total, and returns `MaximumCandidatesExceeded` with no partial candidates. Invalid request, maximum, rule, or subject inputs return canonical unique issues and no candidate scan. A valid unrelated subject returns a complete empty set. The subject's living, incapacitated, detained, or dead state remains neutral exactly as in F5.
+
+F6 adds no claim, precedence, winner, fallback, command, event, mutation, RNG, persisted or assigned law, snapshot field, checksum input, schema migration, content, localization, application-layer query, UI, AI, battle, death integration, inheritance, regency, retinue succession, or player continuity. No locked decision changes and no ADR is required.
+
+### SP-04F6 verification matrix
+
+| ID | Observable package criterion | Required evidence | Current classification |
+|---|---|---|---|
+| F601 | Exact F5 is accepted; complete enumeration is dependency-safe and needs no ADR | Source-of-truth and architecture review | Local pass |
+| F602 | Versioned request/entry/issue/result contracts extend only the authoritative query to v3 | Contract, reflection, JSON, and version tests | Local pass |
+| F603 | Every unique eligible character appears once with every biological/adoptive/legacy/designation basis | Complete-set, overlap, and canonical-basis tests | Local pass |
+| F604 | Candidate life, configured age, incapacity, and Free/Detained/Captive/Hostage policy exactly reuse F5 | Condition and custody matrix | Local pass |
+| F605 | Descendant depth, active designation, multi-basis overlap, and Replaced/Revoked terminal exclusion are exact | Depth and lifecycle tests | Local pass |
+| F606 | Subject condition is neutral and a no-match query returns a complete empty set | Subject-condition and unrelated-subject tests | Local pass |
+| F607 | Null/unsupported/duplicate/malformed request, rule, collections, bounds, and subjects return canonical controlled issues | Validation matrix | Local pass |
+| F608 | A low maximum fails closed with no partial set, exact total count, and caller-bounded retained entries | Overflow, purity, and architecture review | Local pass |
+| F609 | Results are canonical, defensive, input-order invariant, repeatable, mutation-free, and checksum-neutral | Copy-tamper, reorder, snapshot, and checksum comparisons | Local pass |
+| F610 | Complete, invalid, and overflow request/results round-trip while schema 25 and succession system/snapshot v1 remain exact | JSON, version, system-registration, and diff review | Local pass |
+| F611 | A 1,000-character/999-candidate workload records raw local measurements without a brittle threshold | Local Apple Silicon measurement | Local pass; no threshold |
+| F612 | Focused/full suites, validation, formatter, diff/LFS gates, and independent reviews pass | Local repository closeout | Local pass |
+| F613 | The exact implementation SHA passes hosted macOS arm64 and Windows x64 | Clean-checkout hosted CI and artifact evidence | Pending |
+
+The representative local Release fixture contains 1,000 characters and returns 999 direct biological children. A raw Apple Silicon run measured 210.245 ms for enumeration and 176.510 ms for snapshot/checksum/JSON/gzip; snapshot JSON was 936,957 bytes, gzip was 18,104 bytes, and the unchanged-state checksum was `b692fdf96940b4608f2fc500451997458c7083d9dca8a88e2a0afbc71f0df0ee`. The test asserts shape and correctness without a wall-clock threshold. This component observation neither passes nor waives the full SP-04 three-second campaign-turn budget.
+
+Current local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. The exact `CharacterSuccession` Release filter passes 115/115 cases. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 1,025 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. Focused formatter verification, `git diff --check`, and `git lfs fsck` pass. Independent architecture, compatibility, and verification reviews approve the final production, public-contract, save/schema, and focused-evidence boundaries. Exact-SHA hosted evidence remains the only F613 closeout step.
+
+Claims, precedence, deterministic resolution, inheritance, regency, retinue succession, household/office/title/faction effects, disputed support, player continuity, the full SP-04 three-second budget, and full SP-04 acceptance remain open.
 
 ## Edge cases and failure handling
 

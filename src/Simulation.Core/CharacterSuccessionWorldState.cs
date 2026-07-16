@@ -201,6 +201,115 @@ public sealed class CharacterSuccessionWorldState
             canonicalIssues.Length == 0 && canonicalBases.Length > 0);
     }
 
+    public SuccessionCandidateSetResult FindEligibleCandidates(
+        SuccessionCandidateSetRequest request)
+    {
+        EntityId subjectCharacterId = request?.SubjectCharacterId ?? default;
+        int maximumCandidates = request?.MaximumCandidates ?? 0;
+        List<SuccessionCandidateSetIssueReason> issues = [];
+        List<SuccessionCandidateEligibilityReason> eligibilityIssues = [];
+
+        bool requestIsValid = request is not null
+            && request.ContractVersion == CharacterSuccessionContractVersions.CandidateSet;
+        if (!requestIsValid)
+        {
+            AddIssue(issues, SuccessionCandidateSetIssueReason.InvalidRequest);
+        }
+
+        bool maximumIsValid = maximumCandidates > 0;
+        if (!maximumIsValid)
+        {
+            AddIssue(issues, SuccessionCandidateSetIssueReason.InvalidMaximumCandidates);
+        }
+
+        HashSet<SuccessionCandidateBasis> allowedBases = [];
+        HashSet<CharacterCustodyStatus> allowedCustodyStatuses = [];
+        bool ruleIsValid = ValidateEligibilityRule(
+            request?.Rule,
+            allowedBases,
+            allowedCustodyStatuses,
+            eligibilityIssues);
+        AuthoritativeCharacterProfile? subject = GetEvaluationCharacter(
+            subjectCharacterId,
+            isSubject: true,
+            eligibilityIssues);
+        foreach (SuccessionCandidateEligibilityReason issue in eligibilityIssues)
+        {
+            AddIssue(issues, ToCandidateSetIssue(issue));
+        }
+
+        bool subjectIsValid = subject is not null
+            && subject.BirthDate.CompareTo(calendar.Date) <= 0;
+        if (!requestIsValid || !maximumIsValid || !ruleIsValid || !subjectIsValid)
+        {
+            return CreateCandidateSetResult(
+                subjectCharacterId,
+                maximumCandidates,
+                eligibleCandidateCount: 0,
+                [],
+                issues,
+                SuccessionCandidateSetStatus.InvalidRequest);
+        }
+
+        SuccessionCandidateEligibilityRule frozenRule = new(
+            CharacterSuccessionContractVersions.CandidateEligibilityRule,
+            allowedBases.Order().ToArray(),
+            request!.Rule.MaximumDescendantGeneration,
+            request.Rule.MinimumCandidateAge,
+            request.Rule.AllowsIncapacitatedCandidates,
+            allowedCustodyStatuses.Order().ToArray());
+        List<SuccessionCandidateSetEntry> eligibleCandidates = [];
+        int eligibleCandidateCount = 0;
+        foreach (AuthoritativeCharacterProfile candidate in characters.Profiles)
+        {
+            SuccessionCandidateEvaluationResult evaluation = EvaluateCandidate(new(
+                CharacterSuccessionContractVersions.CandidateEvaluation,
+                subjectCharacterId,
+                candidate.CharacterId,
+                frozenRule));
+            if (!evaluation.IsEligible)
+            {
+                continue;
+            }
+
+            eligibleCandidateCount = checked(eligibleCandidateCount + 1);
+            if (eligibleCandidateCount > maximumCandidates)
+            {
+                eligibleCandidates.Clear();
+                continue;
+            }
+
+            eligibleCandidates.Add(new(
+                CharacterSuccessionContractVersions.CandidateSet,
+                candidate.CharacterId,
+                evaluation.RecognizedBases.Select(Clone).ToArray()));
+        }
+
+        if (eligibleCandidateCount > maximumCandidates)
+        {
+            AddIssue(issues, SuccessionCandidateSetIssueReason.MaximumCandidatesExceeded);
+            return CreateCandidateSetResult(
+                subjectCharacterId,
+                maximumCandidates,
+                eligibleCandidateCount,
+                [],
+                issues,
+                SuccessionCandidateSetStatus.MaximumCandidatesExceeded);
+        }
+
+        SuccessionCandidateSetEntry[] canonicalCandidates = eligibleCandidates
+            .OrderBy(item => item.CandidateCharacterId)
+            .Select(Clone)
+            .ToArray();
+        return CreateCandidateSetResult(
+            subjectCharacterId,
+            maximumCandidates,
+            eligibleCandidateCount,
+            canonicalCandidates,
+            issues,
+            SuccessionCandidateSetStatus.Complete);
+    }
+
     public CharacterSuccessionWorldSnapshot CaptureSnapshot() => new(
         CharacterSuccessionContractVersions.Snapshot,
         designations.Values.Select(Clone).ToArray(),
@@ -444,6 +553,60 @@ public sealed class CharacterSuccessionWorldState
         reason is >= SuccessionCandidateEligibilityReason.UnsupportedRuleVersion
             and <= SuccessionCandidateEligibilityReason.DuplicateAllowedCustodyStatus;
 
+    private SuccessionCandidateSetResult CreateCandidateSetResult(
+        EntityId subjectCharacterId,
+        int maximumCandidates,
+        int eligibleCandidateCount,
+        IReadOnlyList<SuccessionCandidateSetEntry> candidates,
+        IEnumerable<SuccessionCandidateSetIssueReason> issues,
+        SuccessionCandidateSetStatus status) => new(
+            CharacterSuccessionContractVersions.CandidateSet,
+            subjectCharacterId.IsValid ? subjectCharacterId : null,
+            calendar.Date,
+            calendar.TurnIndex,
+            maximumCandidates,
+            eligibleCandidateCount,
+            candidates.Select(Clone).ToArray(),
+            issues
+                .Distinct()
+                .Order()
+                .Select(item => new SuccessionCandidateSetIssue(
+                    CharacterSuccessionContractVersions.CandidateSet,
+                    item))
+                .ToArray(),
+            status);
+
+    private static SuccessionCandidateSetIssueReason ToCandidateSetIssue(
+        SuccessionCandidateEligibilityReason reason) => reason switch
+        {
+            SuccessionCandidateEligibilityReason.UnsupportedRuleVersion =>
+                SuccessionCandidateSetIssueReason.UnsupportedRuleVersion,
+            SuccessionCandidateEligibilityReason.MissingAllowedBasis =>
+                SuccessionCandidateSetIssueReason.MissingAllowedBasis,
+            SuccessionCandidateEligibilityReason.UnsupportedAllowedBasis =>
+                SuccessionCandidateSetIssueReason.UnsupportedAllowedBasis,
+            SuccessionCandidateEligibilityReason.DuplicateAllowedBasis =>
+                SuccessionCandidateSetIssueReason.DuplicateAllowedBasis,
+            SuccessionCandidateEligibilityReason.InvalidMaximumDescendantGeneration =>
+                SuccessionCandidateSetIssueReason.InvalidMaximumDescendantGeneration,
+            SuccessionCandidateEligibilityReason.InvalidMinimumCandidateAge =>
+                SuccessionCandidateSetIssueReason.InvalidMinimumCandidateAge,
+            SuccessionCandidateEligibilityReason.MissingAllowedCustodyStatus =>
+                SuccessionCandidateSetIssueReason.MissingAllowedCustodyStatus,
+            SuccessionCandidateEligibilityReason.UnsupportedAllowedCustodyStatus =>
+                SuccessionCandidateSetIssueReason.UnsupportedAllowedCustodyStatus,
+            SuccessionCandidateEligibilityReason.DuplicateAllowedCustodyStatus =>
+                SuccessionCandidateSetIssueReason.DuplicateAllowedCustodyStatus,
+            SuccessionCandidateEligibilityReason.InvalidSubject =>
+                SuccessionCandidateSetIssueReason.InvalidSubject,
+            SuccessionCandidateEligibilityReason.UnknownSubject =>
+                SuccessionCandidateSetIssueReason.UnknownSubject,
+            SuccessionCandidateEligibilityReason.SubjectNotBorn =>
+                SuccessionCandidateSetIssueReason.SubjectNotBorn,
+            _ => throw new SimulationValidationException(
+                $"Unsupported candidate-set issue mapping '{reason}'."),
+        };
+
     private static void AddIssue(
         ICollection<SuccessionCandidateEligibilityReason> issues,
         SuccessionCandidateEligibilityReason issue)
@@ -454,8 +617,24 @@ public sealed class CharacterSuccessionWorldState
         }
     }
 
+    private static void AddIssue(
+        ICollection<SuccessionCandidateSetIssueReason> issues,
+        SuccessionCandidateSetIssueReason issue)
+    {
+        if (!issues.Contains(issue))
+        {
+            issues.Add(issue);
+        }
+    }
+
     private static SuccessionCandidateBasisEvidence Clone(
         SuccessionCandidateBasisEvidence value) => value with { };
+
+    private static SuccessionCandidateSetEntry Clone(
+        SuccessionCandidateSetEntry value) => value with
+        {
+            RecognizedBases = value.RecognizedBases.Select(Clone).ToArray(),
+        };
 
     internal void UpdateCampaignCalendar(CampaignCalendar value)
     {

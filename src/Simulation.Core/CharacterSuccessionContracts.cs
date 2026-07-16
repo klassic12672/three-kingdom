@@ -11,7 +11,8 @@ public static class CharacterSuccessionContractVersions
     public const int Outcome = 1;
     public const int CandidateEligibilityRule = 1;
     public const int CandidateEvaluation = 1;
-    public const int AuthoritativeQuery = 2;
+    public const int CandidateSet = 1;
+    public const int AuthoritativeQuery = 3;
 }
 
 public static class CharacterSuccessionLimits
@@ -68,6 +69,32 @@ public enum SuccessionCandidateEligibilityReason
     NoRecognizedBasis = 21,
 }
 
+public enum SuccessionCandidateSetStatus
+{
+    InvalidRequest = 0,
+    Complete = 1,
+    MaximumCandidatesExceeded = 2,
+}
+
+public enum SuccessionCandidateSetIssueReason
+{
+    InvalidRequest = 0,
+    InvalidMaximumCandidates = 1,
+    UnsupportedRuleVersion = 2,
+    MissingAllowedBasis = 3,
+    UnsupportedAllowedBasis = 4,
+    DuplicateAllowedBasis = 5,
+    InvalidMaximumDescendantGeneration = 6,
+    InvalidMinimumCandidateAge = 7,
+    MissingAllowedCustodyStatus = 8,
+    UnsupportedAllowedCustodyStatus = 9,
+    DuplicateAllowedCustodyStatus = 10,
+    InvalidSubject = 11,
+    UnknownSubject = 12,
+    SubjectNotBorn = 13,
+    MaximumCandidatesExceeded = 14,
+}
+
 public sealed record SuccessionCandidateEligibilityRule(
     int ContractVersion,
     IReadOnlyList<SuccessionCandidateBasis> AllowedBases,
@@ -112,6 +139,32 @@ public sealed record SuccessionCandidateEvaluationResult(
     IReadOnlyList<SuccessionCandidateBasisEvidence> RecognizedBases,
     IReadOnlyList<SuccessionCandidateEligibilityIssue> Issues,
     bool IsEligible);
+
+public sealed record SuccessionCandidateSetRequest(
+    int ContractVersion,
+    EntityId SubjectCharacterId,
+    SuccessionCandidateEligibilityRule Rule,
+    int MaximumCandidates);
+
+public sealed record SuccessionCandidateSetEntry(
+    int ContractVersion,
+    EntityId CandidateCharacterId,
+    IReadOnlyList<SuccessionCandidateBasisEvidence> RecognizedBases);
+
+public sealed record SuccessionCandidateSetIssue(
+    int ContractVersion,
+    SuccessionCandidateSetIssueReason Reason);
+
+public sealed record SuccessionCandidateSetResult(
+    int ContractVersion,
+    EntityId? SubjectCharacterId,
+    CampaignDate EvaluationDate,
+    long EvaluationTurnIndex,
+    int MaximumCandidates,
+    int EligibleCandidateCount,
+    IReadOnlyList<SuccessionCandidateSetEntry> Candidates,
+    IReadOnlyList<SuccessionCandidateSetIssue> Issues,
+    SuccessionCandidateSetStatus Status);
 
 public sealed record HeirDesignationState(
     int ContractVersion,
@@ -176,6 +229,9 @@ public interface IAuthoritativeCharacterSuccessionWorldQuery
 
     SuccessionCandidateEvaluationResult EvaluateCandidate(
         SuccessionCandidateEvaluationRequest request);
+
+    SuccessionCandidateSetResult FindEligibleCandidates(
+        SuccessionCandidateSetRequest request);
 }
 
 [JsonPolymorphic(

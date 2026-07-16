@@ -38,7 +38,7 @@ public sealed class CharacterSuccessionCandidateEvaluationTests(ITestOutputHelpe
             typeof(ICampaignCommandPayload).IsAssignableFrom(contract)));
         Assert.All(contracts, contract => Assert.False(
             typeof(ICampaignEventPayload).IsAssignableFrom(contract)));
-        Assert.Equal(2, CharacterSuccessionContractVersions.AuthoritativeQuery);
+        Assert.Equal(3, CharacterSuccessionContractVersions.AuthoritativeQuery);
         Assert.Equal(1, CharacterSuccessionContractVersions.Snapshot);
         Assert.Equal(1, CharacterSuccessionSystem.Version);
         Assert.Equal(25, SaveEnvelope.CurrentSchemaVersion);
@@ -670,7 +670,7 @@ public sealed class CharacterSuccessionCandidateEvaluationTests(ITestOutputHelpe
             Serialize(JsonSerializer.Deserialize<SuccessionCandidateEvaluationResult>(
                 Serialize(issueResult),
                 SimulationJson.CreateOptions())!));
-        Assert.Equal(2, CharacterSuccessionContractVersions.AuthoritativeQuery);
+        Assert.Equal(3, CharacterSuccessionContractVersions.AuthoritativeQuery);
         Assert.Equal(1, CharacterSuccessionContractVersions.Snapshot);
         Assert.Equal(1, CharacterSuccessionSystem.Version);
         Assert.Equal(25, SaveEnvelope.CurrentSchemaVersion);
