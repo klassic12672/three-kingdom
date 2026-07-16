@@ -85,10 +85,377 @@ public sealed class CharacterSuccessionWorldState
         return false;
     }
 
+    public SuccessionCandidateEvaluationResult EvaluateCandidate(
+        SuccessionCandidateEvaluationRequest request)
+    {
+        EntityId subjectCharacterId = request?.SubjectCharacterId ?? default;
+        EntityId candidateCharacterId = request?.CandidateCharacterId ?? default;
+        List<SuccessionCandidateEligibilityReason> issues = [];
+        List<SuccessionCandidateBasisEvidence> recognizedBases = [];
+
+        bool requestIsValid = request is not null
+            && request.ContractVersion
+                == CharacterSuccessionContractVersions.CandidateEvaluation;
+        if (!requestIsValid)
+        {
+            AddIssue(issues, SuccessionCandidateEligibilityReason.InvalidRequest);
+        }
+
+        SuccessionCandidateEligibilityRule? rule = request?.Rule;
+        HashSet<SuccessionCandidateBasis> allowedBases = [];
+        HashSet<CharacterCustodyStatus> allowedCustodyStatuses = [];
+        bool ruleIsValid = ValidateEligibilityRule(
+            rule,
+            allowedBases,
+            allowedCustodyStatuses,
+            issues);
+
+        AuthoritativeCharacterProfile? subject = GetEvaluationCharacter(
+            subjectCharacterId,
+            isSubject: true,
+            issues);
+        AuthoritativeCharacterProfile? candidate = GetEvaluationCharacter(
+            candidateCharacterId,
+            isSubject: false,
+            issues);
+
+        if (subject is not null
+            && candidate is not null
+            && subject.CharacterId == candidate.CharacterId)
+        {
+            AddIssue(issues, SuccessionCandidateEligibilityReason.SameCharacter);
+        }
+
+        if (candidate is not null && requestIsValid && ruleIsValid)
+        {
+            if (candidate.Condition.VitalStatus != CharacterVitalStatus.Alive)
+            {
+                AddIssue(issues, SuccessionCandidateEligibilityReason.CandidateDead);
+            }
+
+            if (candidate.BirthDate.CompareTo(calendar.Date) <= 0
+                && CalculateAge(candidate.BirthDate, calendar.Date)
+                    < rule!.MinimumCandidateAge)
+            {
+                AddIssue(
+                    issues,
+                    SuccessionCandidateEligibilityReason.CandidateBelowMinimumAge);
+            }
+
+            if (candidate.Condition.IsIncapacitated
+                && !rule!.AllowsIncapacitatedCandidates)
+            {
+                AddIssue(
+                    issues,
+                    SuccessionCandidateEligibilityReason.CandidateIncapacitated);
+            }
+
+            if (!allowedCustodyStatuses.Contains(candidate.Condition.CustodyStatus))
+            {
+                AddIssue(
+                    issues,
+                    SuccessionCandidateEligibilityReason.CandidateCustodyNotAllowed);
+            }
+        }
+
+        if (subject is not null
+            && candidate is not null
+            && subject.CharacterId != candidate.CharacterId
+            && subject.BirthDate.CompareTo(calendar.Date) <= 0
+            && candidate.BirthDate.CompareTo(calendar.Date) <= 0
+            && requestIsValid
+            && ruleIsValid)
+        {
+            recognizedBases.AddRange(FindRecognizedBases(
+                subject.CharacterId,
+                candidate.CharacterId,
+                rule!,
+                allowedBases));
+            if (recognizedBases.Count == 0)
+            {
+                AddIssue(issues, SuccessionCandidateEligibilityReason.NoRecognizedBasis);
+            }
+        }
+
+        SuccessionCandidateBasisEvidence[] canonicalBases = recognizedBases
+            .OrderBy(item => item.Basis)
+            .ThenBy(item => item.DescendantGeneration)
+            .ThenBy(item => item.SourceDesignationId)
+            .Select(Clone)
+            .ToArray();
+        SuccessionCandidateEligibilityIssue[] canonicalIssues = issues
+            .Distinct()
+            .Order()
+            .Select(item => new SuccessionCandidateEligibilityIssue(
+                CharacterSuccessionContractVersions.CandidateEvaluation,
+                item))
+            .ToArray();
+        return new SuccessionCandidateEvaluationResult(
+            CharacterSuccessionContractVersions.CandidateEvaluation,
+            subjectCharacterId.IsValid ? subjectCharacterId : null,
+            candidateCharacterId.IsValid ? candidateCharacterId : null,
+            calendar.Date,
+            calendar.TurnIndex,
+            canonicalBases,
+            canonicalIssues,
+            canonicalIssues.Length == 0 && canonicalBases.Length > 0);
+    }
+
     public CharacterSuccessionWorldSnapshot CaptureSnapshot() => new(
         CharacterSuccessionContractVersions.Snapshot,
         designations.Values.Select(Clone).ToArray(),
         history.Values.Select(Clone).ToArray());
+
+    private bool ValidateEligibilityRule(
+        SuccessionCandidateEligibilityRule? rule,
+        ISet<SuccessionCandidateBasis> allowedBases,
+        ISet<CharacterCustodyStatus> allowedCustodyStatuses,
+        ICollection<SuccessionCandidateEligibilityReason> issues)
+    {
+        if (rule is null)
+        {
+            AddIssue(issues, SuccessionCandidateEligibilityReason.UnsupportedRuleVersion);
+            return false;
+        }
+
+        if (rule.ContractVersion
+            != CharacterSuccessionContractVersions.CandidateEligibilityRule)
+        {
+            AddIssue(issues, SuccessionCandidateEligibilityReason.UnsupportedRuleVersion);
+        }
+
+        if (rule.AllowedBases is not { Count: > 0 })
+        {
+            AddIssue(issues, SuccessionCandidateEligibilityReason.MissingAllowedBasis);
+        }
+        else
+        {
+            foreach (SuccessionCandidateBasis basis in rule.AllowedBases)
+            {
+                if (!Enum.IsDefined(basis))
+                {
+                    AddIssue(
+                        issues,
+                        SuccessionCandidateEligibilityReason.UnsupportedAllowedBasis);
+                }
+                else if (!allowedBases.Add(basis))
+                {
+                    AddIssue(
+                        issues,
+                        SuccessionCandidateEligibilityReason.DuplicateAllowedBasis);
+                }
+            }
+        }
+
+        if (rule.MaximumDescendantGeneration is < 1
+            or > CharacterSuccessionLimits.MaximumEvaluatedDescendantGeneration)
+        {
+            AddIssue(
+                issues,
+                SuccessionCandidateEligibilityReason.InvalidMaximumDescendantGeneration);
+        }
+
+        if (rule.MinimumCandidateAge is < 0
+            or > CharacterSuccessionLimits.MaximumConfiguredMinimumCandidateAge)
+        {
+            AddIssue(
+                issues,
+                SuccessionCandidateEligibilityReason.InvalidMinimumCandidateAge);
+        }
+
+        if (rule.AllowedCustodyStatuses is not { Count: > 0 })
+        {
+            AddIssue(
+                issues,
+                SuccessionCandidateEligibilityReason.MissingAllowedCustodyStatus);
+        }
+        else
+        {
+            foreach (CharacterCustodyStatus custodyStatus in rule.AllowedCustodyStatuses)
+            {
+                if (!Enum.IsDefined(custodyStatus))
+                {
+                    AddIssue(
+                        issues,
+                        SuccessionCandidateEligibilityReason.UnsupportedAllowedCustodyStatus);
+                }
+                else if (!allowedCustodyStatuses.Add(custodyStatus))
+                {
+                    AddIssue(
+                        issues,
+                        SuccessionCandidateEligibilityReason.DuplicateAllowedCustodyStatus);
+                }
+            }
+        }
+
+        return !issues.Any(IsRuleIssue);
+    }
+
+    private AuthoritativeCharacterProfile? GetEvaluationCharacter(
+        EntityId characterId,
+        bool isSubject,
+        ICollection<SuccessionCandidateEligibilityReason> issues)
+    {
+        SuccessionCandidateEligibilityReason invalid = isSubject
+            ? SuccessionCandidateEligibilityReason.InvalidSubject
+            : SuccessionCandidateEligibilityReason.InvalidCandidate;
+        SuccessionCandidateEligibilityReason unknown = isSubject
+            ? SuccessionCandidateEligibilityReason.UnknownSubject
+            : SuccessionCandidateEligibilityReason.UnknownCandidate;
+        SuccessionCandidateEligibilityReason notBorn = isSubject
+            ? SuccessionCandidateEligibilityReason.SubjectNotBorn
+            : SuccessionCandidateEligibilityReason.CandidateNotBorn;
+        if (!characterId.IsValid)
+        {
+            AddIssue(issues, invalid);
+            return null;
+        }
+
+        if (!characters.TryGetCharacterProfile(
+                characterId,
+                out AuthoritativeCharacterProfile? profile))
+        {
+            AddIssue(issues, unknown);
+            return null;
+        }
+
+        if (profile.BirthDate.CompareTo(calendar.Date) > 0)
+        {
+            AddIssue(issues, notBorn);
+        }
+
+        return profile;
+    }
+
+    private IReadOnlyList<SuccessionCandidateBasisEvidence> FindRecognizedBases(
+        EntityId subjectCharacterId,
+        EntityId candidateCharacterId,
+        SuccessionCandidateEligibilityRule rule,
+        IReadOnlySet<SuccessionCandidateBasis> allowedBases)
+    {
+        List<SuccessionCandidateBasisEvidence> result = [];
+        if (allowedBases.Contains(SuccessionCandidateBasis.ActiveDesignation)
+            && activeByDesignator.TryGetValue(
+                subjectCharacterId,
+                out EntityId designationId)
+            && designations[designationId].HeirCharacterId == candidateCharacterId)
+        {
+            result.Add(new(
+                CharacterSuccessionContractVersions.CandidateEvaluation,
+                SuccessionCandidateBasis.ActiveDesignation,
+                null,
+                designationId));
+        }
+
+        Dictionary<SuccessionCandidateBasis, int> descendantGenerations = [];
+        Queue<(EntityId CharacterId, SuccessionCandidateBasis Basis, int Generation)> pending = [];
+        HashSet<(EntityId CharacterId, SuccessionCandidateBasis Basis)> visited = [];
+        if (!characters.TryGetCharacterProfile(
+                subjectCharacterId,
+                out AuthoritativeCharacterProfile? subject))
+        {
+            return result;
+        }
+
+        foreach (CharacterChildLink child in subject.ChildLinks)
+        {
+            SuccessionCandidateBasis basis = ToDescendantBasis(child.Kind);
+            pending.Enqueue((child.ChildCharacterId, basis, 1));
+        }
+
+        while (pending.TryDequeue(out var item))
+        {
+            if (item.Generation > rule.MaximumDescendantGeneration
+                || !visited.Add((item.CharacterId, item.Basis)))
+            {
+                continue;
+            }
+
+            if (item.CharacterId == candidateCharacterId
+                && allowedBases.Contains(item.Basis)
+                && (!descendantGenerations.TryGetValue(item.Basis, out int previous)
+                    || item.Generation < previous))
+            {
+                descendantGenerations[item.Basis] = item.Generation;
+            }
+
+            if (item.Generation == rule.MaximumDescendantGeneration
+                || !characters.TryGetCharacterProfile(
+                    item.CharacterId,
+                    out AuthoritativeCharacterProfile? descendant))
+            {
+                continue;
+            }
+
+            foreach (CharacterChildLink child in descendant.ChildLinks)
+            {
+                pending.Enqueue((
+                    child.ChildCharacterId,
+                    CombineDescendantBasis(item.Basis, child.Kind),
+                    checked(item.Generation + 1)));
+            }
+        }
+
+        result.AddRange(descendantGenerations.Select(item =>
+            new SuccessionCandidateBasisEvidence(
+                CharacterSuccessionContractVersions.CandidateEvaluation,
+                item.Key,
+                item.Value,
+                null)));
+        return result;
+    }
+
+    private static SuccessionCandidateBasis ToDescendantBasis(
+        ParentChildLinkKind kind) => kind switch
+        {
+            ParentChildLinkKind.Biological => SuccessionCandidateBasis.BiologicalDescendant,
+            ParentChildLinkKind.LegalAdoptive =>
+                SuccessionCandidateBasis.LegalAdoptiveDescendant,
+            ParentChildLinkKind.UnspecifiedLegacy =>
+                SuccessionCandidateBasis.UnspecifiedLegacyDescendant,
+            _ => throw new SimulationValidationException(
+                $"Unsupported succession parent-child link kind '{kind}'."),
+        };
+
+    private static SuccessionCandidateBasis CombineDescendantBasis(
+        SuccessionCandidateBasis existing,
+        ParentChildLinkKind next) =>
+        existing == SuccessionCandidateBasis.UnspecifiedLegacyDescendant
+            || next == ParentChildLinkKind.UnspecifiedLegacy
+                ? SuccessionCandidateBasis.UnspecifiedLegacyDescendant
+                : existing == SuccessionCandidateBasis.LegalAdoptiveDescendant
+                    || next == ParentChildLinkKind.LegalAdoptive
+                        ? SuccessionCandidateBasis.LegalAdoptiveDescendant
+                        : SuccessionCandidateBasis.BiologicalDescendant;
+
+    private static int CalculateAge(CampaignDate birthDate, CampaignDate currentDate)
+    {
+        int age = currentDate.Year - birthDate.Year;
+        if (currentDate.Month < birthDate.Month
+            || (currentDate.Month == birthDate.Month && currentDate.Day < birthDate.Day))
+        {
+            age--;
+        }
+
+        return age;
+    }
+
+    private static bool IsRuleIssue(SuccessionCandidateEligibilityReason reason) =>
+        reason is >= SuccessionCandidateEligibilityReason.UnsupportedRuleVersion
+            and <= SuccessionCandidateEligibilityReason.DuplicateAllowedCustodyStatus;
+
+    private static void AddIssue(
+        ICollection<SuccessionCandidateEligibilityReason> issues,
+        SuccessionCandidateEligibilityReason issue)
+    {
+        if (!issues.Contains(issue))
+        {
+            issues.Add(issue);
+        }
+    }
+
+    private static SuccessionCandidateBasisEvidence Clone(
+        SuccessionCandidateBasisEvidence value) => value with { };
 
     internal void UpdateCampaignCalendar(CampaignCalendar value)
     {

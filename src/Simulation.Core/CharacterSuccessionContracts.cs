@@ -9,12 +9,16 @@ public static class CharacterSuccessionContractVersions
     public const int State = 1;
     public const int Action = 1;
     public const int Outcome = 1;
-    public const int AuthoritativeQuery = 1;
+    public const int CandidateEligibilityRule = 1;
+    public const int CandidateEvaluation = 1;
+    public const int AuthoritativeQuery = 2;
 }
 
 public static class CharacterSuccessionLimits
 {
     public const int RecentTerminalDesignationsPerCharacter = 32;
+    public const int MaximumEvaluatedDescendantGeneration = 64;
+    public const int MaximumConfiguredMinimumCandidateAge = 100;
 }
 
 public static class CharacterSuccessionSystem
@@ -29,6 +33,85 @@ public enum HeirDesignationStatus
     Replaced = 1,
     Revoked = 2,
 }
+
+public enum SuccessionCandidateBasis
+{
+    ActiveDesignation = 0,
+    BiologicalDescendant = 1,
+    LegalAdoptiveDescendant = 2,
+    UnspecifiedLegacyDescendant = 3,
+}
+
+public enum SuccessionCandidateEligibilityReason
+{
+    InvalidRequest = 0,
+    UnsupportedRuleVersion = 1,
+    MissingAllowedBasis = 2,
+    UnsupportedAllowedBasis = 3,
+    DuplicateAllowedBasis = 4,
+    InvalidMaximumDescendantGeneration = 5,
+    InvalidMinimumCandidateAge = 6,
+    MissingAllowedCustodyStatus = 7,
+    UnsupportedAllowedCustodyStatus = 8,
+    DuplicateAllowedCustodyStatus = 9,
+    InvalidSubject = 10,
+    UnknownSubject = 11,
+    SubjectNotBorn = 12,
+    InvalidCandidate = 13,
+    UnknownCandidate = 14,
+    SameCharacter = 15,
+    CandidateNotBorn = 16,
+    CandidateDead = 17,
+    CandidateBelowMinimumAge = 18,
+    CandidateIncapacitated = 19,
+    CandidateCustodyNotAllowed = 20,
+    NoRecognizedBasis = 21,
+}
+
+public sealed record SuccessionCandidateEligibilityRule(
+    int ContractVersion,
+    IReadOnlyList<SuccessionCandidateBasis> AllowedBases,
+    int MaximumDescendantGeneration,
+    int MinimumCandidateAge,
+    bool AllowsIncapacitatedCandidates,
+    IReadOnlyList<CharacterCustodyStatus> AllowedCustodyStatuses)
+{
+    public SuccessionCandidateEligibilityRule Canonicalize() => this with
+    {
+        AllowedBases = AllowedBases is null
+            ? null!
+            : AllowedBases.Order().ToArray(),
+        AllowedCustodyStatuses = AllowedCustodyStatuses is null
+            ? null!
+            : AllowedCustodyStatuses.Order().ToArray(),
+    };
+}
+
+public sealed record SuccessionCandidateEvaluationRequest(
+    int ContractVersion,
+    EntityId SubjectCharacterId,
+    EntityId CandidateCharacterId,
+    SuccessionCandidateEligibilityRule Rule);
+
+public sealed record SuccessionCandidateBasisEvidence(
+    int ContractVersion,
+    SuccessionCandidateBasis Basis,
+    int? DescendantGeneration,
+    EntityId? SourceDesignationId);
+
+public sealed record SuccessionCandidateEligibilityIssue(
+    int ContractVersion,
+    SuccessionCandidateEligibilityReason Reason);
+
+public sealed record SuccessionCandidateEvaluationResult(
+    int ContractVersion,
+    EntityId? SubjectCharacterId,
+    EntityId? CandidateCharacterId,
+    CampaignDate EvaluationDate,
+    long EvaluationTurnIndex,
+    IReadOnlyList<SuccessionCandidateBasisEvidence> RecognizedBases,
+    IReadOnlyList<SuccessionCandidateEligibilityIssue> Issues,
+    bool IsEligible);
 
 public sealed record HeirDesignationState(
     int ContractVersion,
@@ -90,6 +173,9 @@ public interface IAuthoritativeCharacterSuccessionWorldQuery
     bool TryGetHistory(
         EntityId designatorCharacterId,
         [NotNullWhen(true)] out HeirDesignationHistoryAggregate? history);
+
+    SuccessionCandidateEvaluationResult EvaluateCandidate(
+        SuccessionCandidateEvaluationRequest request);
 }
 
 [JsonPolymorphic(
