@@ -391,6 +391,47 @@ public sealed class CampaignSimulation
                 }
 
                 break;
+            case CharacterSuccessionActionCommandPayload successionAction:
+                if (command.Phase != ResolutionPhase.Commands)
+                {
+                    issues.Add(new(
+                        "character_succession_phase",
+                        "Character-succession actions must resolve in the Commands phase."));
+                }
+
+                CommandValidationResult successionValidation =
+                    World.CharacterSuccessions.ValidateAction(
+                        command.IssuingActor,
+                        successionAction,
+                        command.IssuedDate,
+                        World.Calendar.TurnIndex);
+                AddIssues(successionValidation, issues);
+                if (successionValidation.IsValid
+                    && command.CommandId.IsValid
+                    && command.IssuedDate.IsValid)
+                {
+                    try
+                    {
+                        EntityId eventId = CharacterSuccessionIds.DeriveActionEventId(
+                            command.IssuedDate,
+                            command.CommandId);
+                        _ = World.CharacterSuccessions.PlanAction(
+                            command.IssuingActor,
+                            successionAction,
+                            command.IssuedDate,
+                            World.Calendar.TurnIndex,
+                            command.CommandId,
+                            eventId);
+                    }
+                    catch (Exception exception) when (exception is SimulationValidationException
+                        or ArgumentException
+                        or OverflowException)
+                    {
+                        issues.Add(new("invalid_character_succession_action", exception.Message));
+                    }
+                }
+
+                break;
             case HouseholdDecisionCommandPayload householdDecision:
                 if (command.Phase != ResolutionPhase.Commands)
                 {
@@ -760,6 +801,33 @@ public sealed class CampaignSimulation
                     }
 
                     break;
+                case CharacterSuccessionActionCommandPayload successionAction:
+                    try
+                    {
+                        EntityId successionEventId = GetEventId(command);
+                        CharacterSuccessionActionResolvedEventPayload resolvedSuccessionAction =
+                            World.CharacterSuccessions.PlanAction(
+                                command.IssuingActor,
+                                successionAction,
+                                date,
+                                World.Calendar.TurnIndex,
+                                command.CommandId,
+                                successionEventId);
+                        payload = resolvedSuccessionAction;
+                        affected = WorldState.GetCharacterSuccessionActionAffectedIds(
+                            resolvedSuccessionAction);
+                    }
+                    catch (Exception exception) when (exception is SimulationValidationException
+                        or ArgumentException
+                        or OverflowException)
+                    {
+                        payload = new CommandCancelledEventPayload(
+                            "command_invalidated",
+                            exception.Message);
+                        affected = [];
+                    }
+
+                    break;
                 default:
                     throw new SimulationValidationException($"Unregistered command payload '{command.Payload.GetType().Name}'.");
             }
@@ -816,6 +884,7 @@ public sealed class CampaignSimulation
             or CharacterResourceActionCommandPayload
             or CharacterMarriageActionCommandPayload
             or HouseholdDecisionCommandPayload
+            or CharacterSuccessionActionCommandPayload
             ? World.Characters.TryGetCharacterProfile(command.IssuingActor, out _)
             : World.TryGetEntity(command.IssuingActor, out _);
     }
@@ -870,6 +939,13 @@ public sealed class CampaignSimulation
         if (command.Payload is CharacterComingOfAgeCommandPayload)
         {
             return CharacterComingOfAgeIds.DeriveEventId(
+                command.IssuedDate,
+                command.CommandId);
+        }
+
+        if (command.Payload is CharacterSuccessionActionCommandPayload)
+        {
+            return CharacterSuccessionIds.DeriveActionEventId(
                 command.IssuedDate,
                 command.CommandId);
         }

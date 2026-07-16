@@ -18,7 +18,7 @@ public readonly record struct SimulationChecksum(string Value)
 
     internal static SimulationChecksum ComputeForSaveSchema(WorldSnapshot snapshot, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 23)
+        if (schemaVersion is < 1 or > 24)
         {
             throw new ArgumentOutOfRangeException(nameof(schemaVersion));
         }
@@ -53,7 +53,13 @@ public readonly record struct SimulationChecksum(string Value)
         // exact F1 world shape and differs from schema 23 only in embedded
         // custodian-death release evidence. Schema 23 is the exact F2 world
         // shape and differs from schema 24 only in registered household-head
-        // death resolution vocabulary.
+        // death resolution vocabulary. Schema 24 is the exact F3 world shape
+        // and predates the separate character-succession world.
+        if (schemaVersion < 25)
+        {
+            canonical.Remove("characterSuccessions");
+        }
+
         if (schemaVersion < 18)
         {
             canonical.Remove("characterPregnancies");
@@ -340,6 +346,12 @@ public readonly record struct SimulationChecksum(string Value)
             {
                 versions.RemoveAt(index);
             }
+            else if (schemaVersion < 25 && StringComparer.Ordinal.Equals(
+                systemId,
+                CharacterSuccessionSystem.SystemId))
+            {
+                versions.RemoveAt(index);
+            }
             else if (schemaVersion < 12 && StringComparer.Ordinal.Equals(
                 systemId,
                 CharacterMarriageSystem.SystemId))
@@ -372,6 +384,7 @@ public readonly record struct SimulationChecksum(string Value)
         CharacterMarriages = snapshot.CharacterMarriages.Canonicalize(),
         CharacterGuardianships = snapshot.CharacterGuardianships.Canonicalize(),
         CharacterPregnancies = snapshot.CharacterPregnancies.Canonicalize(),
+        CharacterSuccessions = snapshot.CharacterSuccessions.Canonicalize(),
     };
 
     private static RelationshipWorldSnapshot CanonicalizeRelationships(RelationshipWorldSnapshot snapshot) =>

@@ -42,11 +42,10 @@ public sealed class CharacterCustodianDeathSchemaMigrationTests
         JsonObject expectedDeath = HistoricalDeath(expected);
         expectedDeath["contractVersion"] = CharacterConditionContractVersions.Death;
         expectedDeath["releasedCustodyChanges"] = new JsonArray();
-
+        AddExpectedSuccession(expected);
         JsonObject migrated = new SaveSchemaRegistry().MigrateToCurrent(frozen);
 
         Assert.Equal(SaveEnvelope.CurrentSchemaVersion, migrated["schemaVersion"]!.GetValue<int>());
-        Assert.Equal(FrozenChecksum, migrated["checksum"]!.GetValue<string>());
         Assert.True(JsonNode.DeepEquals(expected, migrated));
         Assert.True(JsonNode.DeepEquals(original, frozen));
         Assert.Equal(sourceBytes, File.ReadAllBytes(path));
@@ -66,10 +65,14 @@ public sealed class CharacterCustodianDeathSchemaMigrationTests
         Assert.Single(historical.CareerChanges.EndedRetinueMemberships);
         Assert.Single(historical.CareerChanges.EndedPatronageBonds);
         Assert.Single(historical.CareerChanges.EndedEmploymentTenures);
-        Assert.Equal(FrozenChecksum, SimulationChecksum.Compute(envelope.Snapshot).Value);
+        Assert.Equal(
+            migrated["checksum"]!.GetValue<string>(),
+            SimulationChecksum.Compute(envelope.Snapshot).Value);
         Assert.Equal(FrozenChecksum, SimulationChecksum.ComputeForSaveSchema(
             envelope.Snapshot,
             22).Value);
+        Assert.Empty(envelope.Snapshot.CharacterSuccessions.Designations);
+        Assert.Empty(envelope.Snapshot.CharacterSuccessions.History);
 
         CampaignSimulation simulation = new(WorldState.Restore(envelope.Snapshot));
         CharacterDeathChange pendingDeath = Assert.IsType<CharacterDeathResolvedOutcome>(
@@ -94,6 +97,21 @@ public sealed class CharacterCustodianDeathSchemaMigrationTests
         Assert.Equal(
             UnrelatedCustodian,
             Profile(simulation, UnrelatedDependent).Condition.CustodianId);
+    }
+
+    private static void AddExpectedSuccession(JsonObject expected)
+    {
+        JsonObject snapshot = expected["snapshot"]!.AsObject();
+        snapshot["characterSuccessions"] = JsonSerializer.SerializeToNode(
+            CharacterSuccessionWorldSnapshot.Empty,
+            SimulationJson.CreateOptions());
+        snapshot["systemVersions"]!.AsArray().Add(new JsonObject
+        {
+            ["systemId"] = CharacterSuccessionSystem.SystemId,
+            ["version"] = CharacterSuccessionSystem.Version,
+        });
+        expected["checksum"] = SimulationChecksum.Compute(
+            snapshot.Deserialize<WorldSnapshot>(SimulationJson.CreateOptions())!).Value;
     }
 
     [Fact]

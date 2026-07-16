@@ -44,9 +44,9 @@ public sealed class TierAndSoakTests
 
         Assert.True(result.Turns > 1_000);
         Assert.Equal(200, result.FinalDate.Year);
-        // SP-04E6 advances the runtime character snapshot/state/system contract and adds
-        // default-empty education attainments, changing only the canonical representation.
-        Assert.Equal("c6ed3643b46211034dede534ab236971dca7ebe6c129904ecfd5eacea1ad9930", result.Checksum.Value);
+        // SP-04F4 adds the default-empty character-succession snapshot/system contract,
+        // changing only this synthetic workload's canonical representation.
+        Assert.Equal("1075dd73e6202329b51d49b4c18d383c409f37ca16198c0500a075d7f17060e7", result.Checksum.Value);
     }
 
     [Theory]

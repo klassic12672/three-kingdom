@@ -15,6 +15,22 @@ public interface ISaveMigration
 public sealed class SaveSchemaRegistry
 {
     private const int Schema23DeathContractVersion = 3;
+    private static readonly DeathDiagnosticVersions Schema24DeathDiagnosticVersions = new(
+        Death: 3,
+        ConditionChange: 1,
+        HouseholdHeadChange: 1,
+        MarriageLifecycleChangeSet: 1,
+        MarriageSnapshot: 2,
+        MarriageState: 1,
+        MarriageInvitationState: 1,
+        MarriageRouteState: 2,
+        MarriagePractice: 1,
+        GuardianshipSnapshot: 1,
+        GuardianshipState: 1,
+        PregnancySnapshot: 1,
+        PregnancyState: 1,
+        CareerDeathChange: 1,
+        CareerState: 1);
     private readonly IReadOnlyDictionary<int, ISaveMigration> migrations;
 
     public SaveSchemaRegistry(IEnumerable<ISaveMigration>? migrations = null)
@@ -44,6 +60,7 @@ public sealed class SaveSchemaRegistry
             new SaveMigrationV21ToV22(),
             new SaveMigrationV22ToV23(),
             new SaveMigrationV23ToV24(),
+            new SaveMigrationV24ToV25(),
         ]).ToArray();
         if (registered.Any(item => item.ToSchemaVersion != item.FromSchemaVersion + 1))
         {
@@ -113,7 +130,7 @@ public sealed class SaveSchemaRegistry
 
     internal static void ValidateHistoricalSourceChecksum(JsonObject source, int schemaVersion)
     {
-        if (schemaVersion is < 1 or > 23)
+        if (schemaVersion is < 1 or > 24)
         {
             throw new SaveCompatibilityException($"Save schema {schemaVersion} has no historical checksum contract.");
         }
@@ -177,6 +194,15 @@ public sealed class SaveSchemaRegistry
             "systemVersions",
             schemaVersion,
             "snapshot.systemVersions");
+
+        if (snapshot.ContainsKey("characterSuccessions")
+            || systemVersions.Any(version => IsSystemId(
+                version,
+                CharacterSuccessionSystem.SystemId)))
+        {
+            throw new SaveCompatibilityException(
+                $"Schema {schemaVersion} unexpectedly contains schema 25 character-succession data.");
+        }
 
         if (schemaVersion < 18
             && (snapshot.ContainsKey("characterPregnancies")
@@ -258,7 +284,7 @@ public sealed class SaveSchemaRegistry
                 $"Schema {schemaVersion} unexpectedly contains schema 10 character-marriage data.");
         }
 
-        if (schemaVersion is >= 10 and <= 23)
+        if (schemaVersion is >= 10 and <= 24)
         {
             ValidateCharacterMarriageSnapshotShape(
                 RequireHistoricalObject(
@@ -380,10 +406,15 @@ public sealed class SaveSchemaRegistry
                 ValidateSchema22CharacterDeathDiagnostics(diagnosticEvents);
                 RejectF2Discriminators(source, "save payload");
             }
-            else
+            else if (schemaVersion == 23)
             {
                 ValidateSchema23CharacterDeathDiagnostics(diagnosticEvents);
                 RejectF3Discriminators(source, "save payload");
+            }
+            else
+            {
+                ValidateSchema24CharacterDeathDiagnostics(source);
+                RejectF4Discriminators(source, "save payload");
             }
         }
 
@@ -724,10 +755,11 @@ public sealed class SaveSchemaRegistry
             || snapshot["characterEstateHoldings"] is not JsonObject characterEstateHoldings
             || snapshot["characterMarriages"] is not JsonObject characterMarriages
             || snapshot["characterGuardianships"] is not JsonObject characterGuardianships
-            || snapshot["characterPregnancies"] is not JsonObject characterPregnancies)
+            || snapshot["characterPregnancies"] is not JsonObject characterPregnancies
+            || snapshot["characterSuccessions"] is not JsonObject characterSuccessions)
         {
             throw new SaveCompatibilityException(
-                "Current save schema is missing required character, relationship, career, character-resource, character-estate-holding, character-marriage, character-guardianship, or character-pregnancy snapshot data.");
+                "Current save schema is missing required character, relationship, career, character-resource, character-estate-holding, character-marriage, character-guardianship, character-pregnancy, or character-succession snapshot data.");
         }
 
         string[] requiredSnapshotArrays =
@@ -775,7 +807,11 @@ public sealed class SaveSchemaRegistry
         ValidateCharacterPregnancySnapshotShape(
             characterPregnancies,
             "Current save schema");
+        ValidateCharacterSuccessionSnapshotShape(
+            characterSuccessions,
+            "Current save schema");
         ValidateCurrentCharacterDeathDiagnostics(source);
+        ValidateCurrentCharacterSuccessionDiagnostics(source);
 
         if (snapshot["systemVersions"] is not JsonArray systemVersions
             || !systemVersions.Any(IsCurrentCharacterSystemVersion))
@@ -825,32 +861,51 @@ public sealed class SaveSchemaRegistry
             throw new SaveCompatibilityException(
                 $"Current save schema is missing required '{CharacterPregnancySystem.SystemId}@{CharacterPregnancySystem.Version}' system-version data.");
         }
+
+        if (systemVersions.Count(IsCurrentCharacterSuccessionSystemVersion) != 1
+            || systemVersions.OfType<JsonObject>().Count(version => IsSystemId(
+                version,
+                CharacterSuccessionSystem.SystemId)) != 1)
+        {
+            throw new SaveCompatibilityException(
+                $"Current save schema requires exactly one supported '{CharacterSuccessionSystem.SystemId}@{CharacterSuccessionSystem.Version}' system-version entry.");
+        }
     }
 
     private static void ValidateCurrentCharacterDeathDiagnostics(JsonNode? node) =>
         ValidateCharacterDeathDiagnostics(
             node,
-            CharacterConditionContractVersions.Death,
+            CurrentDeathDiagnosticVersions(),
             requireReleasedCustodyChanges: true,
             "Current");
+
+    private static void ValidateSchema24CharacterDeathDiagnostics(JsonNode? node) =>
+        ValidateCharacterDeathDiagnostics(
+            node,
+            Schema24DeathDiagnosticVersions,
+            requireReleasedCustodyChanges: true,
+            "Schema 24");
 
     private static void ValidateSchema22CharacterDeathDiagnostics(JsonNode? node) =>
         ValidateCharacterDeathDiagnostics(
             node,
-            expectedDeathVersion: 2,
+            CurrentDeathDiagnosticVersions() with { Death = 2 },
             requireReleasedCustodyChanges: false,
             "Schema 22");
 
     private static void ValidateSchema23CharacterDeathDiagnostics(JsonNode? node) =>
         ValidateCharacterDeathDiagnostics(
             node,
-            Schema23DeathContractVersion,
+            CurrentDeathDiagnosticVersions() with
+            {
+                Death = Schema23DeathContractVersion,
+            },
             requireReleasedCustodyChanges: true,
             "Schema 23");
 
     private static void ValidateCharacterDeathDiagnostics(
         JsonNode? node,
-        int expectedDeathVersion,
+        DeathDiagnosticVersions versions,
         bool requireReleasedCustodyChanges,
         string description)
     {
@@ -860,7 +915,7 @@ public sealed class SaveSchemaRegistry
             {
                 ValidateCharacterDeathDiagnostics(
                     item,
-                    expectedDeathVersion,
+                    versions,
                     requireReleasedCustodyChanges,
                     description);
             }
@@ -903,7 +958,7 @@ public sealed class SaveSchemaRegistry
             if (value["death"] is not JsonObject death
                 || !IsCharacterDeathChange(
                     death,
-                    expectedDeathVersion,
+                    versions,
                     requireReleasedCustodyChanges))
             {
                 throw new SaveCompatibilityException(
@@ -916,12 +971,12 @@ public sealed class SaveSchemaRegistry
             if (value["death"] is not JsonObject death
                 || !IsCharacterDeathChange(
                     death,
-                    expectedDeathVersion,
+                    versions,
                     requireReleasedCustodyChanges)
                 || value["householdHeadChange"] is not JsonObject headChange
                 || !HasVersion(
                     headChange,
-                    CharacterConditionContractVersions.HouseholdHeadChange)
+                    versions.HouseholdHeadChange)
                 || headChange["changeId"] is not JsonObject
                 || headChange["householdId"] is not JsonObject
                 || headChange["previousHeadCharacterId"] is not JsonObject
@@ -940,7 +995,7 @@ public sealed class SaveSchemaRegistry
         {
             ValidateCharacterDeathDiagnostics(
                 child,
-                expectedDeathVersion,
+                versions,
                 requireReleasedCustodyChanges,
                 description);
         }
@@ -948,42 +1003,48 @@ public sealed class SaveSchemaRegistry
 
     private static bool IsCharacterDeathChange(
         JsonObject death,
-        int expectedDeathVersion,
+        DeathDiagnosticVersions versions,
         bool requireReleasedCustodyChanges)
     {
-        return HasVersion(death, expectedDeathVersion)
+        return HasVersion(death, versions.Death)
             && death["deathId"] is JsonObject
             && death["conditionChange"] is JsonObject conditionChange
-            && ContainsOnlyCurrentConditionChanges(new JsonArray(conditionChange.DeepClone()))
+            && ContainsOnlyConditionChanges(
+                new JsonArray(conditionChange.DeepClone()),
+                versions.ConditionChange)
             && (requireReleasedCustodyChanges
                 ? death["releasedCustodyChanges"] is JsonArray releasedChanges
-                    && ContainsOnlyCurrentConditionChanges(releasedChanges)
+                    && ContainsOnlyConditionChanges(
+                        releasedChanges,
+                        versions.ConditionChange)
                 : !death.ContainsKey("releasedCustodyChanges"))
             && death["marriageChanges"] is JsonObject marriageChanges
-            && IsCurrentCharacterMarriageLifecycleChanges(marriageChanges)
+            && IsCharacterMarriageLifecycleChanges(marriageChanges, versions)
             && death["endedGuardianships"] is JsonArray endedGuardianships
-            && ContainsOnlyCurrentGuardianships(endedGuardianships)
+            && ContainsOnlyGuardianships(endedGuardianships, versions)
             && death["removedPregnancies"] is JsonArray removedPregnancies
-            && ContainsOnlyCurrentPregnancies(removedPregnancies)
+            && ContainsOnlyPregnancies(removedPregnancies, versions)
             && death["careerChanges"] is JsonObject careerChanges
-            && HasVersion(careerChanges, CareerContractVersions.DeathChange)
+            && HasVersion(careerChanges, versions.CareerDeathChange)
             && careerChanges["invalidatedProposals"] is JsonArray invalidatedProposals
             && careerChanges["endedRetinueMemberships"] is JsonArray endedMemberships
             && careerChanges["endedPatronageBonds"] is JsonArray endedBonds
             && careerChanges["endedEmploymentTenures"] is JsonArray endedTenures
-            && ContainsOnlyCurrentCareerStateRecords(invalidatedProposals)
-            && ContainsOnlyCurrentCareerStateRecords(endedMemberships)
-            && ContainsOnlyCurrentCareerStateRecords(endedBonds)
-            && ContainsOnlyCurrentCareerStateRecords(endedTenures)
+            && ContainsOnlyCareerStateRecords(invalidatedProposals, versions.CareerState)
+            && ContainsOnlyCareerStateRecords(endedMemberships, versions.CareerState)
+            && ContainsOnlyCareerStateRecords(endedBonds, versions.CareerState)
+            && ContainsOnlyCareerStateRecords(endedTenures, versions.CareerState)
             && death["resolutionDate"] is JsonObject
             && HasLong(death, "resolutionTurnIndex")
             && death["sourceCommandId"] is JsonObject
             && death["sourceEventId"] is JsonObject;
     }
 
-    private static bool IsCurrentCharacterMarriageLifecycleChanges(JsonObject changes)
+    private static bool IsCharacterMarriageLifecycleChanges(
+        JsonObject changes,
+        DeathDiagnosticVersions versions)
     {
-        if (!HasVersion(changes, CharacterMarriageContractVersions.LifecycleChangeSet)
+        if (!HasVersion(changes, versions.MarriageLifecycleChangeSet)
             || !HasDefinedEnum<CharacterMarriageLifecycleReason>(changes, "reason")
             || changes["invalidatedProposals"] is not JsonArray invalidatedProposals
             || changes["invalidatedBetrothals"] is not JsonArray invalidatedBetrothals
@@ -996,7 +1057,7 @@ public sealed class SaveSchemaRegistry
 
         JsonObject snapshot = new()
         {
-            ["contractVersion"] = CharacterMarriageContractVersions.Snapshot,
+            ["contractVersion"] = versions.MarriageSnapshot,
             ["practices"] = new JsonArray(),
             ["proposals"] = invalidatedProposals.DeepClone(),
             ["betrothals"] = invalidatedBetrothals.DeepClone(),
@@ -1010,9 +1071,13 @@ public sealed class SaveSchemaRegistry
             ValidateCharacterMarriageSnapshotShape(
                 snapshot,
                 "Character-death marriage lifecycle changes",
-                CharacterMarriageContractVersions.Snapshot,
+                versions.MarriageSnapshot,
                 requireInvitations: true,
-                allowVersionTwoRoutes: true);
+                allowVersionTwoRoutes: true,
+                versions.MarriageInvitationState,
+                versions.MarriagePractice,
+                versions.MarriageState,
+                versions.MarriageRouteState);
             return true;
         }
         catch (SaveCompatibilityException)
@@ -1021,18 +1086,22 @@ public sealed class SaveSchemaRegistry
         }
     }
 
-    private static bool ContainsOnlyCurrentGuardianships(JsonArray guardianships)
+    private static bool ContainsOnlyGuardianships(
+        JsonArray guardianships,
+        DeathDiagnosticVersions versions)
     {
         JsonObject snapshot = new()
         {
-            ["contractVersion"] = CharacterGuardianshipContractVersions.Snapshot,
+            ["contractVersion"] = versions.GuardianshipSnapshot,
             ["guardianships"] = guardianships.DeepClone(),
         };
         try
         {
             ValidateCharacterGuardianshipSnapshotShape(
                 snapshot,
-                "Character-death guardianship changes");
+                "Character-death guardianship changes",
+                versions.GuardianshipSnapshot,
+                versions.GuardianshipState);
             return true;
         }
         catch (SaveCompatibilityException)
@@ -1041,18 +1110,22 @@ public sealed class SaveSchemaRegistry
         }
     }
 
-    private static bool ContainsOnlyCurrentPregnancies(JsonArray pregnancies)
+    private static bool ContainsOnlyPregnancies(
+        JsonArray pregnancies,
+        DeathDiagnosticVersions versions)
     {
         JsonObject snapshot = new()
         {
-            ["contractVersion"] = CharacterPregnancyContractVersions.Snapshot,
+            ["contractVersion"] = versions.PregnancySnapshot,
             ["activePregnancies"] = pregnancies.DeepClone(),
         };
         try
         {
             ValidateCharacterPregnancySnapshotShape(
                 snapshot,
-                "Character-death pregnancy changes");
+                "Character-death pregnancy changes",
+                versions.PregnancySnapshot,
+                versions.PregnancyState);
             return true;
         }
         catch (SaveCompatibilityException)
@@ -1061,9 +1134,11 @@ public sealed class SaveSchemaRegistry
         }
     }
 
-    private static bool ContainsOnlyCurrentConditionChanges(JsonArray records) =>
+    private static bool ContainsOnlyConditionChanges(
+        JsonArray records,
+        int expectedChangeVersion) =>
         records.All(item => item is JsonObject record
-            && HasVersion(record, CharacterConditionContractVersions.Change)
+            && HasVersion(record, expectedChangeVersion)
             && record["changeId"] is JsonObject
             && record["characterId"] is JsonObject
             && IsCurrentCharacterCondition(record["previousCondition"])
@@ -1080,17 +1155,337 @@ public sealed class SaveSchemaRegistry
         && HasDefinedEnum<CharacterCustodyStatus>(condition, "custodyStatus")
         && HasNullableObject(condition, "custodianId");
 
-    private static bool ContainsOnlyCurrentCareerStateRecords(JsonArray records) =>
+    private static bool ContainsOnlyCareerStateRecords(
+        JsonArray records,
+        int expectedStateVersion) =>
         records.All(item => item is JsonObject record
-            && HasVersion(record, CareerContractVersions.State));
+            && HasVersion(record, expectedStateVersion));
 
-    private static void ValidateCharacterPregnancySnapshotShape(
-        JsonObject characterPregnancies,
+    private static DeathDiagnosticVersions CurrentDeathDiagnosticVersions() => new(
+        CharacterConditionContractVersions.Death,
+        CharacterConditionContractVersions.Change,
+        CharacterConditionContractVersions.HouseholdHeadChange,
+        CharacterMarriageContractVersions.LifecycleChangeSet,
+        CharacterMarriageContractVersions.Snapshot,
+        CharacterMarriageContractVersions.State,
+        CharacterMarriageContractVersions.RomanceInvitationState,
+        CharacterMarriageContractVersions.RomanceRouteState,
+        CharacterMarriageContractVersions.Practice,
+        CharacterGuardianshipContractVersions.Snapshot,
+        CharacterGuardianshipContractVersions.State,
+        CharacterPregnancyContractVersions.Snapshot,
+        CharacterPregnancyContractVersions.State,
+        CareerContractVersions.DeathChange,
+        CareerContractVersions.State);
+
+    private readonly record struct DeathDiagnosticVersions(
+        int Death,
+        int ConditionChange,
+        int HouseholdHeadChange,
+        int MarriageLifecycleChangeSet,
+        int MarriageSnapshot,
+        int MarriageState,
+        int MarriageInvitationState,
+        int MarriageRouteState,
+        int MarriagePractice,
+        int GuardianshipSnapshot,
+        int GuardianshipState,
+        int PregnancySnapshot,
+        int PregnancyState,
+        int CareerDeathChange,
+        int CareerState);
+
+    private static void ValidateCurrentCharacterSuccessionDiagnostics(JsonNode? node)
+    {
+        if (node is JsonArray array)
+        {
+            foreach (JsonNode? item in array)
+            {
+                ValidateCurrentCharacterSuccessionDiagnostics(item);
+            }
+
+            return;
+        }
+
+        if (node is not JsonObject value)
+        {
+            return;
+        }
+
+        string? discriminator = value["$type"]?.GetValue<string>();
+        if (discriminator == "character_succession_action.v1"
+            && value["action"] is not JsonObject)
+        {
+            throw new SaveCompatibilityException(
+                "Current save schema contains incomplete character-succession command diagnostics.");
+        }
+
+        if (discriminator == "designate_heir.v1"
+            && (!HasObject(value, "heirCharacterId")
+                || !HasNullableObject(value, "expectedCurrentDesignationId")))
+        {
+            throw new SaveCompatibilityException(
+                "Current save schema contains incomplete designate-heir action diagnostics.");
+        }
+
+        if (discriminator == "revoke_heir_designation.v1"
+            && !HasObject(value, "expectedCurrentDesignationId"))
+        {
+            throw new SaveCompatibilityException(
+                "Current save schema contains incomplete revoke-heir-designation action diagnostics.");
+        }
+
+        if (discriminator == "character_succession_action_resolved.v1")
+        {
+            if (!HasObject(value, "actingCharacterId")
+                || value["action"] is not JsonObject action
+                || value["outcome"] is not JsonObject outcome
+                || !IsExactCharacterSuccessionDiagnosticPair(
+                    value["actingCharacterId"]!,
+                    action,
+                    outcome))
+            {
+                throw new SaveCompatibilityException(
+                    "Current save schema contains incomplete or mismatched character-succession action diagnostics.");
+            }
+        }
+
+        if (discriminator == "heir_designated.v1"
+            && (value["currentDesignation"] is not JsonObject current
+                || !IsCurrentHeirDesignation(current)
+                || !IsActiveHeirDesignation(current)))
+        {
+            throw new SaveCompatibilityException(
+                "Current save schema contains incomplete heir-designated outcome diagnostics.");
+        }
+
+        if (discriminator == "heir_designation_replaced.v1"
+            && (value["previousDesignation"] is not JsonObject previous
+                || !IsCurrentHeirDesignation(previous)
+                || !IsTerminalHeirDesignation(
+                    previous,
+                    HeirDesignationStatus.Replaced)
+                || value["currentDesignation"] is not JsonObject replacement
+                || !IsCurrentHeirDesignation(replacement)
+                || !IsActiveHeirDesignation(replacement)))
+        {
+            throw new SaveCompatibilityException(
+                "Current save schema contains incomplete heir-designation-replaced outcome diagnostics.");
+        }
+
+        if (discriminator == "heir_designation_revoked.v1"
+            && (value["previousDesignation"] is not JsonObject revoked
+                || !IsCurrentHeirDesignation(revoked)
+                || !IsTerminalHeirDesignation(
+                    revoked,
+                    HeirDesignationStatus.Revoked)))
+        {
+            throw new SaveCompatibilityException(
+                "Current save schema contains incomplete heir-designation-revoked outcome diagnostics.");
+        }
+
+        foreach ((_, JsonNode? child) in value)
+        {
+            ValidateCurrentCharacterSuccessionDiagnostics(child);
+        }
+    }
+
+    private static bool IsExactCharacterSuccessionDiagnosticPair(
+        JsonNode actingCharacterId,
+        JsonObject action,
+        JsonObject outcome)
+    {
+        string? actionType = action["$type"]?.GetValue<string>();
+        string? outcomeType = outcome["$type"]?.GetValue<string>();
+        if (actionType == "designate_heir.v1"
+            && action["heirCharacterId"] is JsonObject heirCharacterId
+            && action.ContainsKey("expectedCurrentDesignationId"))
+        {
+            if (outcomeType == "heir_designated.v1"
+                && action["expectedCurrentDesignationId"] is null
+                && outcome["currentDesignation"] is JsonObject current)
+            {
+                return IsActiveHeirDesignation(current)
+                    && !JsonNode.DeepEquals(actingCharacterId, heirCharacterId)
+                    && JsonNode.DeepEquals(
+                        actingCharacterId,
+                        current["designatorCharacterId"])
+                    && JsonNode.DeepEquals(
+                        heirCharacterId,
+                        current["heirCharacterId"]);
+            }
+
+            if (outcomeType == "heir_designation_replaced.v1"
+                && action["expectedCurrentDesignationId"] is JsonObject expectedCurrent
+                && outcome["previousDesignation"] is JsonObject previous
+                && outcome["currentDesignation"] is JsonObject replacement)
+            {
+                return IsTerminalHeirDesignation(
+                        previous,
+                        HeirDesignationStatus.Replaced)
+                    && IsActiveHeirDesignation(replacement)
+                    && !JsonNode.DeepEquals(actingCharacterId, heirCharacterId)
+                    && !JsonNode.DeepEquals(
+                        previous["heirCharacterId"],
+                        replacement["heirCharacterId"])
+                    && !JsonNode.DeepEquals(
+                        previous["designationId"],
+                        replacement["designationId"])
+                    && JsonNode.DeepEquals(
+                        actingCharacterId,
+                        previous["designatorCharacterId"])
+                    && JsonNode.DeepEquals(
+                        actingCharacterId,
+                        replacement["designatorCharacterId"])
+                    && JsonNode.DeepEquals(
+                        heirCharacterId,
+                        replacement["heirCharacterId"])
+                    && JsonNode.DeepEquals(
+                        expectedCurrent,
+                        previous["designationId"])
+                    && HasExactReplacementCausality(previous, replacement);
+            }
+        }
+
+        return actionType == "revoke_heir_designation.v1"
+            && action["expectedCurrentDesignationId"] is JsonObject expectedCurrentId
+            && outcomeType == "heir_designation_revoked.v1"
+            && outcome["previousDesignation"] is JsonObject revoked
+            && IsTerminalHeirDesignation(revoked, HeirDesignationStatus.Revoked)
+            && JsonNode.DeepEquals(
+                actingCharacterId,
+                revoked["designatorCharacterId"])
+            && JsonNode.DeepEquals(expectedCurrentId, revoked["designationId"]);
+    }
+
+    private static bool IsActiveHeirDesignation(JsonObject designation) =>
+        IsCurrentHeirDesignation(designation)
+        && HasEnumValue(
+            designation,
+            "status",
+            HeirDesignationStatus.Active)
+        && designation["resolutionDate"] is null
+        && designation["resolutionTurnIndex"] is null
+        && designation["resolutionCommandId"] is null
+        && designation["resolutionEventId"] is null;
+
+    private static bool IsTerminalHeirDesignation(
+        JsonObject designation,
+        HeirDesignationStatus expectedStatus) =>
+        IsCurrentHeirDesignation(designation)
+        && HasEnumValue(designation, "status", expectedStatus)
+        && designation["resolutionDate"] is JsonObject
+        && designation["resolutionTurnIndex"] is JsonValue
+        && designation["resolutionCommandId"] is JsonObject
+        && designation["resolutionEventId"] is JsonObject
+        && !JsonNode.DeepEquals(
+            designation["sourceCommandId"],
+            designation["resolutionCommandId"])
+        && !JsonNode.DeepEquals(
+            designation["sourceEventId"],
+            designation["resolutionEventId"]);
+
+    private static bool HasExactReplacementCausality(
+        JsonObject previous,
+        JsonObject replacement) =>
+        JsonNode.DeepEquals(previous["resolutionDate"], replacement["establishedDate"])
+        && JsonNode.DeepEquals(
+            previous["resolutionTurnIndex"],
+            replacement["establishedTurnIndex"])
+        && JsonNode.DeepEquals(
+            previous["resolutionCommandId"],
+            replacement["sourceCommandId"])
+        && JsonNode.DeepEquals(
+            previous["resolutionEventId"],
+            replacement["sourceEventId"]);
+
+    private static bool HasEnumValue<T>(
+        JsonObject value,
+        string property,
+        T expected)
+        where T : struct, Enum
+    {
+        if (value[property] is not JsonValue enumValue)
+        {
+            return false;
+        }
+
+        try
+        {
+            return enumValue.TryGetValue(out int actual)
+                && actual == Convert.ToInt32(expected);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException
+            or OverflowException)
+        {
+            return false;
+        }
+    }
+
+    private static void ValidateCharacterSuccessionSnapshotShape(
+        JsonObject characterSuccessions,
         string context)
     {
         if (!HasVersion(
+                characterSuccessions,
+                CharacterSuccessionContractVersions.Snapshot)
+            || characterSuccessions["designations"] is not JsonArray designations
+            || characterSuccessions["history"] is not JsonArray history)
+        {
+            throw new SaveCompatibilityException(
+                $"{context} contains missing, null, or unsupported character-succession snapshot data.");
+        }
+
+        if (designations.Any(node => node is not JsonObject designation
+                || !IsCurrentHeirDesignation(designation)))
+        {
+            throw new SaveCompatibilityException(
+                $"{context} contains missing, null, or malformed heir-designation record data.");
+        }
+
+        foreach (JsonNode? node in history)
+        {
+            if (node is not JsonObject aggregate
+                || !HasVersion(aggregate, CharacterSuccessionContractVersions.State)
+                || !HasObject(aggregate, "designatorCharacterId")
+                || !HasLong(aggregate, "foldedReplacedCount")
+                || !HasLong(aggregate, "foldedRevokedCount")
+                || !HasObject(aggregate, "earliestDate")
+                || !HasObject(aggregate, "latestDate"))
+            {
+                throw new SaveCompatibilityException(
+                    $"{context} contains missing, null, or malformed heir-designation history data.");
+            }
+        }
+    }
+
+    private static bool IsCurrentHeirDesignation(JsonObject designation) =>
+        HasVersion(designation, CharacterSuccessionContractVersions.State)
+        && HasObject(designation, "designationId")
+        && HasObject(designation, "designatorCharacterId")
+        && HasObject(designation, "heirCharacterId")
+        && !JsonNode.DeepEquals(
+            designation["designatorCharacterId"],
+            designation["heirCharacterId"])
+        && HasObject(designation, "establishedDate")
+        && HasLong(designation, "establishedTurnIndex")
+        && HasObject(designation, "sourceCommandId")
+        && HasObject(designation, "sourceEventId")
+        && HasDefinedEnum<HeirDesignationStatus>(designation, "status")
+        && HasNullableObject(designation, "resolutionDate")
+        && HasNullableLong(designation, "resolutionTurnIndex")
+        && HasNullableObject(designation, "resolutionCommandId")
+        && HasNullableObject(designation, "resolutionEventId");
+
+    private static void ValidateCharacterPregnancySnapshotShape(
+        JsonObject characterPregnancies,
+        string context,
+        int expectedSnapshotVersion = CharacterPregnancyContractVersions.Snapshot,
+        int expectedStateVersion = CharacterPregnancyContractVersions.State)
+    {
+        if (!HasVersion(
                 characterPregnancies,
-                CharacterPregnancyContractVersions.Snapshot)
+                expectedSnapshotVersion)
             || characterPregnancies["activePregnancies"] is not JsonArray activePregnancies)
         {
             throw new SaveCompatibilityException(
@@ -1102,7 +1497,7 @@ public sealed class SaveSchemaRegistry
             if (node is not JsonObject pregnancy
                 || !HasVersion(
                     pregnancy,
-                    CharacterPregnancyContractVersions.State)
+                    expectedStateVersion)
                 || !HasObject(pregnancy, "pregnancyId")
                 || !HasObject(pregnancy, "gestationalParentCharacterId")
                 || !HasObject(pregnancy, "otherBiologicalParentCharacterId")
@@ -1121,11 +1516,13 @@ public sealed class SaveSchemaRegistry
 
     private static void ValidateCharacterGuardianshipSnapshotShape(
         JsonObject characterGuardianships,
-        string context)
+        string context,
+        int expectedSnapshotVersion = CharacterGuardianshipContractVersions.Snapshot,
+        int expectedStateVersion = CharacterGuardianshipContractVersions.State)
     {
         if (!HasVersion(
                 characterGuardianships,
-                CharacterGuardianshipContractVersions.Snapshot)
+                expectedSnapshotVersion)
             || characterGuardianships["guardianships"] is not JsonArray guardianships)
         {
             throw new SaveCompatibilityException(
@@ -1137,7 +1534,7 @@ public sealed class SaveSchemaRegistry
             if (node is not JsonObject guardianship
                 || !HasVersion(
                     guardianship,
-                    CharacterGuardianshipContractVersions.State)
+                    expectedStateVersion)
                 || !HasObject(guardianship, "guardianshipId")
                 || !HasObject(guardianship, "wardCharacterId")
                 || !HasObject(guardianship, "guardianCharacterId")
@@ -1687,7 +2084,11 @@ public sealed class SaveSchemaRegistry
         string context,
         int expectedSnapshotVersion,
         bool requireInvitations,
-        bool allowVersionTwoRoutes)
+        bool allowVersionTwoRoutes,
+        int expectedInvitationStateVersion = CharacterMarriageContractVersions.RomanceInvitationState,
+        int expectedPracticeVersion = CharacterMarriageContractVersions.Practice,
+        int expectedStateVersion = CharacterMarriageContractVersions.State,
+        int expectedRomanceRouteStateVersion = CharacterMarriageContractVersions.RomanceRouteState)
     {
         string[] requiredArrays =
         [
@@ -1717,7 +2118,7 @@ public sealed class SaveSchemaRegistry
                 if (node is not JsonObject invitation
                     || !HasVersion(
                         invitation,
-                        CharacterMarriageContractVersions.RomanceInvitationState)
+                        expectedInvitationStateVersion)
                     || !HasObject(invitation, "invitationId")
                     || !HasObject(invitation, "initiatorCharacterId")
                     || !HasObject(invitation, "recipientCharacterId")
@@ -1734,7 +2135,7 @@ public sealed class SaveSchemaRegistry
         foreach (JsonNode? node in characterMarriages["practices"]!.AsArray())
         {
             if (node is not JsonObject practice
-                || !HasVersion(practice, CharacterMarriageContractVersions.Practice)
+                || !HasVersion(practice, expectedPracticeVersion)
                 || !HasObject(practice, "practiceId")
                 || !HasInt(practice, "minimumLegalUnionAge")
                 || !HasInt(practice, "minimumRomanceAge")
@@ -1752,7 +2153,7 @@ public sealed class SaveSchemaRegistry
         foreach (JsonNode? node in characterMarriages["proposals"]!.AsArray())
         {
             if (node is not JsonObject proposal
-                || !HasVersion(proposal, CharacterMarriageContractVersions.State)
+                || !HasVersion(proposal, expectedStateVersion)
                 || !HasObject(proposal, "proposalId")
                 || !HasInt(proposal, "kind")
                 || !HasInt(proposal, "basis")
@@ -1777,7 +2178,7 @@ public sealed class SaveSchemaRegistry
         foreach (JsonNode? node in characterMarriages["betrothals"]!.AsArray())
         {
             if (node is not JsonObject betrothal
-                || !HasVersion(betrothal, CharacterMarriageContractVersions.State)
+                || !HasVersion(betrothal, expectedStateVersion)
                 || !HasObject(betrothal, "betrothalId")
                 || !HasObject(betrothal, "firstCharacterId")
                 || !HasObject(betrothal, "secondCharacterId")
@@ -1800,7 +2201,7 @@ public sealed class SaveSchemaRegistry
         foreach (JsonNode? node in characterMarriages["unions"]!.AsArray())
         {
             if (node is not JsonObject union
-                || !HasVersion(union, CharacterMarriageContractVersions.State)
+                || !HasVersion(union, expectedStateVersion)
                 || !HasObject(union, "unionId")
                 || !HasObject(union, "firstCharacterId")
                 || !HasObject(union, "secondCharacterId")
@@ -1826,10 +2227,10 @@ public sealed class SaveSchemaRegistry
         {
             int routeVersion = node?["contractVersion"]?.GetValue<int>() ?? -1;
             if (node is not JsonObject route
-                || routeVersion != CharacterMarriageContractVersions.State
+                || routeVersion != expectedStateVersion
                     && (!allowVersionTwoRoutes
                         || routeVersion
-                            != CharacterMarriageContractVersions.RomanceRouteState)
+                            != expectedRomanceRouteStateVersion)
                 || !HasObject(route, "routeId")
                 || !HasObject(route, "firstCharacterId")
                 || !HasObject(route, "secondCharacterId")
@@ -1857,7 +2258,7 @@ public sealed class SaveSchemaRegistry
                 "lastPositiveProgressTurnIndex",
                 "lastPositiveProgressCommandId",
             ];
-            if (routeVersion == CharacterMarriageContractVersions.State)
+            if (routeVersion == expectedStateVersion)
             {
                 if (!allowVersionTwoRoutes
                     && versionTwoFields.Any(route.ContainsKey))
@@ -1885,7 +2286,7 @@ public sealed class SaveSchemaRegistry
         foreach (JsonNode? node in characterMarriages["history"]!.AsArray())
         {
             if (node is not JsonObject history
-                || !HasVersion(history, CharacterMarriageContractVersions.State)
+                || !HasVersion(history, expectedStateVersion)
                 || !HasObject(history, "characterId")
                 || !HasLong(history, "foldedProposalCount")
                 || !HasLong(history, "foldedBetrothalCount")
@@ -2135,6 +2536,13 @@ public sealed class SaveSchemaRegistry
             CharacterPregnancySystem.SystemId,
             CharacterPregnancySystem.Version);
 
+    private static bool IsCurrentCharacterSuccessionSystemVersion(JsonNode? node) =>
+        node is JsonObject systemVersion
+        && IsSystemVersion(
+            systemVersion,
+            CharacterSuccessionSystem.SystemId,
+            CharacterSuccessionSystem.Version);
+
     private static bool IsSystemVersion(JsonObject systemVersion, string systemId, int expectedVersion) =>
         IsSystemId(systemVersion, systemId)
         && systemVersion["version"] is JsonValue versionValue
@@ -2281,6 +2689,48 @@ public sealed class SaveSchemaRegistry
             throw new SaveCompatibilityException(
                 $"Save schema 23 unexpectedly contains schema 24 household-head death data in {description}.");
         }
+    }
+
+    private static void RejectF4Discriminators(JsonNode node, string description)
+    {
+        if (ContainsF4PropertyOrDiscriminator(node))
+        {
+            throw new SaveCompatibilityException(
+                $"Save schema 24 unexpectedly contains schema 25 character-succession data in {description}.");
+        }
+    }
+
+    private static bool ContainsF4PropertyOrDiscriminator(JsonNode? node)
+    {
+        if (node is JsonObject value)
+        {
+            string? discriminator = value["$type"]?.GetValue<string>();
+            if (discriminator is "character_succession_action.v1"
+                    or "character_succession_action_resolved.v1"
+                    or "designate_heir.v1"
+                    or "revoke_heir_designation.v1"
+                    or "heir_designated.v1"
+                    or "heir_designation_replaced.v1"
+                    or "heir_designation_revoked.v1"
+                || value.ContainsKey("characterSuccessions")
+                || value.ContainsKey("designations")
+                || value.ContainsKey("expectedCurrentDesignationId")
+                || value.ContainsKey("currentDesignation")
+                || value.ContainsKey("previousDesignation")
+                || value.ContainsKey("designationId")
+                || value.ContainsKey("designatorCharacterId")
+                || value.ContainsKey("heirCharacterId")
+                || value.ContainsKey("resolutionEventId")
+                || value.ContainsKey("foldedReplacedCount")
+                || value.ContainsKey("foldedRevokedCount"))
+            {
+                return true;
+            }
+
+            return value.Any(property => ContainsF4PropertyOrDiscriminator(property.Value));
+        }
+
+        return node is JsonArray array && array.Any(ContainsF4PropertyOrDiscriminator);
     }
 
     private static bool ContainsF3PropertyOrDiscriminator(JsonNode? node)
@@ -3642,7 +4092,9 @@ public sealed class SaveMigrationV19ToV20 : ISaveMigration
         WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(
             SimulationJson.CreateOptions())
             ?? throw new SaveCompatibilityException("Migrated schema 20 snapshot is empty.");
-        source["checksum"] = SimulationChecksum.Compute(migratedSnapshot).Value;
+        source["checksum"] = SimulationChecksum.ComputeForSaveSchema(
+            migratedSnapshot,
+            ToSchemaVersion).Value;
         source["schemaVersion"] = ToSchemaVersion;
         return source;
     }
@@ -3727,7 +4179,9 @@ public sealed class SaveMigrationV20ToV21 : ISaveMigration
             SimulationJson.CreateOptions())
             ?? throw new SaveCompatibilityException(
                 "Schema 20 save is missing its authoritative snapshot.");
-        source["checksum"] = SimulationChecksum.Compute(snapshot).Value;
+        source["checksum"] = SimulationChecksum.ComputeForSaveSchema(
+            snapshot,
+            ToSchemaVersion).Value;
         source["schemaVersion"] = ToSchemaVersion;
         return source;
     }
@@ -3749,7 +4203,9 @@ public sealed class SaveMigrationV21ToV22 : ISaveMigration
             SimulationJson.CreateOptions())
             ?? throw new SaveCompatibilityException(
                 "Schema 21 save is missing its authoritative snapshot.");
-        source["checksum"] = SimulationChecksum.Compute(snapshot).Value;
+        source["checksum"] = SimulationChecksum.ComputeForSaveSchema(
+            snapshot,
+            ToSchemaVersion).Value;
         source["schemaVersion"] = ToSchemaVersion;
         return source;
     }
@@ -3816,7 +4272,9 @@ public sealed class SaveMigrationV22ToV23 : ISaveMigration
             SimulationJson.CreateOptions())
             ?? throw new SaveCompatibilityException(
                 "Schema 22 save is missing its authoritative snapshot.");
-        source["checksum"] = SimulationChecksum.Compute(snapshot).Value;
+        source["checksum"] = SimulationChecksum.ComputeForSaveSchema(
+            snapshot,
+            ToSchemaVersion).Value;
         source["schemaVersion"] = ToSchemaVersion;
         return source;
     }
@@ -3873,7 +4331,52 @@ public sealed class SaveMigrationV23ToV24 : ISaveMigration
             SimulationJson.CreateOptions())
             ?? throw new SaveCompatibilityException(
                 "Schema 23 save is missing its authoritative snapshot.");
-        source["checksum"] = SimulationChecksum.Compute(snapshot).Value;
+        source["checksum"] = SimulationChecksum.ComputeForSaveSchema(
+            snapshot,
+            ToSchemaVersion).Value;
+        source["schemaVersion"] = ToSchemaVersion;
+        return source;
+    }
+}
+
+public sealed class SaveMigrationV24ToV25 : ISaveMigration
+{
+    public int FromSchemaVersion => 24;
+
+    public int ToSchemaVersion => 25;
+
+    public JsonObject Migrate(JsonObject source)
+    {
+        SaveSchemaRegistry.ValidateHistoricalSourceChecksum(source, FromSchemaVersion);
+        JsonObject snapshot = source["snapshot"] as JsonObject
+            ?? throw new SaveCompatibilityException(
+                "Schema 24 save is missing its authoritative snapshot.");
+        JsonArray systemVersions = snapshot["systemVersions"] as JsonArray
+            ?? throw new SaveCompatibilityException(
+                "Schema 24 save is missing system-version data.");
+        if (snapshot.ContainsKey("characterSuccessions")
+            || systemVersions.OfType<JsonObject>().Any(version =>
+                version["systemId"]?.GetValue<string>()
+                    == CharacterSuccessionSystem.SystemId))
+        {
+            throw new SaveCompatibilityException(
+                "Schema 24 save unexpectedly contains character-succession data.");
+        }
+
+        snapshot["characterSuccessions"] = JsonSerializer.SerializeToNode(
+            CharacterSuccessionWorldSnapshot.Empty,
+            SimulationJson.CreateOptions());
+        systemVersions.Add(new JsonObject
+        {
+            ["systemId"] = CharacterSuccessionSystem.SystemId,
+            ["version"] = CharacterSuccessionSystem.Version,
+        });
+
+        WorldSnapshot migratedSnapshot = snapshot.Deserialize<WorldSnapshot>(
+            SimulationJson.CreateOptions())
+            ?? throw new SaveCompatibilityException(
+                "Migrated schema 25 snapshot is empty.");
+        source["checksum"] = SimulationChecksum.Compute(migratedSnapshot).Value;
         source["schemaVersion"] = ToSchemaVersion;
         return source;
     }

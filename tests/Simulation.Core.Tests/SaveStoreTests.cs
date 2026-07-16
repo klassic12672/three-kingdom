@@ -230,6 +230,12 @@ public sealed class SaveStoreTests : IDisposable
     [InlineData("missing-character-pregnancy-system-version")]
     [InlineData("duplicate-character-pregnancy-system-version")]
     [InlineData("unsupported-character-pregnancy-system-version")]
+    [InlineData("missing-character-successions")]
+    [InlineData("null-character-successions")]
+    [InlineData("partial-character-successions")]
+    [InlineData("missing-character-succession-system-version")]
+    [InlineData("duplicate-character-succession-system-version")]
+    [InlineData("unsupported-character-succession-system-version")]
     public void CurrentSchema_RequiresCompleteCharacterSubsystemDataWithoutChangingSource(
         string mutation)
     {
@@ -460,6 +466,32 @@ public sealed class SaveStoreTests : IDisposable
                         == CharacterPregnancySystem.SystemId);
                 pregnancySystemVersion["version"] = 999;
                 break;
+            case "missing-character-successions":
+                snapshot.Remove("characterSuccessions");
+                break;
+            case "null-character-successions":
+                snapshot["characterSuccessions"] = null;
+                break;
+            case "partial-character-successions":
+                snapshot["characterSuccessions"]!.AsObject().Remove("designations");
+                break;
+            case "missing-character-succession-system-version":
+                RemoveSystemVersion(snapshot, CharacterSuccessionSystem.SystemId);
+                break;
+            case "duplicate-character-succession-system-version":
+                snapshot["systemVersions"]!.AsArray().Add(new JsonObject
+                {
+                    ["systemId"] = CharacterSuccessionSystem.SystemId,
+                    ["version"] = CharacterSuccessionSystem.Version,
+                });
+                break;
+            case "unsupported-character-succession-system-version":
+                JsonObject successionSystemVersion = snapshot["systemVersions"]!.AsArray()
+                    .OfType<JsonObject>()
+                    .Single(version => version["systemId"]!.GetValue<string>()
+                        == CharacterSuccessionSystem.SystemId);
+                successionSystemVersion["version"] = 999;
+                break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(mutation));
         }
@@ -489,6 +521,7 @@ public sealed class SaveStoreTests : IDisposable
         compatible["snapshot"] = JsonSerializer.SerializeToNode(
             historical,
             SimulationJson.CreateOptions());
+        RemoveSerializedCharacterSuccessions(compatible["snapshot"]!.AsObject());
         foreach (JsonObject state in compatible["snapshot"]!["characters"]!["characterStates"]!
                      .AsArray()
                      .OfType<JsonObject>())
@@ -3027,6 +3060,7 @@ public sealed class SaveStoreTests : IDisposable
         compatible["snapshot"] = JsonSerializer.SerializeToNode(
             historical,
             SimulationJson.CreateOptions());
+        RemoveSerializedCharacterSuccessions(compatible["snapshot"]!.AsObject());
         foreach (JsonObject state in compatible["snapshot"]!["characters"]!["characterStates"]!
                      .AsArray()
                      .OfType<JsonObject>())
@@ -3100,6 +3134,7 @@ public sealed class SaveStoreTests : IDisposable
             .OfType<JsonObject>()
             .Single(item => item["systemId"]!.GetValue<string>() == "simulation.characters")
             ["version"] = CharacterContractVersions.Snapshot;
+        AddSerializedEmptyCharacterSuccessions(expectedSnapshot);
         JsonNode migratedSnapshot = JsonSerializer.SerializeToNode(
             migrated.Snapshot,
             SimulationJson.CreateOptions())!;
@@ -3723,6 +3758,7 @@ public sealed class SaveStoreTests : IDisposable
         RemoveSystemVersion(snapshot, CharacterGuardianshipSystem.SystemId);
         snapshot.Remove("characterPregnancies");
         RemoveSystemVersion(snapshot, CharacterPregnancySystem.SystemId);
+        RemoveSerializedCharacterSuccessions(snapshot);
         DowngradeCharactersToLegacy(snapshot);
         schemaFour["schemaVersion"] = 4;
         WorldSnapshot historical = snapshot.Deserialize<WorldSnapshot>(CanonicalJson.Options)!;
@@ -3810,6 +3846,14 @@ public sealed class SaveStoreTests : IDisposable
         historicalShape.Remove("careers");
         historicalShape.Remove("characterGuardianships");
         historicalShape.Remove("characterPregnancies");
+        historicalShape.Remove("characterSuccessions");
+        JsonNode? successionVersion = historicalShape["systemVersions"]!.AsArray()
+            .SingleOrDefault(node => node?["systemId"]?.GetValue<string>()
+                == CharacterSuccessionSystem.SystemId);
+        if (successionVersion is not null)
+        {
+            historicalShape["systemVersions"]!.AsArray().Remove(successionVersion);
+        }
         if (schemaVersion < 5)
         {
             historicalShape.Remove("relationships");
@@ -4920,6 +4964,8 @@ public sealed class SaveStoreTests : IDisposable
             systemVersions.Remove(pregnancyVersion);
         }
 
+        RemoveSerializedCharacterSuccessions(serialized);
+
         DowngradeSerializedCharactersFromV3(serialized);
 
         return JsonSerializer.Serialize(serialized, CanonicalJson.Options);
@@ -4940,6 +4986,8 @@ public sealed class SaveStoreTests : IDisposable
             systemVersions.Remove(pregnancyVersion);
         }
 
+        RemoveSerializedCharacterSuccessions(serialized);
+
         DowngradeSerializedCharactersFromV3(serialized);
 
         return JsonSerializer.Serialize(serialized, CanonicalJson.Options);
@@ -4950,8 +4998,32 @@ public sealed class SaveStoreTests : IDisposable
         JsonObject serialized = JsonSerializer.SerializeToNode(
             snapshot,
             CanonicalJson.Options)!.AsObject();
+        RemoveSerializedCharacterSuccessions(serialized);
         DowngradeSerializedCharactersFromV3(serialized);
         return JsonSerializer.Serialize(serialized, CanonicalJson.Options);
+    }
+
+    private static void RemoveSerializedCharacterSuccessions(JsonObject snapshot)
+    {
+        snapshot.Remove("characterSuccessions");
+        JsonNode? version = snapshot["systemVersions"]!.AsArray().SingleOrDefault(node =>
+            node?["systemId"]?.GetValue<string>() == CharacterSuccessionSystem.SystemId);
+        if (version is not null)
+        {
+            snapshot["systemVersions"]!.AsArray().Remove(version);
+        }
+    }
+
+    private static void AddSerializedEmptyCharacterSuccessions(JsonObject snapshot)
+    {
+        snapshot["characterSuccessions"] = JsonSerializer.SerializeToNode(
+            CharacterSuccessionWorldSnapshot.Empty,
+            SimulationJson.CreateOptions());
+        snapshot["systemVersions"]!.AsArray().Add(new JsonObject
+        {
+            ["systemId"] = CharacterSuccessionSystem.SystemId,
+            ["version"] = CharacterSuccessionSystem.Version,
+        });
     }
 
     private static string SerializeCharactersWithoutEducation(CharacterWorldSnapshot characters)

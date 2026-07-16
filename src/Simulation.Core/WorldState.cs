@@ -27,6 +27,8 @@ public interface IWorldQuery
 
     IAuthoritativeCharacterPregnancyWorldQuery CharacterPregnancies { get; }
 
+    IAuthoritativeCharacterSuccessionWorldQuery CharacterSuccessions { get; }
+
     bool TryGetEntity(EntityId id, [NotNullWhen(true)] out SyntheticEntitySnapshot? entity);
 }
 
@@ -46,6 +48,7 @@ public sealed class WorldState : IWorldQuery
         new(CharacterMarriageSystem.SystemId, CharacterMarriageSystem.Version),
         new(CharacterGuardianshipSystem.SystemId, CharacterGuardianshipSystem.Version),
         new(CharacterPregnancySystem.SystemId, CharacterPregnancySystem.Version),
+        new(CharacterSuccessionSystem.SystemId, CharacterSuccessionSystem.Version),
     ];
 
     private readonly SortedDictionary<EntityId, SyntheticEntitySnapshot> entities = [];
@@ -67,7 +70,8 @@ public sealed class WorldState : IWorldQuery
         CharacterEstateHoldingWorldSnapshot characterEstateHoldings,
         CharacterMarriageWorldSnapshot characterMarriages,
         CharacterGuardianshipWorldSnapshot characterGuardianships,
-        CharacterPregnancyWorldSnapshot characterPregnancies)
+        CharacterPregnancyWorldSnapshot characterPregnancies,
+        CharacterSuccessionWorldSnapshot characterSuccessions)
     {
         if (!calendar.Date.IsValid || calendar.TurnIndex < 0)
         {
@@ -102,6 +106,10 @@ public sealed class WorldState : IWorldQuery
             characterPregnancies,
             Characters,
             CharacterMarriages,
+            calendar);
+        CharacterSuccessions = new CharacterSuccessionWorldState(
+            characterSuccessions,
+            Characters,
             calendar);
     }
 
@@ -154,6 +162,8 @@ public sealed class WorldState : IWorldQuery
 
     public CharacterPregnancyWorldState CharacterPregnancies { get; }
 
+    public CharacterSuccessionWorldState CharacterSuccessions { get; }
+
     IGeographicWorldQuery IWorldQuery.Geography => Geography;
 
     IAuthoritativeCharacterWorldQuery IWorldQuery.Characters => Characters;
@@ -175,6 +185,9 @@ public sealed class WorldState : IWorldQuery
 
     IAuthoritativeCharacterPregnancyWorldQuery IWorldQuery.CharacterPregnancies =>
         CharacterPregnancies;
+
+    IAuthoritativeCharacterSuccessionWorldQuery IWorldQuery.CharacterSuccessions =>
+        CharacterSuccessions;
 
     public IReadOnlyList<SyntheticEntitySnapshot> Entities => entities.Values.Select(CloneEntity).ToArray();
 
@@ -357,7 +370,8 @@ public sealed class WorldState : IWorldQuery
         CharacterEstateHoldingWorldSnapshot characterEstateHoldings,
         CharacterMarriageWorldSnapshot characterMarriages,
         CharacterGuardianshipWorldSnapshot characterGuardianships,
-        CharacterPregnancyWorldSnapshot characterPregnancies)
+        CharacterPregnancyWorldSnapshot characterPregnancies,
+        CharacterSuccessionWorldSnapshot? characterSuccessions = null)
     {
         WorldState world = new(
             new CampaignCalendar(startDate, 0),
@@ -371,7 +385,8 @@ public sealed class WorldState : IWorldQuery
             characterEstateHoldings,
             characterMarriages,
             characterGuardianships,
-            characterPregnancies);
+            characterPregnancies,
+            characterSuccessions ?? CharacterSuccessionWorldSnapshot.Empty);
         foreach (SyntheticEntitySnapshot entity in initialEntities.OrderBy(item => item.Id))
         {
             SyntheticEntitySnapshot canonical = ValidateEntity(entity).Canonicalize();
@@ -400,6 +415,7 @@ public sealed class WorldState : IWorldQuery
             || snapshot.CharacterMarriages is null
             || snapshot.CharacterGuardianships is null
             || snapshot.CharacterPregnancies is null
+            || snapshot.CharacterSuccessions is null
             || snapshot.Entities.Any(entity => entity is null)
             || snapshot.PendingCommands.Any(command => command is null))
         {
@@ -411,7 +427,7 @@ public sealed class WorldState : IWorldQuery
             throw new SaveCompatibilityException($"Unsupported world snapshot contract version {snapshot.ContractVersion}.");
         }
 
-        (CharacterWorldSnapshot characters, CareerWorldSnapshot careers, CharacterResourceWorldSnapshot characterResources, CharacterEstateHoldingWorldSnapshot characterEstateHoldings, CharacterMarriageWorldSnapshot characterMarriages, CharacterGuardianshipWorldSnapshot characterGuardianships, CharacterPregnancyWorldSnapshot characterPregnancies) = ValidateSystemVersions(
+        (CharacterWorldSnapshot characters, CareerWorldSnapshot careers, CharacterResourceWorldSnapshot characterResources, CharacterEstateHoldingWorldSnapshot characterEstateHoldings, CharacterMarriageWorldSnapshot characterMarriages, CharacterGuardianshipWorldSnapshot characterGuardianships, CharacterPregnancyWorldSnapshot characterPregnancies, CharacterSuccessionWorldSnapshot characterSuccessions) = ValidateSystemVersions(
             snapshot.SystemVersions,
             snapshot.Characters,
             snapshot.Relationships,
@@ -420,7 +436,8 @@ public sealed class WorldState : IWorldQuery
             snapshot.CharacterEstateHoldings,
             snapshot.CharacterMarriages,
             snapshot.CharacterGuardianships,
-            snapshot.CharacterPregnancies);
+            snapshot.CharacterPregnancies,
+            snapshot.CharacterSuccessions);
         ValidatePendingCommands(snapshot.PendingCommands);
 
         WorldState world = new(
@@ -435,7 +452,8 @@ public sealed class WorldState : IWorldQuery
             characterEstateHoldings,
             characterMarriages,
             characterGuardianships,
-            characterPregnancies)
+            characterPregnancies,
+            characterSuccessions)
         {
             lastEventDate = snapshot.LastEventDate,
             lastEventPhase = snapshot.LastEventPhase,
@@ -490,6 +508,7 @@ public sealed class WorldState : IWorldQuery
         CharacterMarriages = CharacterMarriages.CaptureSnapshot(),
         CharacterGuardianships = CharacterGuardianships.CaptureSnapshot(),
         CharacterPregnancies = CharacterPregnancies.CaptureSnapshot(),
+        CharacterSuccessions = CharacterSuccessions.CaptureSnapshot(),
     };
 
     internal void Enqueue(CampaignCommand command)
@@ -564,6 +583,9 @@ public sealed class WorldState : IWorldQuery
             case CharacterCameOfAgeEventPayload comingOfAge:
                 ApplyCharacterCameOfAge(campaignEvent, comingOfAge);
                 break;
+            case CharacterSuccessionActionResolvedEventPayload successionAction:
+                ApplyCharacterSuccessionAction(campaignEvent, successionAction);
+                break;
             default:
                 throw new SimulationValidationException($"Unregistered event payload '{campaignEvent.Payload.GetType().Name}'.");
         }
@@ -583,6 +605,7 @@ public sealed class WorldState : IWorldQuery
         CharacterMarriages.UpdateCampaignCalendar(Calendar);
         CharacterGuardianships.UpdateCampaignCalendar(Calendar);
         CharacterPregnancies.UpdateCampaignCalendar(Calendar);
+        CharacterSuccessions.UpdateCampaignCalendar(Calendar);
     }
 
     internal IReadOnlyList<CampaignEvent> PlanGeographicEvents(CampaignDate date) =>
@@ -1307,6 +1330,40 @@ public sealed class WorldState : IWorldQuery
             commandId,
             campaignEvent.EventId);
         CharacterResources.ApplyPrepared(resourcePlan);
+    }
+
+    private void ApplyCharacterSuccessionAction(
+        CampaignEvent campaignEvent,
+        CharacterSuccessionActionResolvedEventPayload payload)
+    {
+        if (campaignEvent.Phase != ResolutionPhase.Commands
+            || campaignEvent.CausalId is not EntityId commandId
+            || !commandId.IsValid)
+        {
+            throw new SimulationValidationException(
+                "Character-succession action events require the Commands phase and a valid causal command ID.");
+        }
+
+        EntityId expectedEventId = CharacterSuccessionIds.DeriveActionEventId(
+            campaignEvent.ResolutionDate,
+            commandId);
+        if (campaignEvent.EventId != expectedEventId
+            || campaignEvent.AffectedIds is null
+            || !campaignEvent.AffectedIds.SequenceEqual(
+                GetCharacterSuccessionActionAffectedIds(payload)))
+        {
+            throw new SimulationValidationException(
+                "Character-succession action event identity or affected IDs do not match its exact deterministic outcome.");
+        }
+
+        CharacterSuccessionWorldUpdatePlan successionPlan =
+            CharacterSuccessions.PrepareOutcome(
+                payload,
+                campaignEvent.ResolutionDate,
+                Calendar.TurnIndex,
+                commandId,
+                campaignEvent.EventId);
+        CharacterSuccessions.ApplyPrepared(successionPlan);
     }
 
     private void ApplyCharacterMarriageAction(
@@ -2464,6 +2521,88 @@ public sealed class WorldState : IWorldQuery
         return affected.Order().ToArray();
     }
 
+    internal static EntityId[] GetCharacterSuccessionActionAffectedIds(
+        CharacterSuccessionActionResolvedEventPayload payload)
+    {
+        if (payload?.Action is null || payload.Outcome is null)
+        {
+            throw new SimulationValidationException(
+                "Character-succession action event contains null or unsupported data.");
+        }
+
+        HashSet<EntityId> affected = [payload.ActingCharacterId];
+        if (payload.Outcome is HeirDesignatedOutcome { CurrentDesignation: null }
+            or HeirDesignationReplacedOutcome
+            {
+                PreviousDesignation: null,
+            }
+            or HeirDesignationReplacedOutcome
+            {
+                CurrentDesignation: null,
+            }
+            or HeirDesignationRevokedOutcome { PreviousDesignation: null })
+        {
+            throw new SimulationValidationException(
+                "Character-succession outcome contains a null designation record.");
+        }
+
+        switch ((payload.Action, payload.Outcome))
+        {
+            case (DesignateHeirAction action, HeirDesignatedOutcome outcome)
+                when outcome.CurrentDesignation.DesignatorCharacterId
+                        == payload.ActingCharacterId
+                    && outcome.CurrentDesignation.HeirCharacterId
+                        == action.HeirCharacterId:
+                AddDesignationAffectedIds(affected, outcome.CurrentDesignation);
+                break;
+            case (DesignateHeirAction action, HeirDesignationReplacedOutcome outcome)
+                when outcome.PreviousDesignation.DesignatorCharacterId
+                        == payload.ActingCharacterId
+                    && outcome.CurrentDesignation.DesignatorCharacterId
+                        == payload.ActingCharacterId
+                    && outcome.CurrentDesignation.HeirCharacterId
+                        == action.HeirCharacterId
+                    && action.ExpectedCurrentDesignationId
+                        == outcome.PreviousDesignation.DesignationId:
+                AddDesignationAffectedIds(affected, outcome.PreviousDesignation);
+                AddDesignationAffectedIds(affected, outcome.CurrentDesignation);
+                break;
+            case (RevokeHeirDesignationAction action, HeirDesignationRevokedOutcome outcome)
+                when outcome.PreviousDesignation.DesignatorCharacterId
+                        == payload.ActingCharacterId
+                    && action.ExpectedCurrentDesignationId
+                        == outcome.PreviousDesignation.DesignationId:
+                AddDesignationAffectedIds(affected, outcome.PreviousDesignation);
+                break;
+            default:
+                throw new SimulationValidationException(
+                    "Character-succession action/outcome pairing is invalid.");
+        }
+
+        if (affected.Any(id => !id.IsValid))
+        {
+            throw new SimulationValidationException(
+                "Character-succession action event contains an invalid affected ID.");
+        }
+
+        return affected.Order().ToArray();
+    }
+
+    private static void AddDesignationAffectedIds(
+        ISet<EntityId> affected,
+        HeirDesignationState designation)
+    {
+        if (designation is null)
+        {
+            throw new SimulationValidationException(
+                "Character-succession outcome contains a null designation record.");
+        }
+
+        affected.Add(designation.DesignationId);
+        affected.Add(designation.DesignatorCharacterId);
+        affected.Add(designation.HeirCharacterId);
+    }
+
     internal static EntityId[] GetCharacterActionAffectedIds(
         CharacterActionResolvedEventPayload payload,
         EntityId eventId)
@@ -2664,7 +2803,8 @@ public sealed class WorldState : IWorldQuery
         CharacterEstateHoldingWorldSnapshot CharacterEstateHoldings,
         CharacterMarriageWorldSnapshot CharacterMarriages,
         CharacterGuardianshipWorldSnapshot CharacterGuardianships,
-        CharacterPregnancyWorldSnapshot CharacterPregnancies) ValidateSystemVersions(
+        CharacterPregnancyWorldSnapshot CharacterPregnancies,
+        CharacterSuccessionWorldSnapshot CharacterSuccessions) ValidateSystemVersions(
         IReadOnlyList<SystemVersion> versions,
         CharacterWorldSnapshot characters,
         RelationshipWorldSnapshot relationships,
@@ -2673,7 +2813,8 @@ public sealed class WorldState : IWorldQuery
         CharacterEstateHoldingWorldSnapshot characterEstateHoldings,
         CharacterMarriageWorldSnapshot characterMarriages,
         CharacterGuardianshipWorldSnapshot characterGuardianships,
-        CharacterPregnancyWorldSnapshot characterPregnancies)
+        CharacterPregnancyWorldSnapshot characterPregnancies,
+        CharacterSuccessionWorldSnapshot characterSuccessions)
     {
         if (versions is null || versions.Any(version => version is null))
         {
@@ -2720,6 +2861,11 @@ public sealed class WorldState : IWorldQuery
             throw new SaveCompatibilityException("Snapshot character-pregnancy state is missing.");
         }
 
+        if (characterSuccessions is null)
+        {
+            throw new SaveCompatibilityException("Snapshot character-succession state is missing.");
+        }
+
         string[] expectedCore = CurrentSystemVersions
             .Where(version => version.SystemId is not "simulation.characters"
                 and not "simulation.relationships"
@@ -2728,7 +2874,8 @@ public sealed class WorldState : IWorldQuery
                 and not CharacterEstateHoldingSystem.SystemId
                 and not CharacterMarriageSystem.SystemId
                 and not CharacterGuardianshipSystem.SystemId
-                and not CharacterPregnancySystem.SystemId)
+                and not CharacterPregnancySystem.SystemId
+                and not CharacterSuccessionSystem.SystemId)
             .Select(version => $"{version.SystemId}@{version.Version}")
             .Order(StringComparer.Ordinal)
             .ToArray();
@@ -2740,7 +2887,8 @@ public sealed class WorldState : IWorldQuery
                 and not CharacterEstateHoldingSystem.SystemId
                 and not CharacterMarriageSystem.SystemId
                 and not CharacterGuardianshipSystem.SystemId
-                and not CharacterPregnancySystem.SystemId)
+                and not CharacterPregnancySystem.SystemId
+                and not CharacterSuccessionSystem.SystemId)
             .Select(version => $"{version.SystemId}@{version.Version}")
             .Order(StringComparer.Ordinal)
             .ToArray();
@@ -3004,6 +3152,40 @@ public sealed class WorldState : IWorldQuery
                 $"Snapshot character-pregnancy system version is incompatible. Expected '{CharacterPregnancySystem.SystemId}@{CharacterPregnancySystem.Version}'.");
         }
 
+        SystemVersion[] characterSuccessionVersions = versions
+            .Where(version => StringComparer.Ordinal.Equals(
+                version.SystemId,
+                CharacterSuccessionSystem.SystemId))
+            .ToArray();
+        CharacterSuccessionWorldSnapshot normalizedCharacterSuccessions;
+        if (characterSuccessionVersions.Length == 1
+            && characterSuccessionVersions[0].Version == CharacterSuccessionSystem.Version)
+        {
+            if (characterSuccessions.ContractVersion
+                != CharacterSuccessionContractVersions.Snapshot)
+            {
+                throw new SaveCompatibilityException(
+                    $"Snapshot declares '{CharacterSuccessionSystem.SystemId}@{CharacterSuccessionSystem.Version}' but contains character-succession contract {characterSuccessions.ContractVersion}.");
+            }
+
+            normalizedCharacterSuccessions = characterSuccessions;
+        }
+        else if (characterSuccessionVersions.Length == 0)
+        {
+            if (!IsCompleteEmptyCharacterSuccessionSnapshot(characterSuccessions))
+            {
+                throw new SaveCompatibilityException(
+                    "A legacy snapshot without current character-succession data must contain a complete, valid, empty character-succession snapshot.");
+            }
+
+            normalizedCharacterSuccessions = CharacterSuccessionWorldSnapshot.Empty;
+        }
+        else
+        {
+            throw new SaveCompatibilityException(
+                $"Snapshot character-succession system version is incompatible. Expected '{CharacterSuccessionSystem.SystemId}@{CharacterSuccessionSystem.Version}'.");
+        }
+
         return (
             normalizedCharacters,
             normalizedCareers,
@@ -3011,7 +3193,8 @@ public sealed class WorldState : IWorldQuery
             normalizedCharacterEstateHoldings,
             normalizedCharacterMarriages,
             normalizedCharacterGuardianships,
-            normalizedCharacterPregnancies);
+            normalizedCharacterPregnancies,
+            normalizedCharacterSuccessions);
     }
 
     private static bool IsCompleteEmptyCharacterSnapshot(CharacterWorldSnapshot characters) =>
@@ -3074,6 +3257,13 @@ public sealed class WorldState : IWorldQuery
             == CharacterPregnancyContractVersions.Snapshot
         && characterPregnancies.ActivePregnancies is { Count: 0 };
 
+    private static bool IsCompleteEmptyCharacterSuccessionSnapshot(
+        CharacterSuccessionWorldSnapshot characterSuccessions) =>
+        characterSuccessions.ContractVersion
+            == CharacterSuccessionContractVersions.Snapshot
+        && characterSuccessions.Designations is { Count: 0 }
+        && characterSuccessions.History is { Count: 0 };
+
     private static void ValidatePendingCommands(IReadOnlyList<CampaignCommand> commands)
     {
         if (commands.Select(command => command.CommandId).Distinct().Count() != commands.Count)
@@ -3104,6 +3294,7 @@ public sealed class WorldState : IWorldQuery
                 or CharacterMarriageActionCommandPayload
                 or CharacterConditionActionCommandPayload
                 or CharacterFamilyActionCommandPayload
+                or CharacterSuccessionActionCommandPayload
                 or HouseholdDecisionCommandPayload))
         {
             try
@@ -3128,6 +3319,10 @@ public sealed class WorldState : IWorldQuery
                     CharacterFamilyActionCommandPayload => CharacterFamilyIds.DeriveActionEventId(
                         command.IssuedDate,
                         command.CommandId),
+                    CharacterSuccessionActionCommandPayload =>
+                        CharacterSuccessionIds.DeriveActionEventId(
+                            command.IssuedDate,
+                            command.CommandId),
                     HouseholdDecisionCommandPayload => HouseholdDecisionIds.DeriveActionEventId(
                         command.IssuedDate,
                         command.CommandId),

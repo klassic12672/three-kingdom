@@ -32,11 +32,10 @@ public sealed class CharacterCareerDeathSchemaMigrationTests
         expectedDeath["contractVersion"] = CharacterConditionContractVersions.Death;
         expectedDeath["careerChanges"] = EmptyCareerChanges();
         expectedDeath["releasedCustodyChanges"] = new JsonArray();
-
+        AddExpectedSuccession(expected);
         JsonObject migrated = new SaveSchemaRegistry().MigrateToCurrent(frozen);
 
         Assert.Equal(SaveEnvelope.CurrentSchemaVersion, migrated["schemaVersion"]!.GetValue<int>());
-        Assert.Equal(FrozenChecksum, migrated["checksum"]!.GetValue<string>());
         Assert.True(JsonNode.DeepEquals(expected, migrated));
         Assert.True(JsonNode.DeepEquals(original, frozen));
         Assert.Equal(sourceBytes, File.ReadAllBytes(path));
@@ -55,10 +54,14 @@ public sealed class CharacterCareerDeathSchemaMigrationTests
         Assert.Empty(historicalDeath.CareerChanges.EndedRetinueMemberships);
         Assert.Empty(historicalDeath.CareerChanges.EndedPatronageBonds);
         Assert.Empty(historicalDeath.CareerChanges.EndedEmploymentTenures);
-        Assert.Equal(FrozenChecksum, SimulationChecksum.Compute(envelope.Snapshot).Value);
+        Assert.Equal(
+            migrated["checksum"]!.GetValue<string>(),
+            SimulationChecksum.Compute(envelope.Snapshot).Value);
         Assert.Equal(FrozenChecksum, SimulationChecksum.ComputeForSaveSchema(
             envelope.Snapshot,
             21).Value);
+        Assert.Empty(envelope.Snapshot.CharacterSuccessions.Designations);
+        Assert.Empty(envelope.Snapshot.CharacterSuccessions.History);
 
         CampaignSimulation simulation = new(WorldState.Restore(envelope.Snapshot));
         Assert.IsType<CharacterDeathResolvedOutcome>(
@@ -69,6 +72,21 @@ public sealed class CharacterCareerDeathSchemaMigrationTests
         Assert.Single(careerDeath.CareerChanges.EndedRetinueMemberships);
         Assert.Single(careerDeath.CareerChanges.EndedPatronageBonds);
         Assert.Single(careerDeath.CareerChanges.EndedEmploymentTenures);
+    }
+
+    private static void AddExpectedSuccession(JsonObject expected)
+    {
+        JsonObject snapshot = expected["snapshot"]!.AsObject();
+        snapshot["characterSuccessions"] = JsonSerializer.SerializeToNode(
+            CharacterSuccessionWorldSnapshot.Empty,
+            SimulationJson.CreateOptions());
+        snapshot["systemVersions"]!.AsArray().Add(new JsonObject
+        {
+            ["systemId"] = CharacterSuccessionSystem.SystemId,
+            ["version"] = CharacterSuccessionSystem.Version,
+        });
+        expected["checksum"] = SimulationChecksum.Compute(
+            snapshot.Deserialize<WorldSnapshot>(SimulationJson.CreateOptions())!).Value;
     }
 
     [Fact]

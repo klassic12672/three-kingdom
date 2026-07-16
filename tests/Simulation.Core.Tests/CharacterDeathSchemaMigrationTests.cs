@@ -15,7 +15,7 @@ public sealed class CharacterDeathSchemaMigrationTests
         new("character:fixture/e6-death-candidate");
 
     [Fact]
-    public void F008_ExactE6Schema20AuthenticatesAndMigratesVocabularyOnlyWithoutChangingSource()
+    public void F008_ExactE6Schema20PreservesVocabularyStepThenMigratesToCurrent()
     {
         string path = FixturePath();
         byte[] sourceBytes = File.ReadAllBytes(path);
@@ -27,18 +27,32 @@ public sealed class CharacterDeathSchemaMigrationTests
         SaveSchemaRegistry.ValidateHistoricalSourceChecksum(frozen, 20);
         JsonObject original = (JsonObject)frozen.DeepClone();
 
+        JsonObject schema21 = new SaveMigrationV20ToV21().Migrate(
+            (JsonObject)frozen.DeepClone());
+
+        Assert.Equal(21, schema21["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(FrozenChecksum, schema21["checksum"]!.GetValue<string>());
+        JsonObject expectedSchema21 = (JsonObject)original.DeepClone();
+        expectedSchema21["schemaVersion"] = 21;
+        Assert.True(JsonNode.DeepEquals(expectedSchema21, schema21));
+
         JsonObject migrated = new SaveSchemaRegistry().MigrateToCurrent(frozen);
 
         Assert.Equal(SaveEnvelope.CurrentSchemaVersion, migrated["schemaVersion"]!.GetValue<int>());
-        Assert.Equal(FrozenChecksum, migrated["checksum"]!.GetValue<string>());
-        JsonObject expected = (JsonObject)original.DeepClone();
-        expected["schemaVersion"] = SaveEnvelope.CurrentSchemaVersion;
-        Assert.True(JsonNode.DeepEquals(expected, migrated));
+        JsonObject expectedCurrent = (JsonObject)original.DeepClone();
+        expectedCurrent["schemaVersion"] = SaveEnvelope.CurrentSchemaVersion;
+        AddExpectedSuccession(expectedCurrent);
+        Assert.True(JsonNode.DeepEquals(expectedCurrent, migrated));
         Assert.True(JsonNode.DeepEquals(original, frozen));
         Assert.Equal(sourceBytes, File.ReadAllBytes(path));
         WorldSnapshot snapshot = migrated["snapshot"]!.Deserialize<WorldSnapshot>(
             SimulationJson.CreateOptions())!;
-        Assert.Equal(FrozenChecksum, SimulationChecksum.Compute(snapshot).Value);
+        Assert.Equal(
+            migrated["checksum"]!.GetValue<string>(),
+            SimulationChecksum.Compute(snapshot).Value);
+        Assert.Equal(FrozenChecksum, SimulationChecksum.ComputeForSaveSchema(snapshot, 20).Value);
+        Assert.Empty(snapshot.CharacterSuccessions.Designations);
+        Assert.Empty(snapshot.CharacterSuccessions.History);
         Assert.Equal(CharacterContractVersions.Snapshot, snapshot.Characters.ContractVersion);
         Assert.Contains(
             snapshot.Characters.CharacterStates,
@@ -49,6 +63,21 @@ public sealed class CharacterDeathSchemaMigrationTests
         Assert.Single(snapshot.Careers.Recommendations);
         Assert.Single(snapshot.CharacterResources.Accounts);
         Assert.Single(snapshot.CharacterEstateHoldings.Holdings);
+    }
+
+    private static void AddExpectedSuccession(JsonObject expected)
+    {
+        JsonObject snapshot = expected["snapshot"]!.AsObject();
+        snapshot["characterSuccessions"] = JsonSerializer.SerializeToNode(
+            CharacterSuccessionWorldSnapshot.Empty,
+            SimulationJson.CreateOptions());
+        snapshot["systemVersions"]!.AsArray().Add(new JsonObject
+        {
+            ["systemId"] = CharacterSuccessionSystem.SystemId,
+            ["version"] = CharacterSuccessionSystem.Version,
+        });
+        expected["checksum"] = SimulationChecksum.Compute(
+            snapshot.Deserialize<WorldSnapshot>(SimulationJson.CreateOptions())!).Value;
     }
 
     [Fact]
