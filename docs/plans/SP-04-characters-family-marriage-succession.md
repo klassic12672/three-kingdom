@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Active — through SP-04F7 accepted; SP-04F8 locally verified, hosted pending |
+| Status | Active — through SP-04F8 accepted |
 | Master-plan version | [0.2.0](../MASTER_PLAN.md) |
 | First required milestone | M2 |
 | Dependencies | [SP-01](SP-01-simulation-calendar-determinism-saves.md), [SP-02](SP-02-content-localization-modding-research.md) |
@@ -1087,7 +1087,7 @@ Current local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, a
 
 Precedence, deterministic resolution, spouse/collateral and missing-heir law, inheritance, regency, retinue/office/household effects, disputed support, player continuity, the full SP-04 three-second budget, and full SP-04 acceptance remain open.
 
-## Locally verified package: SP-04F8 neutral explicit succession support
+## Accepted package: SP-04F8 neutral explicit succession support
 
 SP-04F8 is the smallest dependency-safe persistent package after accepted F7. It records one character's explicit support for one candidate in relation to one succession subject, without interpreting that statement as eligibility, claim recognition, strength, rank, precedence, selection, or effect. A separate character-issued Commands-phase `character_succession_support_action.v1` envelope registers `declare_succession_support.v1` and `withdraw_succession_support.v1`. The supporter must be a distinct, born, living, capable, free character. The distinct subject must exist and be born but may have any current life, incapacity, or custody condition. The distinct supported candidate must exist, be born, and be living at declaration or replacement, but may be a minor, incapacitated, detained, captive, or hostage.
 
@@ -1121,13 +1121,13 @@ F8 adds no support weight, endorsement category, secrecy, coercion, eligibility,
 | F814 | Schema 27 requires complete support/history shapes, exact action/outcome/event causality, exact affected IDs, and one succession @3 registration | Current raw-shape and restore tests | Local pass |
 | F815 | A representative 1,000-character/500-support workload records raw local measurements without a brittle threshold | Local Apple Silicon measurement | Local pass; no threshold |
 | F816 | Focused/full suites, validation, formatter, diff/LFS gates, and independent reviews pass | Local repository closeout | Local pass |
-| F817 | The exact implementation SHA passes hosted macOS arm64 and Windows x64 | Clean-checkout hosted CI and artifact evidence | Pending implementation SHA |
+| F817 | The exact implementation SHA passes hosted macOS arm64 and Windows x64 | Clean-checkout hosted CI and artifact evidence | Hosted pass at `c946c87` |
 
 The representative local Release fixture contains 1,000 characters and 500 independent active support records. A raw Apple Silicon run measured 2,424.992 ms for workflow, 1.291 ms for queries, and 452.011 ms for snapshot/checksum/JSON/gzip; snapshot JSON was 1,120,754 bytes, gzip was 68,678 bytes, and checksum was `e49973b2cf62609c1b4a87727aea4b42f9c740b92acb0887493b854d518505ea`. The test asserts shape and correctness without a wall-clock threshold. This component observation neither passes nor waives the full SP-04 three-second campaign-turn budget.
 
-Current local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. The exact `CharacterSuccession` Release filter passes 216/216 cases. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 1,126 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. Focused formatter verification, `git diff --check`, and `git lfs fsck` pass. The exact ten-year deterministic soak passes 1,044 turns to `0200-01-03` with checksum `59010615a11abb51b4c1fe68c90627ac1d722891f1f0e0fe96e812a5a20df2e3`. Independent architecture, compatibility, simulation-engineer, and final integrated verification reviews approve F801–F816 with no remaining local blocker. Exact-SHA hosted evidence remains pending.
+Current local verification on 2026-07-16 uses Darwin arm64, .NET SDK 10.0.301, and Godot 4.6.1. The exact `CharacterSuccession` Release filter passes 216/216 cases. `./scripts/validate.sh` retains 1,295 records and 2,820 translations at unchanged registry checksum `b04754a678bbb971045e4b2d602df5bf5c48fe26fc606b595449391e54d6b2a0`. `./scripts/test.sh Release` builds with zero warnings and passes 1,126 Simulation.Core, 73 Game.Content, 6 Game.Application, and 18 repository tests. Focused formatter verification, `git diff --check`, and `git lfs fsck` pass. The exact ten-year deterministic soak passes 1,044 turns to `0200-01-03` with checksum `59010615a11abb51b4c1fe68c90627ac1d722891f1f0e0fe96e812a5a20df2e3`. Independent architecture, compatibility, simulation-engineer, and final integrated verification reviews approve F801–F816 with no remaining local blocker. Accepted revision `c946c8739d29e9f484bc921223e47cb5f24e38ab` subsequently passed [hosted macOS arm64 and Windows x64 validation, two complete suite executions per platform, import, native export, automated smoke, manifest inspection, artifact upload, and authenticated static artifact verification](../evidence/SP-04F8-EXACT-SHA-c946c87.md). F817 therefore passes and F8 is accepted.
 
-Precedence, deterministic resolution, spouse/collateral and missing-heir law, inheritance, regency, retinue/office/household effects, player continuity, the full SP-04 three-second budget, and full SP-04 acceptance remain open.
+Precedence, deterministic resolution, spouse/collateral and missing-heir law, inheritance, regency, retinue/office/household effects, player continuity, the full SP-04 three-second budget, and full SP-04 acceptance remain open. Later package implementation is paused after F8 at the user's request.
 
 ## Edge cases and failure handling
 
