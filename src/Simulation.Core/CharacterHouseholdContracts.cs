@@ -29,6 +29,7 @@ public static class CharacterConditionSystem
 [JsonDerivedType(typeof(ReleaseCharacterCustodyAction), "release_character_custody.v1")]
 [JsonDerivedType(typeof(ResolveCharacterDeathAction), "resolve_character_death.v1")]
 [JsonDerivedType(typeof(ResolveHouseholdHeadDeathAction), "resolve_household_head_death.v1")]
+[JsonDerivedType(typeof(ResolveCharacterSuccessionDeathAction), "resolve_character_succession_death.v1")]
 public interface ICharacterConditionAction;
 
 public sealed record IncapacitateCharacterAction(
@@ -59,6 +60,15 @@ public sealed record ResolveHouseholdHeadDeathAction(
     EntityId HouseholdId,
     EntityId ReplacementHeadCharacterId) : ICharacterConditionAction;
 
+public sealed record ResolveCharacterSuccessionDeathAction(
+    EntityId CharacterId,
+    CharacterConditionState ExpectedCurrent,
+    SuccessionResolutionRule Rule,
+    EntityId ExpectedResolutionStateId,
+    EntityId? HouseholdId,
+    EntityId? ReplacementHeadCharacterId,
+    EntityId? RegentCharacterId) : ICharacterConditionAction;
+
 [method: JsonConstructor]
 public sealed record CharacterConditionActionCommandPayload(ICharacterConditionAction Action)
     : ICampaignCommandPayload;
@@ -79,6 +89,7 @@ public sealed record CharacterConditionChange(
 [JsonDerivedType(typeof(CharacterConditionChangedOutcome), "character_condition_changed.v1")]
 [JsonDerivedType(typeof(CharacterDeathResolvedOutcome), "character_death_resolved.v1")]
 [JsonDerivedType(typeof(HouseholdHeadDeathResolvedOutcome), "household_head_death_resolved.v1")]
+[JsonDerivedType(typeof(CharacterSuccessionDeathResolvedOutcome), "character_succession_death_resolved.v1")]
 public interface ICharacterConditionActionOutcome;
 
 public sealed record CharacterConditionChangedOutcome(
@@ -117,6 +128,12 @@ public sealed record HouseholdHeadChange(
 public sealed record HouseholdHeadDeathResolvedOutcome(
     CharacterDeathChange Death,
     HouseholdHeadChange HouseholdHeadChange)
+    : ICharacterConditionActionOutcome;
+
+public sealed record CharacterSuccessionDeathResolvedOutcome(
+    CharacterDeathChange Death,
+    HouseholdHeadChange? HouseholdHeadChange,
+    SuccessionResolutionState Succession)
     : ICharacterConditionActionOutcome;
 
 public sealed record CharacterConditionActionResolvedEventPayload(

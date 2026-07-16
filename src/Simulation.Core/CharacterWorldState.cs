@@ -410,6 +410,30 @@ public sealed class CharacterWorldState : IAuthoritativeCharacterWorldQuery
             eventId);
     }
 
+    internal CharacterDeathMutationPlan PrepareSuccessionDeathAction(
+        ResolveCharacterSuccessionDeathAction action,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (action is null)
+        {
+            throw new SimulationValidationException(
+                "Character-succession death action cannot be null.");
+        }
+
+        return PrepareDeathActionCore(
+            action.CharacterId,
+            action.ExpectedCurrent,
+            action.HouseholdId,
+            action.ReplacementHeadCharacterId,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+    }
+
     private CharacterDeathMutationPlan PrepareDeathActionCore(
         EntityId characterId,
         CharacterConditionState expectedCurrent,

@@ -266,6 +266,96 @@ public sealed class CharacterResourceWorldState : IAuthoritativeCharacterResourc
         return new CharacterResourceWorldUpdatePlan(candidate);
     }
 
+    internal CharacterResourceInheritancePlan PrepareInheritance(
+        EntityId sourceCharacterId,
+        EntityId recipientCharacterId,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        ValidateId(sourceCharacterId, "Inheritance source character ID");
+        ValidateId(recipientCharacterId, "Inheritance recipient character ID");
+        ValidateId(commandId, "Inheritance command ID");
+        ValidateId(eventId, "Inheritance resource event ID");
+        if (!resolutionDate.IsValid
+            || resolutionDate.CompareTo(calendar.Date) < 0
+            || authoritativeTurnIndex < calendar.TurnIndex)
+        {
+            throw new SimulationValidationException(
+                "Inheritance wealth transfer cannot precede resource state.");
+        }
+
+        ValidateCharacterAtDate(
+            sourceCharacterId,
+            resolutionDate,
+            "Inheritance source");
+        ValidateCharacterAtDate(
+            recipientCharacterId,
+            resolutionDate,
+            "Inheritance recipient");
+        if (sourceCharacterId == recipientCharacterId
+            || eventId != CharacterResourceIds.DeriveActionEventId(
+                resolutionDate,
+                commandId))
+        {
+            throw new SimulationValidationException(
+                "Inheritance wealth transfer has invalid participants or deterministic event identity.");
+        }
+
+        long amount = GetStoredWealth(sourceCharacterId);
+        CampaignCalendar candidateCalendar = new(
+            resolutionDate.CompareTo(calendar.Date) > 0 ? resolutionDate : calendar.Date,
+            Math.Max(calendar.TurnIndex, authoritativeTurnIndex));
+        CharacterResourceWorldState candidate = new(
+            CaptureSnapshot(),
+            characters,
+            candidateCalendar);
+        if (amount == 0)
+        {
+            return new CharacterResourceInheritancePlan(
+                null,
+                new CharacterResourceWorldUpdatePlan(candidate));
+        }
+
+        long recipientWealth = GetStoredWealth(recipientCharacterId);
+        if (recipientWealth > long.MaxValue - amount)
+        {
+            throw new SimulationValidationException(
+                "Inheritance wealth transfer would overflow recipient wealth.");
+        }
+
+        WealthTransferRecord transfer = new(
+            CharacterResourceContractVersions.State,
+            CharacterResourceIds.DeriveWealthTransferId(eventId),
+            sourceCharacterId,
+            recipientCharacterId,
+            amount,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+        WealthTransferredOutcome outcome = new(
+            CharacterResourceContractVersions.Outcome,
+            transfer,
+            0,
+            checked(recipientWealth + amount),
+            CreateLedgerEntry(
+                transfer,
+                sourceCharacterId,
+                recipientCharacterId,
+                WealthLedgerDirection.Outgoing),
+            CreateLedgerEntry(
+                transfer,
+                recipientCharacterId,
+                sourceCharacterId,
+                WealthLedgerDirection.Incoming));
+        candidate.CommitTransfer(outcome);
+        return new CharacterResourceInheritancePlan(
+            (WealthTransferredOutcome)Clone(outcome),
+            new CharacterResourceWorldUpdatePlan(candidate));
+    }
+
     internal void ApplyOutcome(
         CharacterResourceActionResolvedEventPayload payload,
         CampaignDate resolutionDate,
@@ -974,3 +1064,7 @@ public sealed class CharacterResourceWorldState : IAuthoritativeCharacterResourc
 }
 
 internal sealed record CharacterResourceWorldUpdatePlan(CharacterResourceWorldState Candidate);
+
+internal sealed record CharacterResourceInheritancePlan(
+    WealthTransferredOutcome? WealthTransfer,
+    CharacterResourceWorldUpdatePlan ResourcePlan);

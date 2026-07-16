@@ -111,6 +111,7 @@ public sealed class WorldState : IWorldQuery
             characterSuccessions,
             Characters,
             calendar);
+        ValidateSuccessionResolutionCrossSubsystemEvidence();
     }
 
     private void ValidateCharacterEducationAttainmentGuardianships()
@@ -134,6 +135,64 @@ public sealed class WorldState : IWorldQuery
             {
                 throw new SimulationValidationException(
                     $"Character education attainment '{attainment.AttainmentId}' does not match its retained primary guardianship source.");
+            }
+        }
+    }
+
+    private void ValidateSuccessionResolutionCrossSubsystemEvidence()
+    {
+        IReadOnlyDictionary<EntityId, CharacterGuardianshipState> guardianships =
+            CharacterGuardianships.Guardianships.ToDictionary(
+                item => item.GuardianshipId);
+        foreach (SuccessionResolutionState resolution in CharacterSuccessions.Resolutions)
+        {
+            if (!Characters.TryGetCharacterProfile(
+                    resolution.SubjectCharacterId,
+                    out AuthoritativeCharacterProfile? subject)
+                || subject.Condition.VitalStatus != CharacterVitalStatus.Dead)
+            {
+                throw new SimulationValidationException(
+                    $"Succession resolution '{resolution.ResolutionId}' must refer to its dead subject.");
+            }
+
+            foreach (SuccessionEstateTransfer transfer
+                     in resolution.Inheritance.EstateTransfers)
+            {
+                if (!CharacterEstateHoldings.TryGetHolding(
+                        transfer.EstateId,
+                        out _))
+                {
+                    throw new SimulationValidationException(
+                        $"Succession resolution '{resolution.ResolutionId}' refers to missing estate '{transfer.EstateId}'.");
+                }
+            }
+
+            if (resolution.Regency is not SuccessionRegencyHook
+                {
+                    SourceGuardianshipId: EntityId guardianshipId,
+                    SourceGuardianCharacterId: EntityId guardianId,
+                } regency)
+            {
+                continue;
+            }
+
+            if (!guardianships.TryGetValue(
+                    guardianshipId,
+                    out CharacterGuardianshipState? guardianship)
+                || guardianship.WardCharacterId
+                    != regency.SuccessorCharacterId
+                || guardianship.GuardianCharacterId != guardianId
+                || guardianship.EstablishedDate.CompareTo(
+                    resolution.ResolutionDate) > 0
+                || guardianship.EstablishedTurnIndex
+                    > resolution.ResolutionTurnIndex
+                || guardianship.EndDate is CampaignDate endDate
+                    && endDate.CompareTo(resolution.ResolutionDate) < 0
+                || guardianship.EndTurnIndex is long endTurnIndex
+                    && endTurnIndex < resolution.ResolutionTurnIndex)
+            {
+                throw new SimulationValidationException(
+                    $"Succession resolution '{resolution.ResolutionId}' does not match its retained source guardianship.");
             }
         }
     }
@@ -486,6 +545,190 @@ public sealed class WorldState : IWorldQuery
         return false;
     }
 
+    public EntityId GetCharacterSuccessionResolutionStateId(
+        EntityId subjectCharacterId,
+        SuccessionResolutionRule rule,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId? householdId = null,
+        EntityId? replacementHeadCharacterId = null,
+        EntityId? regentCharacterId = null)
+    {
+        SuccessionResolutionDecision decision =
+            CharacterSuccessions.PlanResolutionDecision(
+                subjectCharacterId,
+                rule,
+                CharacterMarriages,
+                CharacterGuardianships,
+                regentCharacterId,
+                resolutionDate,
+                authoritativeTurnIndex);
+        EntityId? selectedId = decision.SelectedCandidate?.CandidateCharacterId;
+        CharacterWealthAccountState? sourceAccount =
+            CharacterResources.TryGetAccount(
+                subjectCharacterId,
+                out CharacterWealthAccountState? storedSourceAccount)
+                    ? storedSourceAccount
+                    : null;
+        CharacterWealthAccountState? selectedAccount =
+            selectedId is EntityId recipientId
+            && CharacterResources.TryGetAccount(
+                recipientId,
+                out CharacterWealthAccountState? storedSelectedAccount)
+                    ? storedSelectedAccount
+                    : null;
+        CharacterWealthHistoryAggregate? sourceHistory =
+            CharacterResources.TryGetHistory(
+                subjectCharacterId,
+                out CharacterWealthHistoryAggregate? storedSourceHistory)
+                    ? storedSourceHistory
+                    : null;
+        CharacterWealthHistoryAggregate? selectedHistory =
+            selectedId is EntityId selectedCharacterId
+            && CharacterResources.TryGetHistory(
+                selectedCharacterId,
+                out CharacterWealthHistoryAggregate? storedSelectedHistory)
+                    ? storedSelectedHistory
+                    : null;
+        AuthoritativeCharacterProfile? regent =
+            regentCharacterId is EntityId regentId
+            && Characters.TryGetCharacterProfile(
+                regentId,
+                out AuthoritativeCharacterProfile? storedRegent)
+                    ? storedRegent
+                    : null;
+        IReadOnlyList<WealthLedgerEntry> selectedLedger =
+            selectedId is EntityId selectedLedgerId
+                ? CharacterResources.GetLedgerEntries(selectedLedgerId)
+                : Array.Empty<WealthLedgerEntry>();
+        IReadOnlyList<CharacterEstateHoldingState> selectedEstates =
+            selectedId is EntityId selectedEstateId
+                ? CharacterEstateHoldings.GetHoldingsOwnedBy(selectedEstateId)
+                : Array.Empty<CharacterEstateHoldingState>();
+        CharacterSuccessionDeathStateEvidence deathEvidence =
+            PlanCharacterSuccessionDeathStateEvidence(
+                subjectCharacterId,
+                rule,
+                resolutionDate,
+                authoritativeTurnIndex,
+                householdId,
+                replacementHeadCharacterId,
+                regentCharacterId);
+        JsonSerializerOptions options = SimulationJson.CreateOptions();
+        return CharacterSuccessionIds.DeriveResolutionStateId(
+            StableId.FormatDate(resolutionDate),
+            authoritativeTurnIndex.ToString(
+                System.Globalization.CultureInfo.InvariantCulture),
+            subjectCharacterId.Value,
+            householdId?.Value ?? string.Empty,
+            replacementHeadCharacterId?.Value ?? string.Empty,
+            regentCharacterId?.Value ?? string.Empty,
+            JsonSerializer.Serialize(decision, options),
+            JsonSerializer.Serialize(CharacterSuccessions.CampaignContinuity, options),
+            JsonSerializer.Serialize(sourceAccount, options),
+            JsonSerializer.Serialize(selectedAccount, options),
+            JsonSerializer.Serialize(
+                CharacterResources.GetLedgerEntries(subjectCharacterId),
+                options),
+            JsonSerializer.Serialize(selectedLedger, options),
+            JsonSerializer.Serialize(sourceHistory, options),
+            JsonSerializer.Serialize(selectedHistory, options),
+            JsonSerializer.Serialize(
+                CharacterEstateHoldings.GetHoldingsOwnedBy(subjectCharacterId),
+                options),
+            JsonSerializer.Serialize(selectedEstates, options),
+            JsonSerializer.Serialize(regent, options),
+            JsonSerializer.Serialize(deathEvidence, options));
+    }
+
+    private CharacterSuccessionDeathStateEvidence
+        PlanCharacterSuccessionDeathStateEvidence(
+            EntityId subjectCharacterId,
+            SuccessionResolutionRule rule,
+            CampaignDate resolutionDate,
+            long authoritativeTurnIndex,
+            EntityId? householdId,
+            EntityId? replacementHeadCharacterId,
+            EntityId? regentCharacterId)
+    {
+        if (!Characters.TryGetCharacterProfile(
+                subjectCharacterId,
+                out AuthoritativeCharacterProfile? subject))
+        {
+            throw new SimulationValidationException(
+                $"Succession-resolution subject '{subjectCharacterId}' does not exist.");
+        }
+
+        EntityId probeCommandId =
+            CharacterSuccessionIds.DeriveResolutionStateId(
+                "death-consequence-probe.v1",
+                StableId.FormatDate(resolutionDate),
+                authoritativeTurnIndex.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture),
+                subjectCharacterId.Value,
+                householdId?.Value ?? string.Empty,
+                replacementHeadCharacterId?.Value ?? string.Empty);
+        EntityId probeEventId = CharacterConditionIds.DeriveActionEventId(
+            resolutionDate,
+            probeCommandId);
+        ResolveCharacterSuccessionDeathAction probeAction = new(
+            subjectCharacterId,
+            subject.Condition,
+            rule,
+            probeCommandId,
+            householdId,
+            replacementHeadCharacterId,
+            regentCharacterId);
+        ValidateSuccessionHouseholdAction(probeAction);
+        CharacterDeathMutationPlan character =
+            Characters.PrepareSuccessionDeathAction(
+                probeAction,
+                resolutionDate,
+                authoritativeTurnIndex,
+                probeCommandId,
+                probeEventId);
+        CharacterMarriageLifecycleUpdatePlan marriage =
+            CharacterMarriages.PrepareLifecycleChange(
+                character.CharacterPlan.Candidate,
+                subjectCharacterId,
+                CharacterMarriageLifecycleReason.CharacterDied,
+                resolutionDate,
+                authoritativeTurnIndex,
+                probeCommandId);
+        CharacterGuardianshipDeathPlan guardianship =
+            CharacterGuardianships.PrepareCharacterDeath(
+                subjectCharacterId,
+                character.CharacterPlan.Candidate,
+                resolutionDate,
+                authoritativeTurnIndex,
+                probeCommandId,
+                probeEventId);
+        CharacterPregnancyDeathPlan pregnancy =
+            CharacterPregnancies.PrepareCharacterDeath(
+                subjectCharacterId,
+                character.CharacterPlan.Candidate,
+                marriage.MarriagePlan.Candidate,
+                resolutionDate,
+                authoritativeTurnIndex,
+                probeCommandId,
+                probeEventId);
+        CharacterCareerDeathPlan career = Careers.PrepareCharacterDeath(
+            subjectCharacterId,
+            character.CharacterPlan.Candidate,
+            resolutionDate,
+            authoritativeTurnIndex,
+            probeCommandId,
+            probeEventId);
+        return new(
+            character.Change,
+            character.ReleasedCustodyChanges,
+            character.HouseholdHeadChange,
+            marriage.Changes,
+            guardianship.EndedGuardianships,
+            pregnancy.RemovedPregnancies,
+            career.Changes);
+    }
+
     public WorldSnapshot CaptureSnapshot() => new(
         ContractVersions.WorldSnapshot,
         Calendar,
@@ -657,6 +900,15 @@ public sealed class WorldState : IWorldQuery
                 "Character-condition actions require the reserved authoritative simulation actor and exact event identity.");
         }
 
+        if (payload.Action is ResolveCharacterDeathAction legacyDeath
+                && IsActiveControlledCharacter(legacyDeath.CharacterId)
+            || payload.Action is ResolveHouseholdHeadDeathAction legacyHeadDeath
+                && IsActiveControlledCharacter(legacyHeadDeath.CharacterId))
+        {
+            throw new SimulationValidationException(
+                "The active controlled character must die through succession resolution.");
+        }
+
         if (payload.Action is ResolveCharacterDeathAction death)
         {
             return PrepareCharacterDeathAction(
@@ -673,6 +925,17 @@ public sealed class WorldState : IWorldQuery
             return PrepareHouseholdHeadDeathAction(
                 actingActorId,
                 householdHeadDeath,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId,
+                eventId);
+        }
+
+        if (payload.Action is ResolveCharacterSuccessionDeathAction successionDeath)
+        {
+            return PrepareCharacterSuccessionDeathAction(
+                actingActorId,
+                successionDeath,
                 resolutionDate,
                 authoritativeTurnIndex,
                 commandId,
@@ -876,6 +1139,174 @@ public sealed class WorldState : IWorldQuery
             guardianship.GuardianshipPlan,
             pregnancy.PregnancyPlan,
             career.CareerPlan);
+    }
+
+    private CharacterConditionAggregatePlan PrepareCharacterSuccessionDeathAction(
+        EntityId actingActorId,
+        ResolveCharacterSuccessionDeathAction action,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        ValidateSuccessionHouseholdAction(action);
+        EntityId currentStateId = GetCharacterSuccessionResolutionStateId(
+            action.CharacterId,
+            action.Rule,
+            resolutionDate,
+            authoritativeTurnIndex,
+            action.HouseholdId,
+            action.ReplacementHeadCharacterId,
+            action.RegentCharacterId);
+        if (action.ExpectedResolutionStateId != currentStateId)
+        {
+            throw new SimulationValidationException(
+                $"Character-succession death expected state is stale for '{action.CharacterId}'.");
+        }
+
+        SuccessionResolutionDecision decision =
+            CharacterSuccessions.PlanResolutionDecision(
+                action.CharacterId,
+                action.Rule,
+                CharacterMarriages,
+                CharacterGuardianships,
+                action.RegentCharacterId,
+                resolutionDate,
+                authoritativeTurnIndex);
+        CharacterDeathMutationPlan character = Characters.PrepareSuccessionDeathAction(
+            action,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+        CharacterMarriageLifecycleUpdatePlan marriage = CharacterMarriages.PrepareLifecycleChange(
+            character.CharacterPlan.Candidate,
+            character.Change.CharacterId,
+            CharacterMarriageLifecycleReason.CharacterDied,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId);
+        CharacterGuardianshipDeathPlan guardianship =
+            CharacterGuardianships.PrepareCharacterDeath(
+                action.CharacterId,
+                character.CharacterPlan.Candidate,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId,
+                eventId);
+        CharacterPregnancyDeathPlan pregnancy = CharacterPregnancies.PrepareCharacterDeath(
+            action.CharacterId,
+            character.CharacterPlan.Candidate,
+            marriage.MarriagePlan.Candidate,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+        CharacterCareerDeathPlan career = Careers.PrepareCharacterDeath(
+            action.CharacterId,
+            character.CharacterPlan.Candidate,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+        CharacterDeathChange death = new(
+            CharacterConditionContractVersions.Death,
+            CharacterConditionIds.DeriveDeathId(eventId, action.CharacterId),
+            character.Change,
+            character.ReleasedCustodyChanges,
+            marriage.Changes,
+            guardianship.EndedGuardianships,
+            pregnancy.RemovedPregnancies,
+            career.Changes,
+            resolutionDate,
+            authoritativeTurnIndex,
+            commandId,
+            eventId);
+
+        CharacterResourceInheritancePlan? resource = null;
+        CharacterEstateInheritancePlan? estate = null;
+        if (decision.SelectedCandidate is SuccessionResolutionCandidate selected)
+        {
+            resource = CharacterResources.PrepareInheritance(
+                action.CharacterId,
+                selected.CandidateCharacterId,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId,
+                CharacterResourceIds.DeriveActionEventId(
+                    resolutionDate,
+                    commandId));
+            estate = CharacterEstateHoldings.PrepareInheritance(
+                action.CharacterId,
+                selected.CandidateCharacterId,
+                resolutionDate);
+        }
+
+        SuccessionInheritanceChange inheritance = new(
+            CharacterSuccessionContractVersions.Inheritance,
+            resource?.WealthTransfer,
+            estate?.Transfers ?? []);
+        CharacterSuccessionResolutionPlan succession =
+            CharacterSuccessions.PrepareResolution(
+                decision,
+                death.DeathId,
+                inheritance,
+                resolutionDate,
+                authoritativeTurnIndex,
+                commandId,
+                eventId);
+        CharacterConditionActionResolvedEventPayload resolved = new(
+            actingActorId,
+            action,
+            new CharacterSuccessionDeathResolvedOutcome(
+                death,
+                character.HouseholdHeadChange,
+                succession.Resolution));
+        return new CharacterConditionAggregatePlan(
+            resolved,
+            character.CharacterPlan,
+            marriage.MarriagePlan,
+            null,
+            guardianship.GuardianshipPlan,
+            pregnancy.PregnancyPlan,
+            career.CareerPlan,
+            resource?.ResourcePlan,
+            estate?.EstatePlan,
+            succession.SuccessionPlan);
+    }
+
+    private bool IsActiveControlledCharacter(EntityId characterId) =>
+        CharacterSuccessions.CampaignContinuity is
+        {
+            Status: PlayerCampaignContinuityStatus.Active,
+            ControlledCharacterId: EntityId controlledCharacterId,
+        }
+        && controlledCharacterId == characterId;
+
+    private void ValidateSuccessionHouseholdAction(
+        ResolveCharacterSuccessionDeathAction action)
+    {
+        AuthoritativeHouseholdView? currentHeadHousehold = Characters.Households
+            .SingleOrDefault(item => item.HeadCharacterId == action.CharacterId);
+        bool suppliesHousehold = action.HouseholdId is not null
+            || action.ReplacementHeadCharacterId is not null;
+        if (currentHeadHousehold is null)
+        {
+            if (suppliesHousehold)
+            {
+                throw new SimulationValidationException(
+                    "Non-head succession death cannot include household-head replacement data.");
+            }
+
+            return;
+        }
+
+        if (action.HouseholdId != currentHeadHousehold.HouseholdId
+            || action.ReplacementHeadCharacterId is null)
+        {
+            throw new SimulationValidationException(
+                "Household-head succession death requires the exact current household and an explicit same-household replacement.");
+        }
     }
 
     private void ValidateCharacterDeathBlockers(EntityId characterId)
@@ -1543,6 +1974,21 @@ public sealed class WorldState : IWorldQuery
             Careers.ApplyPrepared(aggregate.CareerPlan);
         }
 
+        if (aggregate.ResourcePlan is not null)
+        {
+            CharacterResources.ApplyPrepared(aggregate.ResourcePlan);
+        }
+
+        if (aggregate.EstatePlan is not null)
+        {
+            CharacterEstateHoldings.CommitPrepared(aggregate.EstatePlan);
+        }
+
+        if (aggregate.SuccessionPlan is not null)
+        {
+            CharacterSuccessions.ApplyPrepared(aggregate.SuccessionPlan);
+        }
+
         if (aggregate.RelationshipPlan is not null)
         {
             Relationships.ApplyPrepared(aggregate.RelationshipPlan);
@@ -1896,10 +2342,49 @@ public sealed class WorldState : IWorldQuery
                     outcome.Death,
                     eventId);
                 break;
+            case (ResolveCharacterSuccessionDeathAction action,
+                CharacterSuccessionDeathResolvedOutcome outcome)
+                when outcome.Death is not null
+                    && outcome.Succession is not null
+                    && outcome.Death.ConditionChange is not null
+                    && outcome.Death.ReleasedCustodyChanges is not null
+                    && outcome.Death.MarriageChanges is not null
+                    && outcome.Death.EndedGuardianships is not null
+                    && outcome.Death.RemovedPregnancies is not null
+                    && outcome.Death.CareerChanges is not null
+                    && outcome.Death.ConditionChange.CharacterId == action.CharacterId:
+                AddCharacterDeath(affected, outcome.Death, eventId);
+                if (outcome.HouseholdHeadChange is HouseholdHeadChange headChange)
+                {
+                    AddHouseholdHeadChange(
+                        affected,
+                        headChange,
+                        action.CharacterId,
+                        action.HouseholdId,
+                        action.ReplacementHeadCharacterId,
+                        outcome.Death,
+                        eventId);
+                }
+                else if (action.HouseholdId is not null
+                    || action.ReplacementHeadCharacterId is not null)
+                {
+                    throw new SimulationValidationException(
+                        "Succession death action and household-head evidence do not match.");
+                }
+
+                AddSuccessionResolution(
+                    affected,
+                    action,
+                    outcome.Succession,
+                    outcome.Death,
+                    eventId);
+                break;
             case (ResolveCharacterDeathAction, _):
             case (_, CharacterDeathResolvedOutcome):
             case (ResolveHouseholdHeadDeathAction, _):
             case (_, HouseholdHeadDeathResolvedOutcome):
+            case (ResolveCharacterSuccessionDeathAction, _):
+            case (_, CharacterSuccessionDeathResolvedOutcome):
                 throw new SimulationValidationException(
                     "Character-death action and outcome do not match.");
             case (_, CharacterConditionChangedOutcome outcome)
@@ -1918,7 +2403,8 @@ public sealed class WorldState : IWorldQuery
         if (payload.RelationshipMemoryConsequence is not null)
         {
             if (payload.Outcome is CharacterDeathResolvedOutcome
-                or HouseholdHeadDeathResolvedOutcome)
+                or HouseholdHeadDeathResolvedOutcome
+                or CharacterSuccessionDeathResolvedOutcome)
             {
                 throw new SimulationValidationException(
                     "Character-death outcomes cannot contain a relationship consequence.");
@@ -2059,18 +2545,36 @@ public sealed class WorldState : IWorldQuery
         HouseholdHeadChange change,
         ResolveHouseholdHeadDeathAction action,
         CharacterDeathChange death,
+        EntityId? eventId) => AddHouseholdHeadChange(
+            affected,
+            change,
+            action.CharacterId,
+            action.HouseholdId,
+            action.ReplacementHeadCharacterId,
+            death,
+            eventId);
+
+    private static void AddHouseholdHeadChange(
+        ISet<EntityId> affected,
+        HouseholdHeadChange change,
+        EntityId characterId,
+        EntityId? householdId,
+        EntityId? replacementHeadCharacterId,
+        CharacterDeathChange death,
         EntityId? eventId)
     {
         if (eventId is not EntityId sourceEventId
             || !sourceEventId.IsValid
+            || householdId is not EntityId validHouseholdId
+            || replacementHeadCharacterId is not EntityId validReplacementId
             || change.ContractVersion
                 != CharacterConditionContractVersions.HouseholdHeadChange
             || change.ChangeId != CharacterConditionIds.DeriveHouseholdHeadChangeId(
                 sourceEventId,
-                action.HouseholdId)
-            || change.HouseholdId != action.HouseholdId
-            || change.PreviousHeadCharacterId != action.CharacterId
-            || change.CurrentHeadCharacterId != action.ReplacementHeadCharacterId
+                validHouseholdId)
+            || change.HouseholdId != validHouseholdId
+            || change.PreviousHeadCharacterId != characterId
+            || change.CurrentHeadCharacterId != validReplacementId
             || change.PreviousHeadCharacterId == change.CurrentHeadCharacterId
             || change.ResolutionDate != death.ResolutionDate
             || change.ResolutionTurnIndex != death.ResolutionTurnIndex
@@ -2086,6 +2590,137 @@ public sealed class WorldState : IWorldQuery
         affected.Add(change.HouseholdId);
         affected.Add(change.PreviousHeadCharacterId);
         affected.Add(change.CurrentHeadCharacterId);
+    }
+
+    private static void AddSuccessionResolution(
+        ISet<EntityId> affected,
+        ResolveCharacterSuccessionDeathAction action,
+        SuccessionResolutionState resolution,
+        CharacterDeathChange death,
+        EntityId? eventId)
+    {
+        if (eventId is not EntityId sourceEventId
+            || !sourceEventId.IsValid
+            || resolution.ContractVersion
+                != CharacterSuccessionContractVersions.Resolution
+            || resolution.SubjectCharacterId != action.CharacterId
+            || resolution.DeathId != death.DeathId
+            || resolution.ResolutionId != CharacterSuccessionIds.DeriveResolutionId(
+                sourceEventId,
+                action.CharacterId)
+            || resolution.SourceCommandId != death.SourceCommandId
+            || resolution.SourceEventId != sourceEventId
+            || resolution.ResolutionDate != death.ResolutionDate
+            || resolution.ResolutionTurnIndex != death.ResolutionTurnIndex
+            || resolution.DisputedCandidates is null
+            || resolution.Inheritance is null)
+        {
+            throw new SimulationValidationException(
+                "Succession-death resolution identity or coordinates are invalid.");
+        }
+
+        affected.Add(resolution.ResolutionId);
+        affected.Add(resolution.SubjectCharacterId);
+        if (resolution.SelectedCandidate is SuccessionResolutionCandidate selected)
+        {
+            AddSuccessionCandidate(affected, selected);
+        }
+
+        foreach (SuccessionResolutionCandidate disputed in resolution.DisputedCandidates)
+        {
+            AddSuccessionCandidate(affected, disputed);
+        }
+
+        if (resolution.Inheritance.WealthTransfer is WealthTransferredOutcome wealth)
+        {
+            affected.Add(wealth.Transfer.TransferId);
+            affected.Add(wealth.Transfer.SourceCharacterId);
+            affected.Add(wealth.Transfer.RecipientCharacterId);
+            affected.Add(CharacterResourceIds.DeriveWealthAccountId(
+                wealth.Transfer.SourceCharacterId));
+            affected.Add(CharacterResourceIds.DeriveWealthAccountId(
+                wealth.Transfer.RecipientCharacterId));
+            affected.Add(wealth.OutgoingEntry.EntryId);
+            affected.Add(wealth.IncomingEntry.EntryId);
+        }
+
+        foreach (SuccessionEstateTransfer transfer in resolution.Inheritance.EstateTransfers)
+        {
+            affected.Add(transfer.EstateId);
+            affected.Add(transfer.PreviousOwnerCharacterId);
+            affected.Add(transfer.CurrentOwnerCharacterId);
+        }
+
+        if (resolution.Regency is SuccessionRegencyHook regency)
+        {
+            affected.Add(regency.SuccessorCharacterId);
+            if (regency.RegentCharacterId is EntityId regentId)
+            {
+                affected.Add(regentId);
+            }
+
+            if (regency.SourceGuardianshipId is EntityId guardianshipId)
+            {
+                affected.Add(guardianshipId);
+            }
+
+            if (regency.SourceGuardianCharacterId is EntityId guardianId)
+            {
+                affected.Add(guardianId);
+            }
+
+            if (regency.SourceCustodianCharacterId is EntityId custodianId)
+            {
+                affected.Add(custodianId);
+            }
+        }
+
+        AddContinuityCharacter(affected, resolution.PreviousCampaignContinuity);
+        AddContinuityCharacter(affected, resolution.CurrentCampaignContinuity);
+    }
+
+    private static void AddSuccessionCandidate(
+        ISet<EntityId> affected,
+        SuccessionResolutionCandidate candidate)
+    {
+        affected.Add(candidate.CandidateCharacterId);
+        if (candidate.ActiveClaimId is EntityId claimId)
+        {
+            affected.Add(claimId);
+        }
+
+        foreach (EntityId supportId in candidate.ActiveSupportIds)
+        {
+            affected.Add(supportId);
+        }
+
+        foreach (SuccessionLegalBasisEvidence basis in candidate.LegalBases)
+        {
+            if (basis.SourceDesignationId is EntityId designationId)
+            {
+                affected.Add(designationId);
+            }
+
+            if (basis.SourceMarriageUnionId is EntityId unionId)
+            {
+                affected.Add(unionId);
+            }
+
+            if (basis.SharedAncestorCharacterId is EntityId ancestorId)
+            {
+                affected.Add(ancestorId);
+            }
+        }
+    }
+
+    private static void AddContinuityCharacter(
+        ISet<EntityId> affected,
+        PlayerCampaignContinuityState? continuity)
+    {
+        if (continuity?.ControlledCharacterId is EntityId characterId)
+        {
+            affected.Add(characterId);
+        }
     }
 
     private static void AddCharacterCareerDeathChanges(
@@ -3575,7 +4210,19 @@ internal sealed record CharacterConditionAggregatePlan(
     RelationshipWorldUpdatePlan? RelationshipPlan,
     CharacterGuardianshipWorldUpdatePlan? GuardianshipPlan,
     CharacterPregnancyWorldUpdatePlan? PregnancyPlan,
-    CharacterCareerWorldUpdatePlan? CareerPlan);
+    CharacterCareerWorldUpdatePlan? CareerPlan,
+    CharacterResourceWorldUpdatePlan? ResourcePlan = null,
+    CharacterEstateHoldingWorldUpdatePlan? EstatePlan = null,
+    CharacterSuccessionWorldUpdatePlan? SuccessionPlan = null);
+
+internal sealed record CharacterSuccessionDeathStateEvidence(
+    CharacterConditionChange ConditionChange,
+    IReadOnlyList<CharacterConditionChange> ReleasedCustodyChanges,
+    HouseholdHeadChange? HouseholdHeadChange,
+    CharacterMarriageLifecycleChangeSet MarriageChanges,
+    IReadOnlyList<CharacterGuardianshipState> EndedGuardianships,
+    IReadOnlyList<CharacterPregnancyState> RemovedPregnancies,
+    CharacterCareerDeathChangeSet CareerChanges);
 
 internal sealed record CharacterFamilyAggregatePlan(
     CharacterFamilyActionResolvedEventPayload ResolvedPayload,

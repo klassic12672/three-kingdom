@@ -19,6 +19,11 @@ public sealed class CharacterSuccessionWorldState
         activeSupportByPair = [];
     private readonly SortedDictionary<EntityId, SuccessionSupportHistoryAggregate>
         supportHistory = [];
+    private readonly SortedDictionary<EntityId, SuccessionResolutionState> resolutions = [];
+    private readonly Dictionary<EntityId, EntityId> resolutionBySubject = [];
+    private SuccessionResolutionHistoryAggregate resolutionHistory =
+        SuccessionResolutionHistoryAggregate.Empty;
+    private PlayerCampaignContinuityState? campaignContinuity;
     private CampaignCalendar calendar;
 
     public CharacterSuccessionWorldState(
@@ -44,6 +49,13 @@ public sealed class CharacterSuccessionWorldState
         AddClaimHistory(snapshot.ClaimHistory);
         AddSupports(snapshot.Supports);
         AddSupportHistory(snapshot.SupportHistory);
+        AddResolutions(snapshot.Resolutions);
+        ValidateResolutionHistory(snapshot.ResolutionHistory);
+        resolutionHistory = Clone(snapshot.ResolutionHistory);
+        ValidateCampaignContinuity(snapshot.CampaignContinuity);
+        campaignContinuity = snapshot.CampaignContinuity is null
+            ? null
+            : Clone(snapshot.CampaignContinuity);
         ValidateRetentionBounds();
     }
 
@@ -230,6 +242,36 @@ public sealed class CharacterSuccessionWorldState
         }
 
         aggregate = null;
+        return false;
+    }
+
+    public IReadOnlyList<SuccessionResolutionState> Resolutions => resolutions.Values
+        .OrderBy(item => item.ResolutionTurnIndex)
+        .ThenBy(item => item.ResolutionDate)
+        .ThenBy(item => item.ResolutionId)
+        .Select(Clone)
+        .ToArray();
+
+    public SuccessionResolutionHistoryAggregate ResolutionHistory =>
+        Clone(resolutionHistory);
+
+    public PlayerCampaignContinuityState? CampaignContinuity =>
+        campaignContinuity is null ? null : Clone(campaignContinuity);
+
+    public bool TryGetResolutionForSubject(
+        EntityId subjectCharacterId,
+        [NotNullWhen(true)] out SuccessionResolutionState? resolution)
+    {
+        RequireCharacter(subjectCharacterId, "Succession-resolution query subject");
+        if (resolutionBySubject.TryGetValue(
+                subjectCharacterId,
+                out EntityId resolutionId))
+        {
+            resolution = Clone(resolutions[resolutionId]);
+            return true;
+        }
+
+        resolution = null;
         return false;
     }
 
@@ -458,6 +500,253 @@ public sealed class CharacterSuccessionWorldState
             SuccessionCandidateSetStatus.Complete);
     }
 
+    internal SuccessionResolutionDecision PlanResolutionDecision(
+        EntityId subjectCharacterId,
+        SuccessionResolutionRule rule,
+        IAuthoritativeCharacterMarriageWorldQuery marriages,
+        IAuthoritativeCharacterGuardianshipWorldQuery guardianships,
+        EntityId? regentCharacterId,
+        CampaignDate resolutionDate,
+        long authoritativeTurnIndex)
+    {
+        AuthoritativeCharacterProfile subject = RequireCharacter(
+            subjectCharacterId,
+            "Succession-resolution subject");
+        if (subject.Condition.VitalStatus != CharacterVitalStatus.Alive
+            || !resolutionDate.IsValid
+            || resolutionDate.CompareTo(calendar.Date) < 0
+            || authoritativeTurnIndex < calendar.TurnIndex
+            || subject.BirthDate.CompareTo(resolutionDate) > 0
+            || resolutions.Values.Any(
+                item => item.SubjectCharacterId == subjectCharacterId))
+        {
+            throw new SimulationValidationException(
+                $"Character '{subjectCharacterId}' cannot receive another succession resolution.");
+        }
+
+        if (marriages is null || guardianships is null)
+        {
+            throw new SimulationValidationException(
+                "Succession resolution requires marriage and guardianship queries.");
+        }
+
+        SuccessionResolutionRule frozenRule = ValidateAndFreezeResolutionRule(rule);
+        Dictionary<SuccessionLegalBasis, int> precedence = frozenRule
+            .LegalBasisPrecedence
+            .Select((basis, index) => (basis, index))
+            .ToDictionary(item => item.basis, item => item.index);
+        List<SuccessionResolutionCandidate> candidates = [];
+        foreach (AuthoritativeCharacterProfile candidate in characters.Profiles)
+        {
+            if (candidate.CharacterId == subjectCharacterId
+                || !IsResolutionCandidateConditionEligible(
+                    candidate,
+                    frozenRule.CandidateEligibility,
+                    resolutionDate))
+            {
+                continue;
+            }
+
+            SuccessionLegalBasisEvidence[] bases = FindResolutionBases(
+                    subjectCharacterId,
+                    candidate.CharacterId,
+                    frozenRule,
+                    marriages)
+                .OrderBy(item => item.Basis)
+                .ThenBy(item => item.DescendantGeneration)
+                .ThenBy(item => item.CollateralDistance)
+                .ThenBy(item => item.SourceDesignationId)
+                .ThenBy(item => item.SourceMarriageUnionId)
+                .ThenBy(item => item.SharedAncestorCharacterId)
+                .ToArray();
+            if (bases.Length == 0)
+            {
+                continue;
+            }
+
+            int precedenceIndex = bases.Min(item => precedence[item.Basis]);
+            int kinshipDistance = bases
+                .Where(item => precedence[item.Basis] == precedenceIndex)
+                .Select(item => item.DescendantGeneration
+                    ?? item.CollateralDistance
+                    ?? 0)
+                .Min();
+            EntityId? claimId = activeClaimByPair.TryGetValue(
+                (subjectCharacterId, candidate.CharacterId),
+                out EntityId activeClaimId)
+                    ? activeClaimId
+                    : null;
+            EntityId[] supportIds = supports.Values
+                .Where(item => item.SubjectId == subjectCharacterId
+                    && item.SupportedCandidateId == candidate.CharacterId
+                    && item.Status == SuccessionSupportStatus.Active)
+                .Select(item => item.SupportId)
+                .Order()
+                .ToArray();
+            candidates.Add(new(
+                CharacterSuccessionContractVersions.ResolutionCandidate,
+                candidate.CharacterId,
+                CalculateAge(candidate.BirthDate, resolutionDate),
+                candidate.Condition with { },
+                bases,
+                claimId,
+                supportIds,
+                precedenceIndex,
+                kinshipDistance));
+            if (candidates.Count > frozenRule.MaximumCandidates)
+            {
+                throw new SimulationValidationException(
+                    $"Succession resolution for '{subjectCharacterId}' exceeds its candidate bound.");
+            }
+        }
+
+        SuccessionResolutionCandidate[] ranked = candidates
+            .OrderBy(item => item.LegalBasisPrecedenceIndex)
+            .ThenBy(item => item.KinshipDistance)
+            .ThenBy(item => item.ActiveClaimId is null ? 1 : 0)
+            .ThenByDescending(item => item.ActiveSupportIds.Count)
+            .ThenByDescending(item => item.CandidateAge)
+            .ThenBy(item => item.CandidateCharacterId)
+            .Select(Clone)
+            .ToArray();
+        SuccessionResolutionStatus status;
+        SuccessionResolutionCandidate? selected = null;
+        SuccessionResolutionCandidate[] disputed = [];
+        if (ranked.Length == 0)
+        {
+            status = SuccessionResolutionStatus.NoSuccessor;
+        }
+        else
+        {
+            SuccessionResolutionCandidate first = ranked[0];
+            SuccessionResolutionCandidate[] top = ranked
+                .Where(item => HasSamePreStableRank(first, item))
+                .ToArray();
+            if (frozenRule.ContestResolutionMode
+                    == SuccessionContestResolutionMode.RecordDispute
+                && top.Length > 1)
+            {
+                if (top.Length > frozenRule.MaximumDisputedCandidates)
+                {
+                    throw new SimulationValidationException(
+                        $"Succession dispute for '{subjectCharacterId}' exceeds its evidence bound.");
+                }
+
+                status = SuccessionResolutionStatus.Disputed;
+                disputed = top.Select(Clone).ToArray();
+            }
+            else
+            {
+                status = SuccessionResolutionStatus.Selected;
+                selected = Clone(first);
+            }
+        }
+
+        SuccessionRegencyHook? regency = selected is null
+            ? ValidateAbsentRegency(regentCharacterId)
+            : CreateRegencyHook(
+                subjectCharacterId,
+                selected,
+                frozenRule,
+                guardianships,
+                regentCharacterId,
+                resolutionDate);
+        return new SuccessionResolutionDecision(
+            subjectCharacterId,
+            frozenRule,
+            status,
+            selected,
+            disputed,
+            ranked.Select(Clone).ToArray(),
+            ranked.Length,
+            regency,
+            resolutionDate,
+            authoritativeTurnIndex);
+    }
+
+    internal CharacterSuccessionResolutionPlan PrepareResolution(
+        SuccessionResolutionDecision decision,
+        EntityId deathId,
+        SuccessionInheritanceChange inheritance,
+        CampaignDate resolutionDate,
+        long resolutionTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (decision is null
+            || inheritance is null
+            || decision.ResolutionDate != resolutionDate
+            || decision.ResolutionTurnIndex != resolutionTurnIndex
+            || resolutionDate.CompareTo(calendar.Date) < 0
+            || resolutionTurnIndex < calendar.TurnIndex)
+        {
+            throw new SimulationValidationException(
+                "Succession resolution preparation does not match its exact decision point.");
+        }
+
+        ValidateId(deathId, "Succession-resolution death ID");
+        ValidateId(commandId, "Succession-resolution command ID");
+        ValidateId(eventId, "Succession-resolution event ID");
+        if (eventId != CharacterConditionIds.DeriveActionEventId(
+                resolutionDate,
+                commandId)
+            || deathId != CharacterConditionIds.DeriveDeathId(
+                eventId,
+                decision.SubjectCharacterId)
+            || HasRetainedLifecycleIdentity(commandId)
+            || HasRetainedLifecycleIdentity(eventId)
+            || resolutionBySubject.ContainsKey(decision.SubjectCharacterId))
+        {
+            throw new SimulationValidationException(
+                "Succession resolution has stale or invalid deterministic identity evidence.");
+        }
+
+        ValidateInheritance(decision, inheritance, resolutionDate, resolutionTurnIndex, commandId);
+        PlayerCampaignContinuityState? previous = campaignContinuity is null
+            ? null
+            : Clone(campaignContinuity);
+        PlayerCampaignContinuityState? current = ResolveCampaignContinuity(
+            previous,
+            decision,
+            resolutionDate,
+            resolutionTurnIndex,
+            commandId,
+            eventId);
+        SuccessionResolutionState resolution = new(
+            CharacterSuccessionContractVersions.Resolution,
+            CharacterSuccessionIds.DeriveResolutionId(
+                eventId,
+                decision.SubjectCharacterId),
+            decision.SubjectCharacterId,
+            deathId,
+            decision.Status,
+            decision.SelectedCandidate is null
+                ? null
+                : Clone(decision.SelectedCandidate),
+            decision.DisputedCandidates.Select(Clone).ToArray(),
+            decision.EligibleCandidateCount,
+            decision.Rule.Canonicalize(),
+            inheritance.Canonicalize(),
+            decision.Regency is null ? null : decision.Regency with { },
+            previous,
+            current,
+            resolutionDate,
+            resolutionTurnIndex,
+            commandId,
+            eventId);
+        CampaignCalendar candidateCalendar = new(
+            resolutionDate.CompareTo(calendar.Date) > 0 ? resolutionDate : calendar.Date,
+            Math.Max(calendar.TurnIndex, resolutionTurnIndex));
+        CharacterSuccessionWorldState candidate = new(
+            CaptureSnapshot(),
+            characters,
+            candidateCalendar);
+        candidate.CommitResolution(resolution);
+        return new CharacterSuccessionResolutionPlan(
+            Clone(resolution),
+            new CharacterSuccessionWorldUpdatePlan(candidate));
+    }
+
     public CharacterSuccessionWorldSnapshot CaptureSnapshot() => new(
         CharacterSuccessionContractVersions.Snapshot,
         designations.Values.Select(Clone).ToArray(),
@@ -465,7 +754,15 @@ public sealed class CharacterSuccessionWorldState
         claims.Values.Select(Clone).ToArray(),
         claimHistory.Values.Select(Clone).ToArray(),
         supports.Values.Select(Clone).ToArray(),
-        supportHistory.Values.Select(Clone).ToArray());
+        supportHistory.Values.Select(Clone).ToArray(),
+        resolutions.Values
+            .OrderBy(item => item.ResolutionTurnIndex)
+            .ThenBy(item => item.ResolutionDate)
+            .ThenBy(item => item.ResolutionId)
+            .Select(Clone)
+            .ToArray(),
+        Clone(resolutionHistory),
+        campaignContinuity is null ? null : Clone(campaignContinuity));
 
     private bool ValidateEligibilityRule(
         SuccessionCandidateEligibilityRule? rule,
@@ -688,6 +985,562 @@ public sealed class CharacterSuccessionWorldState
                     || next == ParentChildLinkKind.LegalAdoptive
                         ? SuccessionCandidateBasis.LegalAdoptiveDescendant
                         : SuccessionCandidateBasis.BiologicalDescendant;
+
+    private SuccessionResolutionRule ValidateAndFreezeResolutionRule(
+        SuccessionResolutionRule? rule)
+    {
+        List<SuccessionCandidateEligibilityReason> eligibilityIssues = [];
+        HashSet<SuccessionCandidateBasis> allowedBases = [];
+        HashSet<CharacterCustodyStatus> allowedCustodyStatuses = [];
+        if (rule is null
+            || rule.ContractVersion
+                != CharacterSuccessionContractVersions.ResolutionRule
+            || !ValidateEligibilityRule(
+                rule.CandidateEligibility,
+                allowedBases,
+                allowedCustodyStatuses,
+                eligibilityIssues)
+            || rule.LegalBasisPrecedence is null
+            || rule.AllowedCollateralKinds is null
+            || !Enum.IsDefined(rule.ContestResolutionMode)
+            || !Enum.IsDefined(rule.NoAcceptedSuccessorBehavior)
+            || rule.MaximumCandidates is < 1
+                or > CharacterSuccessionLimits.MaximumResolutionCandidates
+            || rule.MaximumDisputedCandidates is < 1
+                or > CharacterSuccessionLimits.MaximumDisputedCandidates
+            || rule.MaximumDisputedCandidates > rule.MaximumCandidates)
+        {
+            throw new SimulationValidationException(
+                "Succession-resolution rule has an invalid version, eligibility rule, enum, or capacity.");
+        }
+
+        HashSet<ParentChildLinkKind> collateralKinds = [];
+        foreach (ParentChildLinkKind kind in rule.AllowedCollateralKinds)
+        {
+            if (!Enum.IsDefined(kind) || !collateralKinds.Add(kind))
+            {
+                throw new SimulationValidationException(
+                    "Succession-resolution rule has an unsupported or duplicate collateral kind.");
+            }
+        }
+
+        if (collateralKinds.Count == 0
+            ? rule.MaximumCollateralDistance != 0
+            : rule.MaximumCollateralDistance is < 2
+                or > CharacterSuccessionLimits.MaximumCollateralDistance)
+        {
+            throw new SimulationValidationException(
+                "Succession-resolution rule has an invalid collateral distance.");
+        }
+
+        HashSet<SuccessionLegalBasis> expectedBases = allowedBases
+            .Select(ToLegalBasis)
+            .ToHashSet();
+        if (rule.IncludesPrincipalSpouse)
+        {
+            expectedBases.Add(SuccessionLegalBasis.PrincipalSpouse);
+        }
+
+        foreach (ParentChildLinkKind kind in collateralKinds)
+        {
+            expectedBases.Add(ToCollateralLegalBasis(kind));
+        }
+
+        if (rule.LegalBasisPrecedence.Count != expectedBases.Count
+            || rule.LegalBasisPrecedence.Any(item => !Enum.IsDefined(item))
+            || rule.LegalBasisPrecedence.Distinct().Count()
+                != rule.LegalBasisPrecedence.Count
+            || !rule.LegalBasisPrecedence.ToHashSet().SetEquals(expectedBases))
+        {
+            throw new SimulationValidationException(
+                "Succession-resolution legal-basis precedence must exactly cover its enabled bases.");
+        }
+
+        return new SuccessionResolutionRule(
+            CharacterSuccessionContractVersions.ResolutionRule,
+            new SuccessionCandidateEligibilityRule(
+                CharacterSuccessionContractVersions.CandidateEligibilityRule,
+                allowedBases.Order().ToArray(),
+                rule.CandidateEligibility.MaximumDescendantGeneration,
+                rule.CandidateEligibility.MinimumCandidateAge,
+                rule.CandidateEligibility.AllowsIncapacitatedCandidates,
+                allowedCustodyStatuses.Order().ToArray()),
+            rule.LegalBasisPrecedence.ToArray(),
+            rule.IncludesPrincipalSpouse,
+            collateralKinds.Order().ToArray(),
+            rule.MaximumCollateralDistance,
+            rule.ContestResolutionMode,
+            rule.MaximumCandidates,
+            rule.MaximumDisputedCandidates,
+            rule.CreatesRegencyForIncapacitatedSuccessor,
+            rule.NoAcceptedSuccessorBehavior);
+    }
+
+    private bool IsResolutionCandidateConditionEligible(
+        AuthoritativeCharacterProfile candidate,
+        SuccessionCandidateEligibilityRule eligibility,
+        CampaignDate resolutionDate) =>
+        candidate.BirthDate.CompareTo(resolutionDate) <= 0
+        && candidate.Condition.VitalStatus == CharacterVitalStatus.Alive
+        && CalculateAge(candidate.BirthDate, resolutionDate)
+            >= eligibility.MinimumCandidateAge
+        && (eligibility.AllowsIncapacitatedCandidates
+            || !candidate.Condition.IsIncapacitated)
+        && eligibility.AllowedCustodyStatuses.Contains(
+            candidate.Condition.CustodyStatus);
+
+    private IReadOnlyList<SuccessionLegalBasisEvidence> FindResolutionBases(
+        EntityId subjectCharacterId,
+        EntityId candidateCharacterId,
+        SuccessionResolutionRule rule,
+        IAuthoritativeCharacterMarriageWorldQuery marriages)
+    {
+        List<SuccessionLegalBasisEvidence> result = [];
+        HashSet<SuccessionCandidateBasis> allowedBases =
+            rule.CandidateEligibility.AllowedBases.ToHashSet();
+        result.AddRange(FindRecognizedBases(
+                subjectCharacterId,
+                candidateCharacterId,
+                rule.CandidateEligibility,
+                allowedBases)
+            .Select(item => new SuccessionLegalBasisEvidence(
+                CharacterSuccessionContractVersions.ResolutionCandidate,
+                ToLegalBasis(item.Basis),
+                item.DescendantGeneration,
+                null,
+                item.SourceDesignationId,
+                null,
+                null)));
+        if (rule.IncludesPrincipalSpouse)
+        {
+            MarriageUnionState? principalUnion = marriages
+                .GetUnionsInvolving(subjectCharacterId)
+                .Where(item => item.Status == MarriageUnionStatus.Active
+                    && item.Form == MarriageUnionForm.PrincipalSpouse
+                    && OtherParticipant(item, subjectCharacterId)
+                        == candidateCharacterId)
+                .OrderBy(item => item.UnionId)
+                .FirstOrDefault();
+            if (principalUnion is not null)
+            {
+                result.Add(new(
+                    CharacterSuccessionContractVersions.ResolutionCandidate,
+                    SuccessionLegalBasis.PrincipalSpouse,
+                    null,
+                    null,
+                    null,
+                    principalUnion.UnionId,
+                    null));
+            }
+        }
+
+        result.AddRange(FindCollateralBases(
+            subjectCharacterId,
+            candidateCharacterId,
+            rule));
+        return result;
+    }
+
+    private IReadOnlyList<SuccessionLegalBasisEvidence> FindCollateralBases(
+        EntityId subjectCharacterId,
+        EntityId candidateCharacterId,
+        SuccessionResolutionRule rule)
+    {
+        if (rule.AllowedCollateralKinds.Count == 0)
+        {
+            return [];
+        }
+
+        IReadOnlyList<SuccessionAncestorPath> subjectAncestors = FindAncestorPaths(
+            subjectCharacterId,
+            rule.MaximumCollateralDistance);
+        IReadOnlyList<SuccessionAncestorPath> candidateAncestors = FindAncestorPaths(
+            candidateCharacterId,
+            rule.MaximumCollateralDistance);
+        if (subjectAncestors.Any(item =>
+                item.AncestorCharacterId == candidateCharacterId)
+            || candidateAncestors.Any(item =>
+                item.AncestorCharacterId == subjectCharacterId))
+        {
+            return [];
+        }
+
+        return subjectAncestors
+            .Join(
+                candidateAncestors,
+                subject => subject.AncestorCharacterId,
+                candidate => candidate.AncestorCharacterId,
+                (subject, candidate) => new
+                {
+                    subject.AncestorCharacterId,
+                    Kind = CombineParentLinkKind(
+                        subject.PathKind,
+                        candidate.PathKind),
+                    Distance = checked(subject.Distance + candidate.Distance),
+                })
+            .Where(item => item.Distance <= rule.MaximumCollateralDistance
+                && rule.AllowedCollateralKinds.Contains(item.Kind))
+            .Select(item => new SuccessionLegalBasisEvidence(
+                CharacterSuccessionContractVersions.ResolutionCandidate,
+                ToCollateralLegalBasis(item.Kind),
+                null,
+                item.Distance,
+                null,
+                null,
+                item.AncestorCharacterId))
+            .GroupBy(item => item.Basis)
+            .Select(group => group
+                .OrderBy(item => item.CollateralDistance)
+                .ThenBy(item => item.SharedAncestorCharacterId)
+                .First())
+            .ToArray();
+    }
+
+    private IReadOnlyList<SuccessionAncestorPath> FindAncestorPaths(
+        EntityId characterId,
+        int maximumDistance)
+    {
+        List<SuccessionAncestorPath> result = [];
+        Queue<SuccessionAncestorPath> pending = [];
+        HashSet<(EntityId CharacterId, ParentChildLinkKind Kind)> visited = [];
+        AuthoritativeCharacterProfile start = RequireCharacter(
+            characterId,
+            "Succession-collateral character");
+        foreach (CharacterParentLink parent in start.ParentLinks)
+        {
+            pending.Enqueue(new(parent.ParentCharacterId, parent.Kind, 1));
+        }
+
+        while (pending.TryDequeue(out SuccessionAncestorPath? item))
+        {
+            if (item.Distance > maximumDistance
+                || !visited.Add((item.AncestorCharacterId, item.PathKind)))
+            {
+                continue;
+            }
+
+            result.Add(item);
+            if (item.Distance == maximumDistance
+                || !characters.TryGetCharacterProfile(
+                    item.AncestorCharacterId,
+                    out AuthoritativeCharacterProfile? ancestor))
+            {
+                continue;
+            }
+
+            foreach (CharacterParentLink parent in ancestor.ParentLinks)
+            {
+                pending.Enqueue(new(
+                    parent.ParentCharacterId,
+                    CombineParentLinkKind(item.PathKind, parent.Kind),
+                    checked(item.Distance + 1)));
+            }
+        }
+
+        return result;
+    }
+
+    private SuccessionRegencyHook? CreateRegencyHook(
+        EntityId subjectCharacterId,
+        SuccessionResolutionCandidate successor,
+        SuccessionResolutionRule rule,
+        IAuthoritativeCharacterGuardianshipWorldQuery guardianships,
+        EntityId? regentCharacterId,
+        CampaignDate resolutionDate)
+    {
+        SuccessionRegencyReason reasons = SuccessionRegencyReason.None;
+        if (successor.CandidateAge < CharacterMarriageLimits.MinimumAdultAge)
+        {
+            reasons |= SuccessionRegencyReason.Minor;
+        }
+
+        if (successor.CandidateCondition.IsIncapacitated
+            && rule.CreatesRegencyForIncapacitatedSuccessor)
+        {
+            reasons |= SuccessionRegencyReason.Incapacitated;
+        }
+
+        if (reasons == SuccessionRegencyReason.None)
+        {
+            return ValidateAbsentRegency(regentCharacterId);
+        }
+
+        if (regentCharacterId is EntityId regentId)
+        {
+            AuthoritativeCharacterProfile regent = RequireCharacter(
+                regentId,
+                "Succession regent");
+            if (regentId == subjectCharacterId
+                || regentId == successor.CandidateCharacterId
+                || regent.BirthDate.CompareTo(resolutionDate) > 0
+                || regent.Condition.VitalStatus != CharacterVitalStatus.Alive
+                || regent.Condition.IsIncapacitated
+                || regent.Condition.CustodyStatus != CharacterCustodyStatus.Free
+                || CalculateAge(regent.BirthDate, resolutionDate)
+                    < CharacterMarriageLimits.MinimumAdultAge)
+            {
+                throw new SimulationValidationException(
+                    $"Succession regent '{regentId}' is not an eligible adult.");
+            }
+        }
+
+        EntityId? sourceGuardianshipId =
+            guardianships.TryGetActivePrimaryGuardianshipForWard(
+                successor.CandidateCharacterId,
+                out CharacterGuardianshipState? guardianship)
+                    ? guardianship.GuardianshipId
+                    : null;
+        EntityId? sourceGuardianCharacterId = guardianship?.GuardianCharacterId;
+        return new SuccessionRegencyHook(
+            CharacterSuccessionContractVersions.Regency,
+            successor.CandidateCharacterId,
+            reasons,
+            regentCharacterId,
+            sourceGuardianshipId,
+            sourceGuardianCharacterId,
+            successor.CandidateCondition.CustodyStatus == CharacterCustodyStatus.Free
+                ? null
+                : successor.CandidateCondition.CustodianId);
+    }
+
+    private static SuccessionRegencyHook? ValidateAbsentRegency(
+        EntityId? regentCharacterId)
+    {
+        if (regentCharacterId is not null)
+        {
+            throw new SimulationValidationException(
+                "A succession regent requires a minor or incapacitated successor.");
+        }
+
+        return null;
+    }
+
+    private void ValidateInheritance(
+        SuccessionResolutionDecision decision,
+        SuccessionInheritanceChange inheritance,
+        CampaignDate resolutionDate,
+        long resolutionTurnIndex,
+        EntityId commandId)
+    {
+        if (inheritance.ContractVersion
+                != CharacterSuccessionContractVersions.Inheritance
+            || inheritance.EstateTransfers is null
+            || inheritance.EstateTransfers.Any(item => item is null))
+        {
+            throw new SimulationValidationException(
+                "Succession inheritance has an invalid version or collection.");
+        }
+
+        EntityId? successorId = decision.SelectedCandidate?.CandidateCharacterId;
+        if (decision.Status != SuccessionResolutionStatus.Selected)
+        {
+            if (inheritance.WealthTransfer is not null
+                || inheritance.EstateTransfers.Count != 0)
+            {
+                throw new SimulationValidationException(
+                    "Disputed or successorless resolution cannot transfer inheritance.");
+            }
+
+            return;
+        }
+
+        if (successorId is not EntityId selectedId)
+        {
+            throw new SimulationValidationException(
+                "Selected succession resolution lacks its selected candidate.");
+        }
+
+        if (inheritance.WealthTransfer is WealthTransferredOutcome wealth
+            && !IsMatchingInheritanceWealthTransfer(
+                wealth,
+                decision.SubjectCharacterId,
+                selectedId,
+                resolutionDate,
+                resolutionTurnIndex,
+                commandId))
+        {
+            throw new SimulationValidationException(
+                "Succession wealth inheritance does not match the selected successor.");
+        }
+
+        HashSet<EntityId> estateIds = [];
+        foreach (SuccessionEstateTransfer transfer in inheritance.EstateTransfers)
+        {
+            if (transfer.ContractVersion
+                    != CharacterSuccessionContractVersions.Inheritance
+                || !transfer.EstateId.IsValid
+                || transfer.PreviousOwnerCharacterId
+                    != decision.SubjectCharacterId
+                || transfer.CurrentOwnerCharacterId != selectedId
+                || !estateIds.Add(transfer.EstateId))
+            {
+                throw new SimulationValidationException(
+                    "Succession estate inheritance does not match the selected successor.");
+            }
+        }
+    }
+
+    private static bool IsMatchingInheritanceWealthTransfer(
+        WealthTransferredOutcome wealth,
+        EntityId sourceCharacterId,
+        EntityId recipientCharacterId,
+        CampaignDate resolutionDate,
+        long resolutionTurnIndex,
+        EntityId commandId)
+    {
+        if (wealth.ContractVersion != CharacterResourceContractVersions.Outcome
+            || wealth.Transfer is null
+            || wealth.OutgoingEntry is null
+            || wealth.IncomingEntry is null)
+        {
+            return false;
+        }
+
+        WealthTransferRecord transfer = wealth.Transfer;
+        EntityId resourceEventId = CharacterResourceIds.DeriveActionEventId(
+            resolutionDate,
+            commandId);
+        EntityId transferId = CharacterResourceIds.DeriveWealthTransferId(
+            resourceEventId);
+        return transfer.ContractVersion == CharacterResourceContractVersions.State
+            && transfer.TransferId == transferId
+            && transfer.SourceCharacterId == sourceCharacterId
+            && transfer.RecipientCharacterId == recipientCharacterId
+            && transfer.Amount > 0
+            && transfer.ResolutionDate == resolutionDate
+            && transfer.ResolutionTurnIndex == resolutionTurnIndex
+            && transfer.SourceCommandId == commandId
+            && transfer.SourceEventId == resourceEventId
+            && wealth.SourceWealthAfter == 0
+            && wealth.RecipientWealthAfter >= transfer.Amount
+            && IsMatchingInheritanceLedgerEntry(
+                wealth.OutgoingEntry,
+                transfer,
+                sourceCharacterId,
+                recipientCharacterId,
+                WealthLedgerDirection.Outgoing)
+            && IsMatchingInheritanceLedgerEntry(
+                wealth.IncomingEntry,
+                transfer,
+                recipientCharacterId,
+                sourceCharacterId,
+                WealthLedgerDirection.Incoming);
+    }
+
+    private static bool IsMatchingInheritanceLedgerEntry(
+        WealthLedgerEntry entry,
+        WealthTransferRecord transfer,
+        EntityId characterId,
+        EntityId counterpartyCharacterId,
+        WealthLedgerDirection direction) =>
+        entry.ContractVersion == CharacterResourceContractVersions.State
+        && entry.EntryId == CharacterResourceIds.DeriveWealthLedgerEntryId(
+            transfer.TransferId,
+            characterId,
+            direction)
+        && entry.TransferId == transfer.TransferId
+        && entry.CharacterId == characterId
+        && entry.CounterpartyCharacterId == counterpartyCharacterId
+        && entry.Direction == direction
+        && entry.Amount == transfer.Amount
+        && entry.ResolutionDate == transfer.ResolutionDate
+        && entry.ResolutionTurnIndex == transfer.ResolutionTurnIndex
+        && entry.SourceCommandId == transfer.SourceCommandId
+        && entry.SourceEventId == transfer.SourceEventId;
+
+    private static PlayerCampaignContinuityState? ResolveCampaignContinuity(
+        PlayerCampaignContinuityState? previous,
+        SuccessionResolutionDecision decision,
+        CampaignDate resolutionDate,
+        long resolutionTurnIndex,
+        EntityId commandId,
+        EntityId eventId)
+    {
+        if (previous?.Status != PlayerCampaignContinuityStatus.Active
+            || previous.ControlledCharacterId != decision.SubjectCharacterId)
+        {
+            return previous is null ? null : Clone(previous);
+        }
+
+        if (decision.Status == SuccessionResolutionStatus.Selected)
+        {
+            return new(
+                CharacterSuccessionContractVersions.CampaignContinuity,
+                PlayerCampaignContinuityStatus.Active,
+                decision.SelectedCandidate!.CandidateCharacterId,
+                resolutionDate,
+                resolutionTurnIndex,
+                commandId,
+                eventId);
+        }
+
+        return new(
+            CharacterSuccessionContractVersions.CampaignContinuity,
+            decision.Rule.NoAcceptedSuccessorBehavior
+                == SuccessionNoAcceptedSuccessorBehavior.EndCampaign
+                    ? PlayerCampaignContinuityStatus.Ended
+                    : PlayerCampaignContinuityStatus.ContinueWithoutControlledCharacter,
+            null,
+            resolutionDate,
+            resolutionTurnIndex,
+            commandId,
+            eventId);
+    }
+
+    private static bool HasSamePreStableRank(
+        SuccessionResolutionCandidate first,
+        SuccessionResolutionCandidate candidate) =>
+        first.LegalBasisPrecedenceIndex == candidate.LegalBasisPrecedenceIndex
+        && first.KinshipDistance == candidate.KinshipDistance
+        && (first.ActiveClaimId is null) == (candidate.ActiveClaimId is null)
+        && first.ActiveSupportIds.Count == candidate.ActiveSupportIds.Count
+        && first.CandidateAge == candidate.CandidateAge;
+
+    private static EntityId OtherParticipant(
+        MarriageUnionState union,
+        EntityId characterId) =>
+        union.FirstCharacterId == characterId
+            ? union.SecondCharacterId
+            : union.FirstCharacterId;
+
+    private static SuccessionLegalBasis ToLegalBasis(
+        SuccessionCandidateBasis basis) => basis switch
+        {
+            SuccessionCandidateBasis.ActiveDesignation =>
+                SuccessionLegalBasis.ActiveDesignation,
+            SuccessionCandidateBasis.BiologicalDescendant =>
+                SuccessionLegalBasis.BiologicalDescendant,
+            SuccessionCandidateBasis.LegalAdoptiveDescendant =>
+                SuccessionLegalBasis.LegalAdoptiveDescendant,
+            SuccessionCandidateBasis.UnspecifiedLegacyDescendant =>
+                SuccessionLegalBasis.UnspecifiedLegacyDescendant,
+            _ => throw new SimulationValidationException(
+                $"Unsupported succession candidate basis '{basis}'."),
+        };
+
+    private static SuccessionLegalBasis ToCollateralLegalBasis(
+        ParentChildLinkKind kind) => kind switch
+        {
+            ParentChildLinkKind.Biological =>
+                SuccessionLegalBasis.BiologicalCollateral,
+            ParentChildLinkKind.LegalAdoptive =>
+                SuccessionLegalBasis.LegalAdoptiveCollateral,
+            ParentChildLinkKind.UnspecifiedLegacy =>
+                SuccessionLegalBasis.UnspecifiedLegacyCollateral,
+            _ => throw new SimulationValidationException(
+                $"Unsupported succession collateral kind '{kind}'."),
+        };
+
+    private static ParentChildLinkKind CombineParentLinkKind(
+        ParentChildLinkKind existing,
+        ParentChildLinkKind next) =>
+        existing == ParentChildLinkKind.UnspecifiedLegacy
+            || next == ParentChildLinkKind.UnspecifiedLegacy
+                ? ParentChildLinkKind.UnspecifiedLegacy
+                : existing == ParentChildLinkKind.LegalAdoptive
+                    || next == ParentChildLinkKind.LegalAdoptive
+                        ? ParentChildLinkKind.LegalAdoptive
+                        : ParentChildLinkKind.Biological;
 
     private static int CalculateAge(CampaignDate birthDate, CampaignDate currentDate)
     {
@@ -1310,6 +2163,80 @@ public sealed class CharacterSuccessionWorldState
 
         EnforceSupportRetentionBound(subjectId);
         ValidateRetentionBounds();
+    }
+
+    private void CommitResolution(SuccessionResolutionState resolution)
+    {
+        ValidateResolution(resolution);
+        if (!resolutions.TryAdd(resolution.ResolutionId, Clone(resolution))
+            || !resolutionBySubject.TryAdd(
+                resolution.SubjectCharacterId,
+                resolution.ResolutionId))
+        {
+            throw new SimulationValidationException(
+                $"Succession resolution '{resolution.ResolutionId}' is duplicated.");
+        }
+
+        campaignContinuity = resolution.CurrentCampaignContinuity is null
+            ? null
+            : Clone(resolution.CurrentCampaignContinuity);
+        while (resolutions.Count
+               > CharacterSuccessionLimits.RecentSuccessionResolutions)
+        {
+            SuccessionResolutionState evicted = resolutions.Values
+                .Where(item => item.ResolutionId != resolution.ResolutionId)
+                .OrderBy(item => item.ResolutionTurnIndex)
+                .ThenBy(item => item.ResolutionDate)
+                .ThenBy(item => item.ResolutionId)
+                .First();
+            FoldResolution(evicted);
+            resolutions.Remove(evicted.ResolutionId);
+            resolutionBySubject.Remove(evicted.SubjectCharacterId);
+        }
+
+        ValidateRetentionBounds();
+    }
+
+    private void FoldResolution(SuccessionResolutionState resolution)
+    {
+        try
+        {
+            resolutionHistory = resolution.Status switch
+            {
+                SuccessionResolutionStatus.Selected => resolutionHistory with
+                {
+                    FoldedSelectedCount = checked(
+                        resolutionHistory.FoldedSelectedCount + 1),
+                },
+                SuccessionResolutionStatus.Disputed => resolutionHistory with
+                {
+                    FoldedDisputedCount = checked(
+                        resolutionHistory.FoldedDisputedCount + 1),
+                },
+                SuccessionResolutionStatus.NoSuccessor => resolutionHistory with
+                {
+                    FoldedNoSuccessorCount = checked(
+                        resolutionHistory.FoldedNoSuccessorCount + 1),
+                },
+                _ => throw new SimulationValidationException(
+                    "Unsupported succession-resolution status."),
+            };
+            resolutionHistory = resolutionHistory with
+            {
+                EarliestDate = resolutionHistory.EarliestDate is CampaignDate earliest
+                    ? Earlier(earliest, resolution.ResolutionDate)
+                    : resolution.ResolutionDate,
+                LatestDate = resolutionHistory.LatestDate is CampaignDate latest
+                    ? Later(latest, resolution.ResolutionDate)
+                    : resolution.ResolutionDate,
+            };
+            _ = resolutionHistory.TotalFoldedCount;
+        }
+        catch (OverflowException exception)
+        {
+            throw new SimulationValidationException(
+                $"Succession-resolution history exceeds Int64 capacity: {exception.Message}");
+        }
     }
 
     private void AddActiveSupport(SuccessionSupportState support)
@@ -2644,6 +3571,492 @@ public sealed class CharacterSuccessionWorldState
         }
     }
 
+    private void AddResolutions(IReadOnlyList<SuccessionResolutionState> source)
+    {
+        foreach (SuccessionResolutionState resolution in source)
+        {
+            ValidateResolution(resolution);
+            if (!resolutions.TryAdd(resolution.ResolutionId, Clone(resolution))
+                || !resolutionBySubject.TryAdd(
+                    resolution.SubjectCharacterId,
+                    resolution.ResolutionId))
+            {
+                throw new SimulationValidationException(
+                    $"Duplicate succession resolution '{resolution.ResolutionId}' or subject.");
+            }
+        }
+    }
+
+    private void ValidateResolution(SuccessionResolutionState resolution)
+    {
+        if (resolution.ContractVersion
+                != CharacterSuccessionContractVersions.Resolution
+            || !resolution.ResolutionId.IsValid
+            || !resolution.DeathId.IsValid
+            || !resolution.ResolutionDate.IsValid
+            || resolution.ResolutionTurnIndex < 0
+            || !resolution.SourceCommandId.IsValid
+            || !resolution.SourceEventId.IsValid
+            || resolution.ResolutionDate.CompareTo(calendar.Date) > 0
+            || resolution.ResolutionTurnIndex > calendar.TurnIndex
+            || !Enum.IsDefined(resolution.Status)
+            || resolution.DisputedCandidates is null
+            || resolution.Rule is null
+            || resolution.Inheritance is null)
+        {
+            throw new SimulationValidationException(
+                "Succession-resolution record has an invalid version, identity, point, enum, or null field.");
+        }
+
+        AuthoritativeCharacterProfile subject = RequireCharacter(
+            resolution.SubjectCharacterId,
+            "Succession-resolution subject");
+        if (subject.BirthDate.CompareTo(resolution.ResolutionDate) > 0
+            || resolution.SourceEventId
+                != CharacterConditionIds.DeriveActionEventId(
+                    resolution.ResolutionDate,
+                    resolution.SourceCommandId)
+            || resolution.DeathId
+                != CharacterConditionIds.DeriveDeathId(
+                    resolution.SourceEventId,
+                    resolution.SubjectCharacterId)
+            || resolution.ResolutionId
+                != CharacterSuccessionIds.DeriveResolutionId(
+                    resolution.SourceEventId,
+                    resolution.SubjectCharacterId))
+        {
+            throw new SimulationValidationException(
+                $"Succession resolution '{resolution.ResolutionId}' has invalid subject or deterministic identity evidence.");
+        }
+
+        SuccessionResolutionRule frozenRule =
+            ValidateAndFreezeResolutionRule(resolution.Rule);
+        if (!SerializedEquals(frozenRule, resolution.Rule.Canonicalize()))
+        {
+            throw new SimulationValidationException(
+                $"Succession resolution '{resolution.ResolutionId}' does not contain a canonical frozen rule.");
+        }
+
+        SuccessionResolutionCandidate? selected =
+            resolution.SelectedCandidate is null
+                ? null
+                : ValidateResolutionCandidate(
+                    resolution.SelectedCandidate,
+                    resolution.SubjectCharacterId,
+                    frozenRule,
+                    resolution.ResolutionDate);
+        SuccessionResolutionCandidate[] disputed = resolution.DisputedCandidates
+            .Select(item => ValidateResolutionCandidate(
+                item,
+                resolution.SubjectCharacterId,
+                frozenRule,
+                resolution.ResolutionDate))
+            .ToArray();
+        if (resolution.EligibleCandidateCount < 0
+            || resolution.EligibleCandidateCount > frozenRule.MaximumCandidates
+            || resolution.Status != SuccessionResolutionStatus.NoSuccessor
+                && resolution.EligibleCandidateCount < 1
+            || disputed.Length > frozenRule.MaximumDisputedCandidates
+            || disputed.Select(item => item.CandidateCharacterId).Distinct().Count()
+                != disputed.Length
+            || resolution.Status == SuccessionResolutionStatus.Disputed
+                && (frozenRule.ContestResolutionMode
+                        != SuccessionContestResolutionMode.RecordDispute
+                    || disputed.Any(item => !HasSamePreStableRank(
+                        disputed[0],
+                        item))
+                    || !disputed.Select(item => item.CandidateCharacterId)
+                        .SequenceEqual(disputed
+                            .Select(item => item.CandidateCharacterId)
+                            .Order()))
+            || resolution.Status switch
+            {
+                SuccessionResolutionStatus.Selected =>
+                    selected is null || disputed.Length != 0,
+                SuccessionResolutionStatus.Disputed =>
+                    selected is not null || disputed.Length < 2,
+                SuccessionResolutionStatus.NoSuccessor =>
+                    selected is not null
+                    || disputed.Length != 0
+                    || resolution.EligibleCandidateCount != 0,
+                _ => true,
+            })
+        {
+            throw new SimulationValidationException(
+                $"Succession resolution '{resolution.ResolutionId}' has incoherent status or candidate evidence.");
+        }
+
+        SuccessionResolutionDecision decision = new(
+            resolution.SubjectCharacterId,
+            frozenRule,
+            resolution.Status,
+            selected,
+            disputed,
+            selected is null
+                ? disputed
+                : [selected],
+            resolution.EligibleCandidateCount,
+            resolution.Regency,
+            resolution.ResolutionDate,
+            resolution.ResolutionTurnIndex);
+        ValidateInheritance(
+            decision,
+            resolution.Inheritance,
+            resolution.ResolutionDate,
+            resolution.ResolutionTurnIndex,
+            resolution.SourceCommandId);
+        ValidateResolutionRegency(resolution, selected);
+        ValidateHistoricalContinuity(
+            resolution.PreviousCampaignContinuity,
+            resolution.ResolutionDate,
+            resolution.ResolutionTurnIndex);
+        ValidateHistoricalContinuity(
+            resolution.CurrentCampaignContinuity,
+            resolution.ResolutionDate,
+            resolution.ResolutionTurnIndex);
+        PlayerCampaignContinuityState? expectedContinuity = ResolveCampaignContinuity(
+            resolution.PreviousCampaignContinuity,
+            decision,
+            resolution.ResolutionDate,
+            resolution.ResolutionTurnIndex,
+            resolution.SourceCommandId,
+            resolution.SourceEventId);
+        if (!SerializedEquals(
+                expectedContinuity,
+                resolution.CurrentCampaignContinuity))
+        {
+            throw new SimulationValidationException(
+                $"Succession resolution '{resolution.ResolutionId}' has incoherent campaign-continuity evidence.");
+        }
+    }
+
+    private SuccessionResolutionCandidate ValidateResolutionCandidate(
+        SuccessionResolutionCandidate candidate,
+        EntityId subjectCharacterId,
+        SuccessionResolutionRule rule,
+        CampaignDate resolutionDate)
+    {
+        if (candidate is null
+            || candidate.ContractVersion
+                != CharacterSuccessionContractVersions.ResolutionCandidate
+            || candidate.CandidateCharacterId == subjectCharacterId
+            || candidate.CandidateAge < 0
+            || candidate.CandidateCondition is null
+            || candidate.LegalBases is not { Count: > 0 }
+            || candidate.ActiveSupportIds is null
+            || candidate.ActiveSupportIds.Any(item => !item.IsValid)
+            || candidate.ActiveSupportIds.Distinct().Count()
+                != candidate.ActiveSupportIds.Count
+            || candidate.ActiveClaimId is EntityId claimId && !claimId.IsValid)
+        {
+            throw new SimulationValidationException(
+                "Succession-resolution candidate contains invalid version, age, condition, basis, claim, or support evidence.");
+        }
+
+        AuthoritativeCharacterProfile profile = RequireCharacter(
+            candidate.CandidateCharacterId,
+            "Succession-resolution candidate");
+        if (profile.BirthDate.CompareTo(resolutionDate) > 0
+            || candidate.CandidateAge
+                != CalculateAge(profile.BirthDate, resolutionDate)
+            || candidate.CandidateAge < rule.CandidateEligibility.MinimumCandidateAge
+            || !Enum.IsDefined(candidate.CandidateCondition.VitalStatus)
+            || !Enum.IsDefined(candidate.CandidateCondition.HealthStatus)
+            || !Enum.IsDefined(candidate.CandidateCondition.CustodyStatus)
+            || candidate.CandidateCondition.VitalStatus
+                != CharacterVitalStatus.Alive
+            || candidate.CandidateCondition.IsIncapacitated
+                && !rule.CandidateEligibility.AllowsIncapacitatedCandidates
+            || !rule.CandidateEligibility.AllowedCustodyStatuses.Contains(
+                candidate.CandidateCondition.CustodyStatus)
+            || candidate.CandidateCondition.CustodyStatus
+                    == CharacterCustodyStatus.Free
+                != (candidate.CandidateCondition.CustodianId is null))
+        {
+            throw new SimulationValidationException(
+                $"Succession-resolution candidate '{candidate.CandidateCharacterId}' has invalid historical profile evidence.");
+        }
+
+        Dictionary<SuccessionLegalBasis, int> precedence = rule.LegalBasisPrecedence
+            .Select((basis, index) => (basis, index))
+            .ToDictionary(item => item.basis, item => item.index);
+        foreach (SuccessionLegalBasisEvidence basis in candidate.LegalBases)
+        {
+            ValidateLegalBasisEvidence(basis, precedence);
+            if (basis.DescendantGeneration
+                    > rule.CandidateEligibility.MaximumDescendantGeneration
+                || basis.CollateralDistance > rule.MaximumCollateralDistance)
+            {
+                throw new SimulationValidationException(
+                    $"Succession-resolution candidate '{candidate.CandidateCharacterId}' exceeds a kinship bound.");
+            }
+        }
+
+        if (candidate.LegalBases.Distinct().Count()
+            != candidate.LegalBases.Count)
+        {
+            throw new SimulationValidationException(
+                $"Succession-resolution candidate '{candidate.CandidateCharacterId}' has duplicate legal-basis evidence.");
+        }
+
+        int expectedPrecedence = candidate.LegalBases.Min(
+            item => precedence[item.Basis]);
+        int expectedDistance = candidate.LegalBases
+            .Where(item => precedence[item.Basis] == expectedPrecedence)
+            .Select(item => item.DescendantGeneration
+                ?? item.CollateralDistance
+                ?? 0)
+            .Min();
+        SuccessionResolutionCandidate canonical = candidate.Canonicalize();
+        if (candidate.LegalBasisPrecedenceIndex != expectedPrecedence
+            || candidate.KinshipDistance != expectedDistance
+            || !SerializedEquals(candidate, canonical))
+        {
+            throw new SimulationValidationException(
+                $"Succession-resolution candidate '{candidate.CandidateCharacterId}' is not canonical or consistently ranked.");
+        }
+
+        return Clone(candidate);
+    }
+
+    private static void ValidateLegalBasisEvidence(
+        SuccessionLegalBasisEvidence evidence,
+        IReadOnlyDictionary<SuccessionLegalBasis, int> precedence)
+    {
+        if (evidence is null
+            || evidence.ContractVersion
+                != CharacterSuccessionContractVersions.ResolutionCandidate
+            || !Enum.IsDefined(evidence.Basis)
+            || !precedence.ContainsKey(evidence.Basis))
+        {
+            throw new SimulationValidationException(
+                "Succession legal-basis evidence has an invalid version or basis.");
+        }
+
+        bool valid = evidence.Basis switch
+        {
+            SuccessionLegalBasis.ActiveDesignation =>
+                evidence.SourceDesignationId is EntityId designationId
+                && designationId.IsValid
+                && evidence.DescendantGeneration is null
+                && evidence.CollateralDistance is null
+                && evidence.SourceMarriageUnionId is null
+                && evidence.SharedAncestorCharacterId is null,
+            SuccessionLegalBasis.BiologicalDescendant
+                or SuccessionLegalBasis.LegalAdoptiveDescendant
+                or SuccessionLegalBasis.UnspecifiedLegacyDescendant =>
+                    evidence.DescendantGeneration is >= 1
+                    && evidence.CollateralDistance is null
+                    && evidence.SourceDesignationId is null
+                    && evidence.SourceMarriageUnionId is null
+                    && evidence.SharedAncestorCharacterId is null,
+            SuccessionLegalBasis.PrincipalSpouse =>
+                evidence.SourceMarriageUnionId is EntityId unionId
+                && unionId.IsValid
+                && evidence.DescendantGeneration is null
+                && evidence.CollateralDistance is null
+                && evidence.SourceDesignationId is null
+                && evidence.SharedAncestorCharacterId is null,
+            SuccessionLegalBasis.BiologicalCollateral
+                or SuccessionLegalBasis.LegalAdoptiveCollateral
+                or SuccessionLegalBasis.UnspecifiedLegacyCollateral =>
+                    evidence.CollateralDistance is >= 2
+                    && evidence.SharedAncestorCharacterId
+                        is EntityId sharedAncestorId
+                    && sharedAncestorId.IsValid
+                    && evidence.DescendantGeneration is null
+                    && evidence.SourceDesignationId is null
+                    && evidence.SourceMarriageUnionId is null,
+            _ => false,
+        };
+        if (!valid)
+        {
+            throw new SimulationValidationException(
+                $"Succession legal-basis evidence '{evidence.Basis}' is malformed.");
+        }
+    }
+
+    private void ValidateResolutionRegency(
+        SuccessionResolutionState resolution,
+        SuccessionResolutionCandidate? selected)
+    {
+        SuccessionRegencyReason expected = SuccessionRegencyReason.None;
+        if (selected is not null
+            && selected.CandidateAge < CharacterMarriageLimits.MinimumAdultAge)
+        {
+            expected |= SuccessionRegencyReason.Minor;
+        }
+
+        if (selected?.CandidateCondition.IsIncapacitated == true
+            && resolution.Rule.CreatesRegencyForIncapacitatedSuccessor)
+        {
+            expected |= SuccessionRegencyReason.Incapacitated;
+        }
+
+        SuccessionRegencyHook? regency = resolution.Regency;
+        if (regency is null)
+        {
+            if (expected != SuccessionRegencyReason.None)
+            {
+                throw new SimulationValidationException(
+                    $"Succession resolution '{resolution.ResolutionId}' is missing required regency evidence.");
+            }
+
+            return;
+        }
+
+        if (selected is null
+            || regency.ContractVersion
+                != CharacterSuccessionContractVersions.Regency
+            || regency.SuccessorCharacterId != selected.CandidateCharacterId
+            || regency.Reasons == SuccessionRegencyReason.None
+            || (regency.Reasons & ~(SuccessionRegencyReason.Minor
+                | SuccessionRegencyReason.Incapacitated)) != 0
+            || regency.RegentCharacterId is EntityId regentId
+                && (!regentId.IsValid
+                    || regentId == resolution.SubjectCharacterId
+                    || regentId == selected.CandidateCharacterId)
+            || regency.SourceGuardianshipId is EntityId guardianshipId
+                && !guardianshipId.IsValid
+            || regency.SourceGuardianCharacterId is EntityId guardianId
+                && !guardianId.IsValid
+            || (regency.SourceGuardianshipId is null)
+                != (regency.SourceGuardianCharacterId is null)
+            || regency.SourceCustodianCharacterId is EntityId custodianId
+                && !custodianId.IsValid)
+        {
+            throw new SimulationValidationException(
+                $"Succession resolution '{resolution.ResolutionId}' has malformed regency evidence.");
+        }
+
+        foreach ((EntityId? characterId, string label) in new[]
+        {
+            (regency.RegentCharacterId, "regent"),
+            (regency.SourceGuardianCharacterId, "source guardian"),
+            (regency.SourceCustodianCharacterId, "source custodian"),
+        })
+        {
+            if (characterId is EntityId value)
+            {
+                AuthoritativeCharacterProfile profile = RequireCharacter(
+                    value,
+                    $"Succession-regency {label}");
+                if (profile.BirthDate.CompareTo(resolution.ResolutionDate) > 0
+                    || label == "regent"
+                        && CalculateAge(
+                            profile.BirthDate,
+                            resolution.ResolutionDate)
+                            < CharacterMarriageLimits.MinimumAdultAge)
+                {
+                    throw new SimulationValidationException(
+                        $"Succession-regency {label} '{value}' was not eligible by resolution date.");
+                }
+            }
+        }
+
+        if (regency.Reasons != expected
+            || regency.SourceCustodianCharacterId
+                != (selected.CandidateCondition.CustodyStatus
+                        == CharacterCustodyStatus.Free
+                    ? null
+                    : selected.CandidateCondition.CustodianId))
+        {
+            throw new SimulationValidationException(
+                $"Succession resolution '{resolution.ResolutionId}' has inconsistent regency reasons or custody evidence.");
+        }
+    }
+
+    private void ValidateResolutionHistory(
+        SuccessionResolutionHistoryAggregate aggregate)
+    {
+        if (aggregate is null
+            || aggregate.ContractVersion
+                != CharacterSuccessionContractVersions.ResolutionHistory
+            || aggregate.FoldedSelectedCount < 0
+            || aggregate.FoldedDisputedCount < 0
+            || aggregate.FoldedNoSuccessorCount < 0)
+        {
+            throw new SimulationValidationException(
+                "Succession-resolution history aggregate is malformed.");
+        }
+
+        try
+        {
+            long total = aggregate.TotalFoldedCount;
+            if (total == 0
+                ? aggregate.EarliestDate is not null
+                    || aggregate.LatestDate is not null
+                : aggregate.EarliestDate is not CampaignDate earliest
+                    || aggregate.LatestDate is not CampaignDate latest
+                    || !earliest.IsValid
+                    || !latest.IsValid
+                    || earliest.CompareTo(latest) > 0
+                    || latest.CompareTo(calendar.Date) > 0)
+            {
+                throw new SimulationValidationException(
+                    "Succession-resolution history dates do not match its folded count.");
+            }
+        }
+        catch (OverflowException exception)
+        {
+            throw new SimulationValidationException(
+                $"Succession-resolution history exceeds Int64 capacity: {exception.Message}");
+        }
+    }
+
+    private void ValidateCampaignContinuity(
+        PlayerCampaignContinuityState? continuity)
+    {
+        ValidateHistoricalContinuity(continuity, calendar.Date, calendar.TurnIndex);
+        if (continuity?.Status == PlayerCampaignContinuityStatus.Active
+            && continuity.ControlledCharacterId is EntityId characterId
+            && RequireCharacter(
+                characterId,
+                "Campaign-continuity controlled character").Condition.VitalStatus
+                != CharacterVitalStatus.Alive)
+        {
+            throw new SimulationValidationException(
+                $"Campaign-continuity controlled character '{characterId}' is not alive.");
+        }
+    }
+
+    private void ValidateHistoricalContinuity(
+        PlayerCampaignContinuityState? continuity,
+        CampaignDate maximumDate,
+        long maximumTurnIndex)
+    {
+        if (continuity is null)
+        {
+            return;
+        }
+
+        if (continuity.ContractVersion
+                != CharacterSuccessionContractVersions.CampaignContinuity
+            || !Enum.IsDefined(continuity.Status)
+            || !continuity.ResolutionDate.IsValid
+            || continuity.ResolutionDate.CompareTo(maximumDate) > 0
+            || continuity.ResolutionTurnIndex < 0
+            || continuity.ResolutionTurnIndex > maximumTurnIndex
+            || !continuity.SourceCommandId.IsValid
+            || !continuity.SourceEventId.IsValid
+            || (continuity.Status == PlayerCampaignContinuityStatus.Active)
+                != (continuity.ControlledCharacterId is not null))
+        {
+            throw new SimulationValidationException(
+                "Campaign-continuity state is malformed.");
+        }
+
+        if (continuity.ControlledCharacterId is EntityId characterId
+            && RequireCharacter(
+                characterId,
+                "Campaign-continuity controlled character").BirthDate.CompareTo(
+                    continuity.ResolutionDate) > 0)
+        {
+            throw new SimulationValidationException(
+                $"Campaign-continuity controlled character '{characterId}' was not born.");
+        }
+    }
+
     private void ValidateClaim(SuccessionClaimState claim)
     {
         if (claim.ContractVersion != CharacterSuccessionContractVersions.ClaimState
@@ -3020,6 +4433,14 @@ public sealed class CharacterSuccessionWorldState
             .Select(item => item!.Value)
             .Distinct()
             .ToArray();
+        SuccessionResolutionState[] allResolutions = resolutions.Values.ToArray();
+        EntityId[] resolutionLifecycleIdentities = allResolutions
+            .SelectMany(item => new[]
+            {
+                item.SourceCommandId,
+                item.SourceEventId,
+            })
+            .ToArray();
         if (claimLifecycleIdentities.Distinct().Count()
                 != claimLifecycleIdentities.Length
             || claimLifecycleIdentities.Intersect(
@@ -3027,7 +4448,15 @@ public sealed class CharacterSuccessionWorldState
             || supportLifecycleIdentities.Intersect(
                 designationLifecycleIdentities).Any()
             || supportLifecycleIdentities.Intersect(
-                claimLifecycleIdentities).Any())
+                claimLifecycleIdentities).Any()
+            || resolutionLifecycleIdentities.Distinct().Count()
+                != resolutionLifecycleIdentities.Length
+            || resolutionLifecycleIdentities.Intersect(
+                designationLifecycleIdentities).Any()
+            || resolutionLifecycleIdentities.Intersect(
+                claimLifecycleIdentities).Any()
+            || resolutionLifecycleIdentities.Intersect(
+                supportLifecycleIdentities).Any())
         {
             throw new SimulationValidationException(
                 "Character-succession state has duplicate or cross-workflow lifecycle identities.");
@@ -3274,7 +4703,216 @@ public sealed class CharacterSuccessionWorldState
                     $"Succession-support history for '{subject}' is inconsistent with retained terminal records.");
             }
         }
+
+        if (resolutions.Count
+                > CharacterSuccessionLimits.RecentSuccessionResolutions
+            || resolutions.Values
+                .Select(item => item.SubjectCharacterId)
+                .Distinct()
+                .Count() != resolutions.Count)
+        {
+            throw new SimulationValidationException(
+                "Succession-resolution state exceeds retention or per-subject bounds.");
+        }
+
+        if (resolutionHistory.TotalFoldedCount > 0)
+        {
+            SuccessionResolutionState? oldest = resolutions.Values
+                .OrderBy(item => item.ResolutionTurnIndex)
+                .ThenBy(item => item.ResolutionDate)
+                .ThenBy(item => item.ResolutionId)
+                .FirstOrDefault();
+            if (resolutions.Count
+                    != CharacterSuccessionLimits.RecentSuccessionResolutions
+                || oldest is null
+                || resolutionHistory.LatestDate!.Value.CompareTo(
+                    oldest.ResolutionDate) > 0)
+            {
+                throw new SimulationValidationException(
+                    "Succession-resolution history is inconsistent with retained records.");
+            }
+        }
+
+        ValidateResolutionContinuityChain();
     }
+
+    private void ValidateResolutionContinuityChain()
+    {
+        if (resolutions.Count == 0)
+        {
+            return;
+        }
+
+        IGrouping<(long TurnIndex, CampaignDate Date),
+            SuccessionResolutionState>[] groups = resolutions.Values
+            .GroupBy(item => (
+                TurnIndex: item.ResolutionTurnIndex,
+                Date: item.ResolutionDate))
+            .OrderBy(item => item.Key.TurnIndex)
+            .ThenBy(item => item.Key.Date)
+            .ToArray();
+        bool earliestGroupMayBePartial =
+            resolutionHistory.TotalFoldedCount > 0
+            && resolutionHistory.LatestDate == groups[0].Key.Date;
+        HashSet<string>? possibleStates = null;
+        foreach ((IGrouping<(long TurnIndex, CampaignDate Date),
+                     SuccessionResolutionState> group, int groupIndex)
+                 in groups.Select((group, index) => (group, index)))
+        {
+            if (groupIndex == 0 && earliestGroupMayBePartial)
+            {
+                continue;
+            }
+
+            SuccessionResolutionState[] transitions = group.ToArray();
+            HashSet<string> starts = possibleStates
+                ?? transitions
+                    .Select(item => ContinuityKey(
+                        item.PreviousCampaignContinuity))
+                    .ToHashSet(StringComparer.Ordinal);
+            HashSet<string> next = new(StringComparer.Ordinal);
+            foreach (string start in starts)
+            {
+                if (TryTraverseContinuityGroup(
+                        transitions,
+                        start,
+                        out string? end))
+                {
+                    next.Add(end);
+                }
+            }
+
+            if (next.Count == 0)
+            {
+                throw new SimulationValidationException(
+                    "Succession-resolution continuity transitions do not form a compatible event-order chain.");
+            }
+
+            possibleStates = next;
+        }
+
+        if (possibleStates is null)
+        {
+            string terminal = ContinuityKey(campaignContinuity);
+            if (!resolutions.Values.Any(item =>
+                    StringComparer.Ordinal.Equals(
+                        ContinuityKey(item.CurrentCampaignContinuity),
+                        terminal)))
+            {
+                throw new SimulationValidationException(
+                    "Campaign continuity does not match any retained terminal transition in the partially folded succession-resolution group.");
+            }
+
+            return;
+        }
+
+        if (!possibleStates!.Contains(ContinuityKey(campaignContinuity)))
+        {
+            throw new SimulationValidationException(
+                "Campaign continuity is not the terminal state of any compatible retained succession-resolution order.");
+        }
+    }
+
+    private static bool TryTraverseContinuityGroup(
+        IReadOnlyList<SuccessionResolutionState> transitions,
+        string start,
+        [NotNullWhen(true)] out string? end)
+    {
+        Dictionary<string, int> incoming = new(StringComparer.Ordinal);
+        Dictionary<string, int> outgoing = new(StringComparer.Ordinal);
+        Dictionary<string, HashSet<string>> adjacency =
+            new(StringComparer.Ordinal);
+        foreach (SuccessionResolutionState transition in transitions)
+        {
+            string previous = ContinuityKey(
+                transition.PreviousCampaignContinuity);
+            string current = ContinuityKey(
+                transition.CurrentCampaignContinuity);
+            outgoing[previous] = outgoing.GetValueOrDefault(previous) + 1;
+            incoming[current] = incoming.GetValueOrDefault(current) + 1;
+            if (!adjacency.TryGetValue(previous, out HashSet<string>? previousEdges))
+            {
+                previousEdges = new(StringComparer.Ordinal);
+                adjacency.Add(previous, previousEdges);
+            }
+
+            if (!adjacency.TryGetValue(current, out HashSet<string>? currentEdges))
+            {
+                currentEdges = new(StringComparer.Ordinal);
+                adjacency.Add(current, currentEdges);
+            }
+
+            previousEdges.Add(current);
+            currentEdges.Add(previous);
+        }
+
+        if (!adjacency.ContainsKey(start))
+        {
+            end = null;
+            return false;
+        }
+
+        HashSet<string> visited = new(StringComparer.Ordinal);
+        Queue<string> pending = new();
+        pending.Enqueue(start);
+        while (pending.TryDequeue(out string? current))
+        {
+            if (!visited.Add(current))
+            {
+                continue;
+            }
+
+            foreach (string neighbor in adjacency[current])
+            {
+                pending.Enqueue(neighbor);
+            }
+        }
+
+        if (visited.Count != adjacency.Count)
+        {
+            end = null;
+            return false;
+        }
+
+        string[] positive = adjacency.Keys.Where(node =>
+                outgoing.GetValueOrDefault(node)
+                    - incoming.GetValueOrDefault(node) == 1)
+            .ToArray();
+        string[] negative = adjacency.Keys.Where(node =>
+                incoming.GetValueOrDefault(node)
+                    - outgoing.GetValueOrDefault(node) == 1)
+            .ToArray();
+        if (adjacency.Keys.Any(node => Math.Abs(
+                outgoing.GetValueOrDefault(node)
+                    - incoming.GetValueOrDefault(node)) > 1))
+        {
+            end = null;
+            return false;
+        }
+
+        if (positive.Length == 0 && negative.Length == 0)
+        {
+            end = start;
+            return true;
+        }
+
+        if (positive.Length == 1
+            && negative.Length == 1
+            && StringComparer.Ordinal.Equals(start, positive[0]))
+        {
+            end = negative[0];
+            return true;
+        }
+
+        end = null;
+        return false;
+    }
+
+    private static string ContinuityKey(
+        PlayerCampaignContinuityState? continuity) =>
+        JsonSerializer.Serialize(
+            continuity,
+            SimulationJson.CreateOptions());
 
     private static bool IsExactSuccessor(
         HeirDesignationState predecessor,
@@ -3337,7 +4975,10 @@ public sealed class CharacterSuccessionWorldState
             item.SourceCommandId == identity
             || item.SourceEventId == identity
             || item.ResolutionCommandId == identity
-            || item.ResolutionEventId == identity);
+            || item.ResolutionEventId == identity)
+        || resolutions.Values.Any(item =>
+            item.SourceCommandId == identity
+            || item.SourceEventId == identity);
 
     private AuthoritativeCharacterProfile RequireCharacter(EntityId characterId, string label)
     {
@@ -3411,6 +5052,19 @@ public sealed class CharacterSuccessionWorldState
             supportHistory.Add(id, Clone(aggregate));
         }
 
+        resolutions.Clear();
+        resolutionBySubject.Clear();
+        foreach ((EntityId id, SuccessionResolutionState resolution)
+                 in candidate.resolutions)
+        {
+            resolutions.Add(id, Clone(resolution));
+            resolutionBySubject.Add(resolution.SubjectCharacterId, id);
+        }
+
+        resolutionHistory = Clone(candidate.resolutionHistory);
+        campaignContinuity = candidate.campaignContinuity is null
+            ? null
+            : Clone(candidate.campaignContinuity);
         calendar = candidate.calendar;
     }
 
@@ -3644,6 +5298,56 @@ public sealed class CharacterSuccessionWorldState
     private static SuccessionSupportHistoryAggregate Clone(
         SuccessionSupportHistoryAggregate value) => value with { };
 
+    private static SuccessionResolutionCandidate Clone(
+        SuccessionResolutionCandidate value) => value.Canonicalize() with
+        {
+            CandidateCondition = value.CandidateCondition with { },
+        };
+
+    private static SuccessionInheritanceChange Clone(
+        SuccessionInheritanceChange value) => value.Canonicalize() with
+        {
+            WealthTransfer = value.WealthTransfer is null
+                ? null
+                : value.WealthTransfer with
+                {
+                    Transfer = value.WealthTransfer.Transfer with { },
+                    OutgoingEntry = value.WealthTransfer.OutgoingEntry with { },
+                    IncomingEntry = value.WealthTransfer.IncomingEntry with { },
+                },
+        };
+
+    private static SuccessionResolutionState Clone(
+        SuccessionResolutionState value) => value.Canonicalize() with
+        {
+            SelectedCandidate = value.SelectedCandidate is null
+                ? null
+                : Clone(value.SelectedCandidate),
+            DisputedCandidates = value.DisputedCandidates.Select(Clone).ToArray(),
+            Rule = value.Rule.Canonicalize(),
+            Inheritance = Clone(value.Inheritance),
+            Regency = value.Regency is null ? null : value.Regency with { },
+            PreviousCampaignContinuity =
+                value.PreviousCampaignContinuity is null
+                    ? null
+                    : Clone(value.PreviousCampaignContinuity),
+            CurrentCampaignContinuity =
+                value.CurrentCampaignContinuity is null
+                    ? null
+                    : Clone(value.CurrentCampaignContinuity),
+        };
+
+    private static SuccessionResolutionHistoryAggregate Clone(
+        SuccessionResolutionHistoryAggregate value) => value with { };
+
+    private static PlayerCampaignContinuityState Clone(
+        PlayerCampaignContinuityState value) => value with { };
+
+    private static bool SerializedEquals<T>(T left, T right) =>
+        StringComparer.Ordinal.Equals(
+            JsonSerializer.Serialize(left, SimulationJson.CreateOptions()),
+            JsonSerializer.Serialize(right, SimulationJson.CreateOptions()));
+
     private static CampaignDate Earlier(CampaignDate current, CampaignDate candidate) =>
         candidate.CompareTo(current) < 0 ? candidate : current;
 
@@ -3668,12 +5372,15 @@ public sealed class CharacterSuccessionWorldState
             || snapshot.ClaimHistory is null
             || snapshot.Supports is null
             || snapshot.SupportHistory is null
+            || snapshot.Resolutions is null
+            || snapshot.ResolutionHistory is null
             || snapshot.Designations.Any(item => item is null)
             || snapshot.History.Any(item => item is null)
             || snapshot.Claims.Any(item => item is null)
             || snapshot.ClaimHistory.Any(item => item is null)
             || snapshot.Supports.Any(item => item is null)
-            || snapshot.SupportHistory.Any(item => item is null))
+            || snapshot.SupportHistory.Any(item => item is null)
+            || snapshot.Resolutions.Any(item => item is null))
         {
             throw new SimulationValidationException(
                 "Character-succession snapshot has an invalid version or null collection/record.");
@@ -3700,3 +5407,24 @@ public sealed class CharacterSuccessionWorldState
 
 internal sealed record CharacterSuccessionWorldUpdatePlan(
     CharacterSuccessionWorldState Candidate);
+
+internal sealed record SuccessionAncestorPath(
+    EntityId AncestorCharacterId,
+    ParentChildLinkKind PathKind,
+    int Distance);
+
+internal sealed record SuccessionResolutionDecision(
+    EntityId SubjectCharacterId,
+    SuccessionResolutionRule Rule,
+    SuccessionResolutionStatus Status,
+    SuccessionResolutionCandidate? SelectedCandidate,
+    IReadOnlyList<SuccessionResolutionCandidate> DisputedCandidates,
+    IReadOnlyList<SuccessionResolutionCandidate> RankedCandidates,
+    int EligibleCandidateCount,
+    SuccessionRegencyHook? Regency,
+    CampaignDate ResolutionDate,
+    long ResolutionTurnIndex);
+
+internal sealed record CharacterSuccessionResolutionPlan(
+    SuccessionResolutionState Resolution,
+    CharacterSuccessionWorldUpdatePlan SuccessionPlan);

@@ -51,14 +51,14 @@ public sealed class CharacterSuccessionSupportSchemaMigrationTests
 
         Assert.True(JsonNode.DeepEquals(original, source));
         Assert.Equal(sourceBytes, File.ReadAllBytes(path));
-        Assert.Equal(27, migrated["schemaVersion"]!.GetValue<int>());
+        Assert.Equal(28, migrated["schemaVersion"]!.GetValue<int>());
         JsonObject beforeSnapshot = original["snapshot"]!.AsObject();
         JsonObject afterSnapshot = migrated["snapshot"]!.AsObject();
         AssertUnchangedSnapshotProperties(beforeSnapshot, afterSnapshot);
         JsonObject beforeSuccession = beforeSnapshot["characterSuccessions"]!.AsObject();
         JsonObject afterSuccession = afterSnapshot["characterSuccessions"]!.AsObject();
         Assert.Equal(2, beforeSuccession["contractVersion"]!.GetValue<int>());
-        Assert.Equal(3, afterSuccession["contractVersion"]!.GetValue<int>());
+        Assert.Equal(4, afterSuccession["contractVersion"]!.GetValue<int>());
         Assert.True(JsonNode.DeepEquals(
             beforeSuccession["designations"],
             afterSuccession["designations"]));
@@ -73,6 +73,8 @@ public sealed class CharacterSuccessionSupportSchemaMigrationTests
             afterSuccession["claimHistory"]));
         Assert.Empty(afterSuccession["supports"]!.AsArray());
         Assert.Empty(afterSuccession["supportHistory"]!.AsArray());
+        Assert.Empty(afterSuccession["resolutions"]!.AsArray());
+        Assert.Null(afterSuccession["campaignContinuity"]);
         Assert.True(JsonNode.DeepEquals(
             original["diagnosticCommands"],
             migrated["diagnosticCommands"]));
@@ -80,7 +82,7 @@ public sealed class CharacterSuccessionSupportSchemaMigrationTests
             original["diagnosticEvents"],
             migrated["diagnosticEvents"]));
         Assert.Equal(2, SuccessionSystemVersion(beforeSnapshot));
-        Assert.Equal(3, SuccessionSystemVersion(afterSnapshot));
+        Assert.Equal(4, SuccessionSystemVersion(afterSnapshot));
 
         SaveEnvelope envelope = migrated.Deserialize<SaveEnvelope>(
             CanonicalJson.Options)!;

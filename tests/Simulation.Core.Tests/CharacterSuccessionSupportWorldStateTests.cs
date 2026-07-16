@@ -41,14 +41,14 @@ public sealed class CharacterSuccessionSupportWorldStateTests
             new WithdrawSuccessionSupportAction(Subject, second.SupportId),
             "contract-withdraw");
 
-        Assert.Equal(3, CharacterSuccessionContractVersions.Snapshot);
+        Assert.Equal(4, CharacterSuccessionContractVersions.Snapshot);
         Assert.Equal(1, CharacterSuccessionContractVersions.SupportState);
         Assert.Equal(1, CharacterSuccessionContractVersions.SupportHistory);
         Assert.Equal(1, CharacterSuccessionContractVersions.SupportAction);
         Assert.Equal(1, CharacterSuccessionContractVersions.SupportOutcome);
-        Assert.Equal(5, CharacterSuccessionContractVersions.AuthoritativeQuery);
-        Assert.Equal(3, CharacterSuccessionSystem.Version);
-        Assert.Equal(27, SaveEnvelope.CurrentSchemaVersion);
+        Assert.Equal(6, CharacterSuccessionContractVersions.AuthoritativeQuery);
+        Assert.Equal(4, CharacterSuccessionSystem.Version);
+        Assert.Equal(28, SaveEnvelope.CurrentSchemaVersion);
         Assert.StartsWith("event:", first.SourceEventId.Value);
         Assert.StartsWith("succession_support:", first.SupportId.Value);
         Assert.NotEqual(

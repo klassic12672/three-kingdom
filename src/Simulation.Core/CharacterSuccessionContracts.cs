@@ -5,7 +5,7 @@ namespace Simulation.Core;
 
 public static class CharacterSuccessionContractVersions
 {
-    public const int Snapshot = 3;
+    public const int Snapshot = 4;
     public const int State = 1;
     public const int Action = 1;
     public const int Outcome = 1;
@@ -20,7 +20,14 @@ public static class CharacterSuccessionContractVersions
     public const int CandidateEligibilityRule = 1;
     public const int CandidateEvaluation = 1;
     public const int CandidateSet = 1;
-    public const int AuthoritativeQuery = 5;
+    public const int ResolutionRule = 1;
+    public const int ResolutionCandidate = 1;
+    public const int Resolution = 1;
+    public const int ResolutionHistory = 1;
+    public const int Inheritance = 1;
+    public const int Regency = 1;
+    public const int CampaignContinuity = 1;
+    public const int AuthoritativeQuery = 6;
 }
 
 public static class CharacterSuccessionLimits
@@ -34,12 +41,16 @@ public static class CharacterSuccessionLimits
     public const int RecentTerminalSupportsPerSubject = 32;
     public const int MaximumEvaluatedDescendantGeneration = 64;
     public const int MaximumConfiguredMinimumCandidateAge = 100;
+    public const int MaximumResolutionCandidates = 256;
+    public const int MaximumDisputedCandidates = 32;
+    public const int MaximumCollateralDistance = 16;
+    public const int RecentSuccessionResolutions = 256;
 }
 
 public static class CharacterSuccessionSystem
 {
     public const string SystemId = "simulation.character_succession";
-    public const int Version = 3;
+    public const int Version = 4;
 }
 
 public enum HeirDesignationStatus
@@ -127,6 +138,52 @@ public enum SuccessionCandidateSetIssueReason
     MaximumCandidatesExceeded = 14,
 }
 
+public enum SuccessionLegalBasis
+{
+    ActiveDesignation = 0,
+    BiologicalDescendant = 1,
+    LegalAdoptiveDescendant = 2,
+    UnspecifiedLegacyDescendant = 3,
+    PrincipalSpouse = 4,
+    BiologicalCollateral = 5,
+    LegalAdoptiveCollateral = 6,
+    UnspecifiedLegacyCollateral = 7,
+}
+
+public enum SuccessionContestResolutionMode
+{
+    ResolveByStableId = 0,
+    RecordDispute = 1,
+}
+
+public enum SuccessionResolutionStatus
+{
+    Selected = 0,
+    Disputed = 1,
+    NoSuccessor = 2,
+}
+
+[Flags]
+public enum SuccessionRegencyReason
+{
+    None = 0,
+    Minor = 1 << 0,
+    Incapacitated = 1 << 1,
+}
+
+public enum PlayerCampaignContinuityStatus
+{
+    Active = 0,
+    ContinueWithoutControlledCharacter = 1,
+    Ended = 2,
+}
+
+public enum SuccessionNoAcceptedSuccessorBehavior
+{
+    ContinueWithoutControlledCharacter = 0,
+    EndCampaign = 1,
+}
+
 public sealed record SuccessionCandidateEligibilityRule(
     int ContractVersion,
     IReadOnlyList<SuccessionCandidateBasis> AllowedBases,
@@ -197,6 +254,158 @@ public sealed record SuccessionCandidateSetResult(
     IReadOnlyList<SuccessionCandidateSetEntry> Candidates,
     IReadOnlyList<SuccessionCandidateSetIssue> Issues,
     SuccessionCandidateSetStatus Status);
+
+public sealed record SuccessionResolutionRule(
+    int ContractVersion,
+    SuccessionCandidateEligibilityRule CandidateEligibility,
+    IReadOnlyList<SuccessionLegalBasis> LegalBasisPrecedence,
+    bool IncludesPrincipalSpouse,
+    IReadOnlyList<ParentChildLinkKind> AllowedCollateralKinds,
+    int MaximumCollateralDistance,
+    SuccessionContestResolutionMode ContestResolutionMode,
+    int MaximumCandidates,
+    int MaximumDisputedCandidates,
+    bool CreatesRegencyForIncapacitatedSuccessor,
+    SuccessionNoAcceptedSuccessorBehavior NoAcceptedSuccessorBehavior)
+{
+    public SuccessionResolutionRule Canonicalize() => this with
+    {
+        CandidateEligibility = CandidateEligibility?.Canonicalize()!,
+        LegalBasisPrecedence = LegalBasisPrecedence is null
+            ? null!
+            : LegalBasisPrecedence.ToArray(),
+        AllowedCollateralKinds = AllowedCollateralKinds is null
+            ? null!
+            : AllowedCollateralKinds.Order().ToArray(),
+    };
+}
+
+public sealed record SuccessionLegalBasisEvidence(
+    int ContractVersion,
+    SuccessionLegalBasis Basis,
+    int? DescendantGeneration,
+    int? CollateralDistance,
+    EntityId? SourceDesignationId,
+    EntityId? SourceMarriageUnionId,
+    EntityId? SharedAncestorCharacterId);
+
+public sealed record SuccessionResolutionCandidate(
+    int ContractVersion,
+    EntityId CandidateCharacterId,
+    int CandidateAge,
+    CharacterConditionState CandidateCondition,
+    IReadOnlyList<SuccessionLegalBasisEvidence> LegalBases,
+    EntityId? ActiveClaimId,
+    IReadOnlyList<EntityId> ActiveSupportIds,
+    int LegalBasisPrecedenceIndex,
+    int KinshipDistance)
+{
+    public SuccessionResolutionCandidate Canonicalize() => this with
+    {
+        LegalBases = LegalBases is null
+            ? null!
+            : LegalBases.OrderBy(item => item.Basis)
+                .ThenBy(item => item.DescendantGeneration)
+                .ThenBy(item => item.CollateralDistance)
+                .ThenBy(item => item.SourceDesignationId)
+                .ThenBy(item => item.SourceMarriageUnionId)
+                .ThenBy(item => item.SharedAncestorCharacterId)
+                .ToArray(),
+        ActiveSupportIds = ActiveSupportIds is null
+            ? null!
+            : ActiveSupportIds.Order().ToArray(),
+    };
+}
+
+public sealed record SuccessionEstateTransfer(
+    int ContractVersion,
+    EntityId EstateId,
+    EntityId PreviousOwnerCharacterId,
+    EntityId CurrentOwnerCharacterId);
+
+public sealed record SuccessionInheritanceChange(
+    int ContractVersion,
+    WealthTransferredOutcome? WealthTransfer,
+    IReadOnlyList<SuccessionEstateTransfer> EstateTransfers)
+{
+    public SuccessionInheritanceChange Canonicalize() => this with
+    {
+        EstateTransfers = EstateTransfers is null
+            ? null!
+            : EstateTransfers.OrderBy(item => item.EstateId).ToArray(),
+    };
+}
+
+public sealed record SuccessionRegencyHook(
+    int ContractVersion,
+    EntityId SuccessorCharacterId,
+    SuccessionRegencyReason Reasons,
+    EntityId? RegentCharacterId,
+    EntityId? SourceGuardianshipId,
+    EntityId? SourceGuardianCharacterId,
+    EntityId? SourceCustodianCharacterId);
+
+public sealed record PlayerCampaignContinuityState(
+    int ContractVersion,
+    PlayerCampaignContinuityStatus Status,
+    EntityId? ControlledCharacterId,
+    CampaignDate ResolutionDate,
+    long ResolutionTurnIndex,
+    EntityId SourceCommandId,
+    EntityId SourceEventId);
+
+public sealed record SuccessionResolutionState(
+    int ContractVersion,
+    EntityId ResolutionId,
+    EntityId SubjectCharacterId,
+    EntityId DeathId,
+    SuccessionResolutionStatus Status,
+    SuccessionResolutionCandidate? SelectedCandidate,
+    IReadOnlyList<SuccessionResolutionCandidate> DisputedCandidates,
+    int EligibleCandidateCount,
+    SuccessionResolutionRule Rule,
+    SuccessionInheritanceChange Inheritance,
+    SuccessionRegencyHook? Regency,
+    PlayerCampaignContinuityState? PreviousCampaignContinuity,
+    PlayerCampaignContinuityState? CurrentCampaignContinuity,
+    CampaignDate ResolutionDate,
+    long ResolutionTurnIndex,
+    EntityId SourceCommandId,
+    EntityId SourceEventId)
+{
+    public SuccessionResolutionState Canonicalize() => this with
+    {
+        SelectedCandidate = SelectedCandidate?.Canonicalize(),
+        DisputedCandidates = DisputedCandidates is null
+            ? null!
+            : DisputedCandidates.Select(item => item.Canonicalize())
+                .OrderBy(item => item.CandidateCharacterId)
+                .ToArray(),
+        Rule = Rule?.Canonicalize()!,
+        Inheritance = Inheritance?.Canonicalize()!,
+    };
+}
+
+public sealed record SuccessionResolutionHistoryAggregate(
+    int ContractVersion,
+    long FoldedSelectedCount,
+    long FoldedDisputedCount,
+    long FoldedNoSuccessorCount,
+    CampaignDate? EarliestDate,
+    CampaignDate? LatestDate)
+{
+    public static SuccessionResolutionHistoryAggregate Empty { get; } = new(
+        CharacterSuccessionContractVersions.ResolutionHistory,
+        0,
+        0,
+        0,
+        null,
+        null);
+
+    [JsonIgnore]
+    public long TotalFoldedCount => checked(
+        FoldedSelectedCount + FoldedDisputedCount + FoldedNoSuccessorCount);
+}
 
 public sealed record HeirDesignationState(
     int ContractVersion,
@@ -288,7 +497,10 @@ public sealed record CharacterSuccessionWorldSnapshot(
     IReadOnlyList<SuccessionClaimState> Claims,
     IReadOnlyList<SuccessionClaimHistoryAggregate> ClaimHistory,
     IReadOnlyList<SuccessionSupportState> Supports,
-    IReadOnlyList<SuccessionSupportHistoryAggregate> SupportHistory)
+    IReadOnlyList<SuccessionSupportHistoryAggregate> SupportHistory,
+    IReadOnlyList<SuccessionResolutionState> Resolutions,
+    SuccessionResolutionHistoryAggregate ResolutionHistory,
+    PlayerCampaignContinuityState? CampaignContinuity)
 {
     public CharacterSuccessionWorldSnapshot(
         int contractVersion,
@@ -303,7 +515,32 @@ public sealed record CharacterSuccessionWorldSnapshot(
             claims,
             claimHistory,
             [],
-            [])
+            [],
+            [],
+            SuccessionResolutionHistoryAggregate.Empty,
+            null)
+    {
+    }
+
+    public CharacterSuccessionWorldSnapshot(
+        int contractVersion,
+        IReadOnlyList<HeirDesignationState> designations,
+        IReadOnlyList<HeirDesignationHistoryAggregate> history,
+        IReadOnlyList<SuccessionClaimState> claims,
+        IReadOnlyList<SuccessionClaimHistoryAggregate> claimHistory,
+        IReadOnlyList<SuccessionSupportState> supports,
+        IReadOnlyList<SuccessionSupportHistoryAggregate> supportHistory)
+        : this(
+            contractVersion,
+            designations,
+            history,
+            claims,
+            claimHistory,
+            supports,
+            supportHistory,
+            [],
+            SuccessionResolutionHistoryAggregate.Empty,
+            null)
     {
     }
 
@@ -314,7 +551,10 @@ public sealed record CharacterSuccessionWorldSnapshot(
         [],
         [],
         [],
-        []);
+        [],
+        [],
+        SuccessionResolutionHistoryAggregate.Empty,
+        null);
 
     public CharacterSuccessionWorldSnapshot Canonicalize() => this with
     {
@@ -324,6 +564,11 @@ public sealed record CharacterSuccessionWorldSnapshot(
         ClaimHistory = ClaimHistory.OrderBy(item => item.SubjectCharacterId).ToArray(),
         Supports = Supports.OrderBy(item => item.SupportId).ToArray(),
         SupportHistory = SupportHistory.OrderBy(item => item.SubjectId).ToArray(),
+        Resolutions = Resolutions.OrderBy(item => item.ResolutionTurnIndex)
+            .ThenBy(item => item.ResolutionDate)
+            .ThenBy(item => item.ResolutionId)
+            .Select(item => item.Canonicalize())
+            .ToArray(),
     };
 }
 
@@ -383,6 +628,16 @@ public interface IAuthoritativeCharacterSuccessionWorldQuery
     bool TryGetSupportHistory(
         EntityId subjectId,
         [NotNullWhen(true)] out SuccessionSupportHistoryAggregate? history);
+
+    IReadOnlyList<SuccessionResolutionState> Resolutions { get; }
+
+    SuccessionResolutionHistoryAggregate ResolutionHistory { get; }
+
+    PlayerCampaignContinuityState? CampaignContinuity { get; }
+
+    bool TryGetResolutionForSubject(
+        EntityId subjectCharacterId,
+        [NotNullWhen(true)] out SuccessionResolutionState? resolution);
 }
 
 [JsonPolymorphic(
@@ -580,4 +835,19 @@ public static class CharacterSuccessionIds
             StableId.RequireId(
                 supportedCandidateId,
                 nameof(supportedCandidateId)).Value);
+
+    public static EntityId DeriveResolutionId(
+        EntityId eventId,
+        EntityId subjectCharacterId) =>
+        StableId.Hash(
+            "succession_resolution",
+            "succession-resolution.v1",
+            StableId.RequireId(eventId, nameof(eventId)).Value,
+            StableId.RequireId(subjectCharacterId, nameof(subjectCharacterId)).Value);
+
+    public static EntityId DeriveResolutionStateId(params string[] canonicalFields) =>
+        StableId.Hash(
+            "succession_resolution_state",
+            "succession-resolution-state.v1",
+            canonicalFields);
 }

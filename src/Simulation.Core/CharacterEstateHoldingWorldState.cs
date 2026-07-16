@@ -7,7 +7,7 @@ public sealed class CharacterEstateHoldingWorldState
 {
     private readonly IAuthoritativeCharacterWorldQuery characters;
     private readonly SortedDictionary<EntityId, CharacterEstateHoldingState> holdings = [];
-    private readonly CampaignDate snapshotDate;
+    private CampaignDate snapshotDate;
 
     public CharacterEstateHoldingWorldState(
         CharacterEstateHoldingWorldSnapshot snapshot,
@@ -64,6 +64,96 @@ public sealed class CharacterEstateHoldingWorldState
     public CharacterEstateHoldingWorldSnapshot CaptureSnapshot() => new(
         CharacterEstateHoldingContractVersions.Snapshot,
         holdings.Values.Select(Clone).ToArray());
+
+    internal CharacterEstateInheritancePlan PrepareInheritance(
+        EntityId sourceCharacterId,
+        EntityId recipientCharacterId,
+        CampaignDate resolutionDate)
+    {
+        if (!resolutionDate.IsValid
+            || resolutionDate.CompareTo(snapshotDate) < 0)
+        {
+            throw new SimulationValidationException(
+                "Estate inheritance cannot precede estate-holding state.");
+        }
+
+        AuthoritativeCharacterProfile source = RequireCharacter(
+            sourceCharacterId,
+            "Estate-inheritance source");
+        AuthoritativeCharacterProfile recipient = RequireCharacter(
+            recipientCharacterId,
+            "Estate-inheritance recipient");
+        if (sourceCharacterId == recipientCharacterId)
+        {
+            throw new SimulationValidationException(
+                "Estate inheritance cannot transfer holdings to the current owner.");
+        }
+
+        if (source.BirthDate.CompareTo(resolutionDate) > 0
+            || recipient.BirthDate.CompareTo(resolutionDate) > 0)
+        {
+            throw new SimulationValidationException(
+                "Estate-inheritance participants are not born by resolution.");
+        }
+
+        CharacterEstateHoldingState[] inherited = holdings.Values
+            .Where(item => item.OwnerCharacterId == sourceCharacterId)
+            .OrderBy(item => item.EstateId)
+            .ToArray();
+        int recipientCount = holdings.Values.Count(
+            item => item.OwnerCharacterId == recipientCharacterId);
+        if (recipientCount > CharacterEstateHoldingLimits.HoldingsPerCharacter
+            - inherited.Length)
+        {
+            throw new SimulationValidationException(
+                $"Estate inheritance would exceed the recipient holding limit of "
+                + $"{CharacterEstateHoldingLimits.HoldingsPerCharacter}.");
+        }
+
+        Dictionary<EntityId, CharacterEstateHoldingState> replacements = inherited
+            .ToDictionary(
+                item => item.EstateId,
+                item => item with { OwnerCharacterId = recipientCharacterId });
+        CharacterEstateHoldingWorldState candidate = new(
+            new CharacterEstateHoldingWorldSnapshot(
+                CharacterEstateHoldingContractVersions.Snapshot,
+                holdings.Values
+                    .Select(item => replacements.TryGetValue(
+                            item.EstateId,
+                            out CharacterEstateHoldingState? replacement)
+                        ? replacement
+                        : Clone(item))
+                    .ToArray()),
+            characters,
+            resolutionDate);
+        SuccessionEstateTransfer[] transfers = inherited
+            .Select(item => new SuccessionEstateTransfer(
+                CharacterSuccessionContractVersions.Inheritance,
+                item.EstateId,
+                sourceCharacterId,
+                recipientCharacterId))
+            .ToArray();
+        return new CharacterEstateInheritancePlan(
+            transfers,
+            new CharacterEstateHoldingWorldUpdatePlan(candidate));
+    }
+
+    internal void CommitPrepared(CharacterEstateHoldingWorldUpdatePlan plan)
+    {
+        if (plan?.Candidate is null)
+        {
+            throw new SimulationValidationException(
+                "Prepared character-estate-holding update cannot be null.");
+        }
+
+        holdings.Clear();
+        foreach (CharacterEstateHoldingState holding in plan.Candidate.holdings.Values)
+        {
+            holdings.Add(holding.EstateId, Clone(holding));
+        }
+
+        snapshotDate = plan.Candidate.snapshotDate;
+    }
 
     private static void ValidateSnapshotShape(CharacterEstateHoldingWorldSnapshot snapshot)
     {
@@ -153,3 +243,10 @@ public sealed class CharacterEstateHoldingWorldState
     private static CharacterEstateHoldingState Clone(CharacterEstateHoldingState value) =>
         value with { };
 }
+
+internal sealed record CharacterEstateHoldingWorldUpdatePlan(
+    CharacterEstateHoldingWorldState Candidate);
+
+internal sealed record CharacterEstateInheritancePlan(
+    IReadOnlyList<SuccessionEstateTransfer> Transfers,
+    CharacterEstateHoldingWorldUpdatePlan EstatePlan);
